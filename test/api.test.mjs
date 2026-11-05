@@ -378,9 +378,13 @@ test('POST /pause and /resume with predictable conflicts', async () => {
 
 test('idle auto-pause uses the latest sampler value and reports its reason', async () => {
   const fixture = await makeFixture()
+  const readState = async () => (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
   // The Host's 1s tick passes sampler.lastIdleMs() + sampler.lastSampleAt().
   fixture.limits.evaluate(fixture.clock, { idleMs: 60_000, sampleAt: fixture.clock })
-  const state = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+  assert.equal((await readState()).limit.paused, false)
+  fixture.advance(1000)
+  fixture.limits.evaluate(fixture.clock, { idleMs: 60_000, sampleAt: fixture.clock })
+  const state = await readState()
   assert.equal(state.limit.paused, true)
   assert.equal(state.limit.pausedReason, 'idle')
   assert.equal(state.limit.pausedAt, fixture.clock)
@@ -390,16 +394,19 @@ test('idle auto-pause uses the latest sampler value and reports its reason', asy
   // usage.autoPauseSeconds = 0 disables the automatic pause entirely.
   const offFixture = await makeFixture({ settingsPatch: { usage: { autoPauseSeconds: 0 } } })
   offFixture.limits.evaluate(offFixture.clock, { idleMs: 10 * 60_000, sampleAt: offFixture.clock })
+  offFixture.advance(1000)
+  offFixture.limits.evaluate(offFixture.clock, { idleMs: 10 * 60_000, sampleAt: offFixture.clock })
   const offState = (await call(offFixture.api, makeRequest({ url: ROUTES.state }))).json
   assert.equal(offState.limit.paused, false)
   assert.equal(offState.limit.pausedReason, null)
 })
-
 test('POST /resume stays stable against a stale pre-resume idle sample', async () => {
   const fixture = await makeFixture()
   const staleSampleAt = fixture.clock - 5000
-  // Auto-pause from a very idle machine (the reported 186s case).
-  fixture.limits.evaluate(fixture.clock, { idleMs: 186_484, sampleAt: staleSampleAt })
+  // Auto-pause needs two consecutive fresh high-idle samples (the reported 186s case).
+  fixture.limits.evaluate(fixture.clock, { idleMs: 186_484, sampleAt: fixture.clock })
+  fixture.advance(1000)
+  fixture.limits.evaluate(fixture.clock, { idleMs: 186_484, sampleAt: fixture.clock })
   assert.equal((await call(fixture.api, makeRequest({ url: ROUTES.state }))).json.limit.paused, true)
 
   const resumed = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.resume, body: '{}' }))
@@ -419,15 +426,17 @@ test('POST /resume stays stable against a stale pre-resume idle sample', async (
   fixture.limits.evaluate(fixture.clock, { idleMs: 186_484, sampleAt: staleSampleAt })
   assert.equal((await call(fixture.api, makeRequest({ url: ROUTES.state }))).json.limit.paused, false)
 
-  // A fresh sample with a high idle value after the grace window pauses again.
+  // Two fresh high-idle samples after the grace pause again; one alone does not.
   fixture.advance(2000)
+  fixture.limits.evaluate(fixture.clock, { idleMs: 186_484, sampleAt: fixture.clock })
+  assert.equal((await call(fixture.api, makeRequest({ url: ROUTES.state }))).json.limit.paused, false)
+  fixture.advance(1000)
   fixture.limits.evaluate(fixture.clock, { idleMs: 186_484, sampleAt: fixture.clock })
   const repaused = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
   assert.equal(repaused.limit.paused, true)
   assert.equal(repaused.limit.pausedReason, 'idle')
   assert.ok(resumedAt > 0)
 })
-
 test('usage exposes machine idle time and the away flag', async () => {
   const near = await makeFixture({ idleMs: 1000 })
   const nearState = (await call(near.api, makeRequest({ url: ROUTES.state }))).json

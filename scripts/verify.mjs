@@ -349,7 +349,11 @@ check('READMEs describe the current product', () => {
     [/30 (?:continuous )?minutes/i, 'the 30-minute continuous cap'],
     [/10-minute (?:forced )?rest/i, 'the 10-minute forced rest'],
     [/display[- ]only/i, 'the display-only rings'],
-    [/automatic rest/i, 'the automatic idle rest'],
+    [/(?:value inside|values? inside each ring|number in the middle)/i, 'the in-ring values'],
+    [/(?:once per second|every second)/i, 'the smooth continuous clock'],
+    [/sustained idle|two consecutive/i, 'the sustained-idle auto-pause rule'],
+    [/held ~1\.5 s|~1\.5 s/i, 'the sidebar gray hysteresis'],
+    [/auto(?:matic)?[- ]?(?:rest|pause)|pauses? only after sustained/i, 'the automatic idle rest'],
     [/usage\.autoPauseSeconds/i, 'the autoPauseSeconds setting'],
     [/jump(?:s)? back|auto-jump/i, 'the auto-jump behaviour'],
     [/(?:single primary|one primary|primary conversation)/i, 'the single-primary pinning'],
@@ -387,7 +391,11 @@ check('READMEs describe the current product', () => {
     [/30 分钟/, 'the 30-minute continuous cap'],
     [/10 分钟/, 'the 10-minute forced rest'],
     [/仅显示|只显示/, 'the display-only rings'],
-    [/自动休息/, 'the automatic idle rest'],
+    [/(?:中间显示数值|数值)/, 'the in-ring values'],
+    [/(?:每秒平滑走动|每秒走)/, 'the smooth continuous clock'],
+    [/持续空闲|连续两个新鲜采样/, 'the sustained-idle auto-pause rule'],
+    [/(?:约 )?1\.5 秒/, 'the sidebar gray hysteresis'],
+    [/自动休息|自动暂停/, 'the automatic idle rest'],
     [/usage\.autoPauseSeconds/, 'the autoPauseSeconds setting'],
     [/自动跳回|跳回/, 'the auto-jump behaviour'],
     [/(?:唯一.*主会话|主会话（primary）|primary)/, 'the single-primary pinning'],
@@ -453,8 +461,8 @@ check('LICENSE and CHANGELOG', () => {
   if (!changelog.includes('## [Unreleased]')) fail('CHANGELOG.md has no [Unreleased] section')
   const entry = new RegExp(`^## \\[${pkg.version.replace(/\./g, '\\.')}\\] - \\d{4}-\\d{2}-\\d{2}$`, 'm')
   if (!entry.test(changelog)) fail(`CHANGELOG.md needs a dated "[${pkg.version}] - YYYY-MM-DD" entry`)
-  if (pkg.version === '0.4.7' && !changelog.includes('## [0.4.7] - 2026-11-05')) {
-    fail('CHANGELOG.md must date the 0.4.7 entry 2026-11-05')
+  if (pkg.version === '0.4.8' && !changelog.includes('## [0.4.8] - 2026-11-05')) {
+    fail('CHANGELOG.md must date the 0.4.8 entry 2026-11-05')
   }
   for (const heading of ['### Added', '### Changed', '### Fixed']) {
     if (!changelog.includes(heading)) fail(`CHANGELOG.md entry is missing "${heading}"`)

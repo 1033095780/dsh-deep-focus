@@ -151,8 +151,11 @@ test('idle beyond autoPauseSeconds auto-pauses through the sampler path', async 
   env.step(100, BASE + STEP_MS)
   const before = env.tracker.snapshot(env.clock).activeTodayMs
 
-  // Crossing the default 60s idle threshold auto-pauses: counting stops.
+  // One idle sample is not sustained idleness: no pause yet.
   env.step(60_000, BASE + STEP_MS + 1000)
+  assert.equal(env.limits.getView(env.clock).paused, false)
+  // The second consecutive high-idle sample pauses and counting stops.
+  env.step(60_000, env.clock + 1000)
   assert.equal(env.limits.getView(env.clock).paused, true)
   assert.equal(env.limits.getView(env.clock).pausedReason, 'idle')
   env.step(60_000, env.clock + 10_000)
@@ -171,11 +174,13 @@ test('idle beyond autoPauseSeconds auto-pauses through the sampler path', async 
     env.limits.evaluate(env.clock + offset, { idleMs: 186_484, sampleAt: staleIdleAt })
     assert.equal(env.limits.getView(env.clock + offset).paused, false, `tick +${offset}`)
   }
-  // A genuinely fresh high-idle sample after the grace pauses again.
+  // Two genuinely fresh high-idle samples after the grace pause again; the first
+  // one alone only starts a strike.
   env.limits.evaluate(env.clock + 20_000, { idleMs: 186_484, sampleAt: env.clock + 20_000 })
-  assert.equal(env.limits.getView(env.clock + 20_000).paused, true)
+  assert.equal(env.limits.getView(env.clock + 20_000).paused, false)
+  env.limits.evaluate(env.clock + 21_000, { idleMs: 186_484, sampleAt: env.clock + 21_000 })
+  assert.equal(env.limits.getView(env.clock + 21_000).paused, true)
 })
-
 test('a manually paused session still auto-resumes after activity', async () => {
   const env = makeActivity()
   await env.ready

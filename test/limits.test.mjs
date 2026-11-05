@@ -81,98 +81,131 @@ test('idle longer than usage.autoPauseSeconds pauses automatically, exactly once
   // The 1s enforcement tick carries the latest sampler idle value and its sample time.
   let view = env.limits.evaluate(BASE, { idleMs: 59_000, sampleAt: BASE })
   assert.equal(view.paused, false)
+  // A single high-idle sample is not sustained idleness: no pause yet.
   view = env.limits.evaluate(BASE + 1000, { idleMs: 60_000, sampleAt: BASE + 1000 })
+  assert.equal(view.paused, false)
+  // Two consecutive fresh high-idle samples do pause.
+  view = env.limits.evaluate(BASE + 2000, { idleMs: 61_000, sampleAt: BASE + 2000 })
   assert.equal(view.paused, true)
   assert.equal(view.pausedReason, 'idle')
-  assert.equal(view.pausedAt, BASE + 1000)
+  assert.equal(view.pausedAt, BASE + 2000)
   const pausedEvents = env.ring.list().filter((event) => event.kind === EVENT.paused)
   assert.equal(pausedEvents.length, 1)
-  assert.deepEqual(pausedEvents[0].meta, { at: BASE + 1000, reason: 'idle' })
-  // Repeating the idle signal does not emit a second pause.
+  assert.deepEqual(pausedEvents[0].meta, { at: BASE + 2000, reason: 'idle' })
+  // Continuing idle samples do not emit a second pause.
   env.limits.evaluate(BASE + 5000, { idleMs: 90_000, sampleAt: BASE + 5000 })
   assert.equal(env.ring.list().filter((event) => event.kind === EVENT.paused).length, 1)
 })
 
+test('an active sample resets a pending idle strike', () => {
+  const env = makeLimits()
+  env.limits.evaluate(BASE, { idleMs: 65_000, sampleAt: BASE })
+  env.limits.evaluate(BASE + 1000, { idleMs: 100, sampleAt: BASE + 1000 })
+  env.limits.evaluate(BASE + 2000, { idleMs: 65_000, sampleAt: BASE + 2000 })
+  assert.equal(env.limits.getView(BASE + 2000).paused, false)
+  env.limits.evaluate(BASE + 3000, { idleMs: 65_000, sampleAt: BASE + 3000 })
+  assert.equal(env.limits.getView(BASE + 3000).paused, true)
+})
+
+test('a stale high-idle sample never pauses', () => {
+  const env = makeLimits()
+  env.limits.evaluate(BASE, { idleMs: 200_000, sampleAt: BASE - 60_000 })
+  env.limits.evaluate(BASE + 1000, { idleMs: 200_000, sampleAt: BASE - 59_000 })
+  assert.equal(env.limits.getView(BASE + 1000).paused, false)
+})
+
+test('re-reading the same sampler sample does not build a strike', () => {
+  const env = makeLimits()
+  for (const offset of [0, 1000, 2000]) env.limits.evaluate(BASE + offset, { idleMs: 70_000, sampleAt: BASE })
+  assert.equal(env.limits.getView(BASE + 2000).paused, false)
+  env.limits.evaluate(BASE + 3000, { idleMs: 70_000, sampleAt: BASE + 3000 })
+  assert.equal(env.limits.getView(BASE + 3000).paused, true)
+})
 test('a stale idle sample can never re-pause right after a resume', () => {
   const env = makeLimits()
-  // Auto-pause from a very idle machine.
-  env.limits.evaluate(BASE, { idleMs: 186_484, sampleAt: BASE - 5000 })
-  assert.equal(env.limits.getView(BASE).paused, true)
+  // Auto-pause needs two consecutive fresh idle samples.
+  env.limits.evaluate(BASE, { idleMs: 186_484, sampleAt: BASE })
+  assert.equal(env.limits.getView(BASE).paused, false)
+  env.limits.evaluate(BASE + 1000, { idleMs: 186_484, sampleAt: BASE + 1000 })
+  assert.equal(env.limits.getView(BASE + 1000).paused, true)
 
-  // The user resumes (the client's activity detection calls POST /resume).
-  const resumedAt = BASE + 1000
+  const resumedAt = BASE + 2000
   env.setClock(resumedAt)
   const resumed = env.limits.resume(resumedAt)
   assert.equal(resumed.ok, true)
   assert.equal(resumed.view.paused, false)
 
-  // The 1s ticks keep seeing the pre-resume idle sample: stay unpaused.
+  // The 1s ticks keep reading the pre-resume sample: stay unpaused.
   for (const offset of [1000, 2000, 3000]) {
-    env.limits.evaluate(resumedAt + offset, { idleMs: 186_484, sampleAt: BASE - 5000 })
+    env.limits.evaluate(resumedAt + offset, { idleMs: 186_484, sampleAt: BASE + 1000 })
     assert.equal(env.limits.getView(resumedAt + offset).paused, false, `tick +${offset}`)
   }
-  // Even after the resume grace window, the same old sample is not proof of idleness.
-  env.limits.evaluate(resumedAt + 20_000, { idleMs: 186_484, sampleAt: BASE - 5000 })
+  // Even after the resume grace window, the pre-resume sample is not proof of idleness.
+  env.limits.evaluate(resumedAt + 20_000, { idleMs: 186_484, sampleAt: BASE + 1000 })
   assert.equal(env.limits.getView(resumedAt + 20_000).paused, false)
   // A sample taken exactly at the resume is not newer than it either.
   env.limits.evaluate(resumedAt + 21_000, { idleMs: 186_484, sampleAt: resumedAt })
   assert.equal(env.limits.getView(resumedAt + 21_000).paused, false)
 
-  // A genuinely fresh sample with a high idle value pauses again after the grace.
+  // Fresh samples after the grace: the first starts a strike, the second pauses.
   env.limits.evaluate(resumedAt + 30_000, { idleMs: 186_484, sampleAt: resumedAt + 30_000 })
-  const paused = env.limits.getView(resumedAt + 30_000)
+  assert.equal(env.limits.getView(resumedAt + 30_000).paused, false)
+  env.limits.evaluate(resumedAt + 31_000, { idleMs: 186_484, sampleAt: resumedAt + 31_000 })
+  const paused = env.limits.getView(resumedAt + 31_000)
   assert.equal(paused.paused, true)
   assert.equal(paused.pausedReason, 'idle')
 })
-
 test('a resume grace window cannot block a manual pause', () => {
   const env = makeLimits()
-  env.limits.evaluate(BASE, { idleMs: 186_484, sampleAt: BASE - 1000 })
-  env.setClock(BASE + 1000)
-  env.limits.resume(BASE + 1000)
+  env.limits.evaluate(BASE, { idleMs: 186_484, sampleAt: BASE })
+  env.limits.evaluate(BASE + 1000, { idleMs: 186_484, sampleAt: BASE + 1000 })
+  env.setClock(BASE + 2000)
+  env.limits.resume(BASE + 2000)
   // Manual pauses are immediate and ignore the grace.
-  const manual = env.limits.pause(BASE + 1100)
+  const manual = env.limits.pause(BASE + 2100)
   assert.equal(manual.ok, true)
   assert.equal(manual.view.paused, true)
   assert.equal(manual.view.pausedReason, 'manual')
 })
-
 test('the sampler path also auto-pauses, and activity resumes with a reason', () => {
   const env = makeLimits()
   env.limits.applySample({ idleMs: 60_000 }, BASE)
-  assert.equal(env.limits.getView(BASE).paused, true)
-  assert.equal(env.limits.getView(BASE).pausedReason, 'idle')
+  assert.equal(env.limits.getView(BASE).paused, false)
+  env.limits.applySample({ idleMs: 60_000 }, BASE + 1000)
+  assert.equal(env.limits.getView(BASE + 1000).paused, true)
+  assert.equal(env.limits.getView(BASE + 1000).pausedReason, 'idle')
   // Activity inside the grace window is ignored.
-  env.limits.applySample({ idleMs: 100 }, BASE + 500)
-  assert.equal(env.limits.getView(BASE).paused, true)
+  env.limits.applySample({ idleMs: 100 }, BASE + 1500)
+  assert.equal(env.limits.getView(BASE + 1500).paused, true)
   // Activity after the grace window resumes and clears the reason.
-  env.limits.applySample({ idleMs: 100 }, BASE + PAUSE_ACTIVITY_GRACE_MS + 100)
-  const view = env.limits.getView(BASE)
+  env.limits.applySample({ idleMs: 100 }, BASE + 3000)
+  const view = env.limits.getView(BASE + 3000)
   assert.equal(view.paused, false)
   assert.equal(view.pausedReason, null)
   assert.equal(env.ring.list().at(-1).kind, EVENT.resumed)
   assert.equal(env.ring.list().at(-1).meta.reason, 'activity')
 })
-
 test('usage.autoPauseSeconds 0 disables the automatic pause', () => {
   const env = makeLimits({ settings: { usage: { autoPauseSeconds: 0 } } })
-  const view = env.limits.evaluate(BASE, { idleMs: 10 * 60_000 })
-  assert.equal(view.paused, false)
-  env.limits.applySample({ idleMs: 10 * 60_000 }, BASE + 1000)
+  env.limits.evaluate(BASE, { idleMs: 10 * 60_000, sampleAt: BASE })
+  env.limits.evaluate(BASE + 1000, { idleMs: 10 * 60_000, sampleAt: BASE + 1000 })
   assert.equal(env.limits.getView(BASE + 1000).paused, false)
+  env.limits.applySample({ idleMs: 10 * 60_000 }, BASE + 2000)
+  env.limits.applySample({ idleMs: 10 * 60_000 }, BASE + 3000)
+  assert.equal(env.limits.getView(BASE + 3000).paused, false)
 })
-
 test('auto-pause never fires during a rest or while the assistant is off', () => {
   const resting = makeLimits()
   resting.limits.startRest(BASE)
-  resting.limits.evaluate(BASE + 1000, { idleMs: 10 * 60_000 })
-  assert.equal(resting.limits.getView(BASE + 1000).paused, false)
+  resting.limits.evaluate(BASE + 1000, { idleMs: 10 * 60_000, sampleAt: BASE + 1000 })
+  resting.limits.evaluate(BASE + 2000, { idleMs: 10 * 60_000, sampleAt: BASE + 2000 })
+  assert.equal(resting.limits.getView(BASE + 2000).paused, false)
 
   const off = makeLimits({ settings: { assistant: { enabled: false } } })
-  off.limits.evaluate(BASE, { idleMs: 10 * 60_000 })
-  assert.equal(off.limits.getView(BASE).paused, false)
+  off.limits.evaluate(BASE, { idleMs: 10 * 60_000, sampleAt: BASE })
+  off.limits.evaluate(BASE + 1000, { idleMs: 10 * 60_000, sampleAt: BASE + 1000 })
+  assert.equal(off.limits.getView(BASE + 1000).paused, false)
 })
-
 test('a pause resumes only after the grace window and real activity', () => {
   const env = makeLimits()
   env.limits.pause(BASE)

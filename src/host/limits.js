@@ -39,6 +39,10 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
   // latest resume, and a short grace window waits for the sampler to catch up.
   let lastResumeAt = null
   let resumeGraceUntil = 0
+  // Auto-pause debounce: consecutive fresh idle samples, and which sample was
+  // already consumed (the 1s tick re-reads the same sampler sample many times).
+  let idleStrike = 0
+  let lastIdleSampleAt = null
   let lastAssistantEnabled = settings.get().assistant.enabled === true
 
   function persist() {
@@ -77,6 +81,7 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
 
   function endRest(early, reason, extra = {}) {
     state = { ...state, resting: false, restUntil: null }
+    idleStrike = 0
     tracker.resetContinuous()
     ring.emit(EVENT.restFinished, { early: early === true, reason, ...extra })
     persist()
@@ -94,6 +99,7 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
       pausedReason: null,
     }
     restDueEmitted = false
+    idleStrike = 0
     tracker.resetContinuous()
     ring.emit(EVENT.restStarted, { minutes: restMinutes, reason })
     persist()
@@ -105,6 +111,8 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
     // until the sampler has had time to produce a newer one.
     lastResumeAt = at
     resumeGraceUntil = at + resumeGraceMs()
+    idleStrike = 0
+    lastIdleSampleAt = at
     ring.emit(EVENT.resumed, { reason })
     persist()
     return getView(at)
@@ -116,19 +124,31 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
     return Math.max(2 * sampleSeconds * 1000, RESUME_GRACE_MIN_MS)
   }
 
+  /** A sample older than this no longer describes the current machine state. */
+  function sampleFreshnessMs() {
+    const usage = settings.get().usage
+    const sampleSeconds = Number.isFinite(usage.sampleSeconds) ? usage.sampleSeconds : 5
+    return Math.max(2 * sampleSeconds * 1000, 10_000)
+  }
+
   /** Enter the paused state; `reason` is 'manual' (widget) or 'idle' (auto-pause). */
   function pauseInternal(at, reason) {
     state = { ...state, paused: true, pausedAt: at, pausedReason: reason }
     lastActivityAt = null
+    idleStrike = 0
+    lastIdleSampleAt = at
     ring.emit(EVENT.paused, { at, reason })
     persist()
     return getView(at)
   }
 
   /**
-   * Auto-pause once the machine has been idle long enough (0 disables it).
+   * Auto-pause on *sustained* idleness only (0 disables it).
+   * A single high-idle sample is not enough (that is what made the overlay flash
+   * while the user was actually working); it takes two consecutive fresh samples,
+   * and any sample showing real activity resets the strike immediately.
    * `sampleAt` is when the idle value was sampled: a value older than the last
-   * resume must never pause again, otherwise every resume flaps straight back.
+   * resume must never pause again, and one the 1s tick re-reads counts once.
    */
   function maybeAutoPause(idleMs, at, sampleAt) {
     if (state.paused || state.resting) return
@@ -136,11 +156,32 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
     if (s.assistant.enabled !== true) return
     const seconds = Number.isFinite(s.usage.autoPauseSeconds) ? s.usage.autoPauseSeconds : 60
     if (seconds <= 0) return
-    if (!Number.isFinite(idleMs) || idleMs < seconds * 1000) return
-    if (at < resumeGraceUntil) return
-    if (!Number.isFinite(sampleAt)) return
+    if (!Number.isFinite(sampleAt) || !Number.isFinite(at)) return
+    // Stale (or impossible future) samples never prove idleness.
+    if (at - sampleAt > sampleFreshnessMs()) return
+    if (sampleAt > at + 1000) return
+    if (lastIdleSampleAt !== null && sampleAt <= lastIdleSampleAt) return
     if (lastResumeAt !== null && sampleAt <= lastResumeAt) return
-    pauseInternal(at, 'idle')
+    lastIdleSampleAt = sampleAt
+
+    const usage = s.usage
+    const idleThresholdMs = Number.isFinite(usage.idleThresholdSeconds) ? usage.idleThresholdSeconds * 1000 : 60_000
+    // Activity hysteresis: a fresh sample below the usage idle threshold proves the
+    // user is back, so any pending strike is discarded right away.
+    if (!Number.isFinite(idleMs) || (idleThresholdMs > 0 && idleMs < idleThresholdMs)) {
+      idleStrike = 0
+      return
+    }
+    if (idleMs < seconds * 1000) {
+      idleStrike = 0
+      return
+    }
+    if (at < resumeGraceUntil) {
+      idleStrike = 0
+      return
+    }
+    idleStrike += 1
+    if (idleStrike >= 2) pauseInternal(at, 'idle')
   }
 
   function getView(at = now()) {
@@ -296,6 +337,8 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
       const dayKey = localDayKey(at)
       if (document === null || document === undefined || typeof document !== 'object') {
         state = emptyLimitsState(dayKey)
+        idleStrike = 0
+        lastIdleSampleAt = null
         lastAssistantEnabled = settings.get().assistant.enabled === true
         return state
       }
@@ -325,6 +368,8 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
       lastActivityAt = null
       lastResumeAt = null
       resumeGraceUntil = 0
+      idleStrike = 0
+      lastIdleSampleAt = null
       lastAssistantEnabled = settings.get().assistant.enabled === true
       return state
     },
@@ -382,6 +427,8 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
       if (!next) {
         if (state.resting) endRest(true, 'assistant-off')
         state = { ...state, dailyLocked: false, paused: false, pausedAt: null, pausedReason: null }
+        idleStrike = 0
+        lastIdleSampleAt = null
         restDueEmitted = false
         persist()
         ring.emit(EVENT.assistantOff, {})

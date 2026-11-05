@@ -70,6 +70,8 @@ window.__ModuleLoader__.load({
       zh: {
         'rings.aria': '今日已用 {today}，连续 {continuous}',
         'rings.today': '今日',
+        'rings.minUnit': '分',
+        'rings.continuousUnit': '',
         'rings.continuous': '连续',
         'rings.busy': '正在暂停…',
         'rings.summary': '今日 {today} / 连续 {continuous}',
@@ -191,6 +193,8 @@ window.__ModuleLoader__.load({
       en: {
         'rings.aria': 'Used {today} today, continuous {continuous}',
         'rings.today': 'Today',
+        'rings.minUnit': 'min',
+        'rings.continuousUnit': '',
         'rings.continuous': 'Continuous',
         'rings.busy': 'Pausing…',
         'rings.summary': '{today} today / {continuous} continuous',
@@ -722,9 +726,6 @@ window.__ModuleLoader__.load({
       '.df-rings-layer{position:absolute;top:min(calc(var(--dsh-frame-top-clearance, 0px) + 96px), calc(100% - 150px));right:16px;z-index:75;display:flex;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none}',
       '@media (max-height: 540px){.df-rings-layer{top:calc(var(--dsh-frame-top-clearance, 0px) + 56px)}}',
       '.df-rings{position:static;display:flex;align-items:center;gap:10px;box-sizing:border-box;padding:9px 11px;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent);backdrop-filter:blur(8px);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:11px;line-height:1.2;cursor:default;pointer-events:auto;box-shadow:0 8px 24px color-mix(in srgb, var(--dsw-alias-bg-overlay) 40%, transparent)}',
-      '.df-rings:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}',
-      '.df-rings[data-busy="true"]{opacity:.7;cursor:default}',
-      '.df-rings[data-paused="true"]{border-color:var(--dsw-alias-state-warn-primary)}',
       '.df-ring{position:relative;width:34px;height:34px;flex:0 0 auto}',
       '.df-ring svg{display:block;width:34px;height:34px;transform:rotate(-90deg)}',
       '.df-ring-track{stroke:var(--dsw-alias-border-l1);fill:none}',
@@ -733,9 +734,11 @@ window.__ModuleLoader__.load({
       '.df-ring[data-kind="continuous"] .df-ring-value{stroke:var(--dsw-alias-state-success-primary)}',
       '.df-ring[data-tone="warn"] .df-ring-value{stroke:var(--dsw-alias-state-warn-primary)}',
       '.df-ring[data-tone="danger"] .df-ring-value{stroke:var(--dsw-alias-state-error-primary)}',
-      '.df-rings-text{display:flex;flex-direction:column;gap:1px;white-space:nowrap;max-width:150px}',
-      '.df-rings-text b{font-weight:600;font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis}',
-      '.df-rings-text span{color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis}',
+      '.df-ring-box{position:relative;display:flex;flex-direction:column;align-items:center;gap:2px}',
+      '.df-ring-center{position:absolute;top:0;left:0;width:34px;height:34px;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;line-height:1}',
+      '.df-ring-number{font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.2px}',
+      '.df-ring-unit{font-size:8px;line-height:1;margin-top:1px;color:var(--dsw-alias-label-secondary)}',
+      '.df-ring-caption{font-size:9px;line-height:1.1;color:var(--dsw-alias-label-secondary);white-space:nowrap}',
       '.df-veil-layer{position:absolute;inset:0;z-index:116;pointer-events:none}',
       '.df-veil{position:absolute;top:0;right:0;bottom:0;left:0;background:color-mix(in srgb, var(--dsw-alias-bg-overlay) 16%, transparent);backdrop-filter:grayscale(.35);pointer-events:none}',
       '.df-veil-hint{position:absolute;top:calc(var(--dsh-frame-top-clearance, 0px) + 64px);left:50%;transform:translateX(-50%);box-sizing:border-box;max-width:calc(100vw - 32px);padding:6px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:999px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:12px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;box-shadow:0 6px 18px color-mix(in srgb, var(--dsw-alias-bg-overlay) 40%, transparent)}',
@@ -918,6 +921,7 @@ window.__ModuleLoader__.load({
         let snapshot = {
           status: 'boot', // boot | live | hidden | disabled
           state: null,
+          stateUpdatedAt: 0,
           consecutiveFailures: 0,
           error: false,
           toasts: [],
@@ -1082,6 +1086,7 @@ window.__ModuleLoader__.load({
             error: false,
             consecutiveFailures: 0,
             clockOffset: clockOffset,
+            stateUpdatedAt: Date.now(),
           })
           ingestEvents(next.events, next, recovering)
           emit()
@@ -1491,15 +1496,51 @@ window.__ModuleLoader__.load({
         let clientRunningIds = null
         let clientCurrentId = null
         let lastBlockedAt = 0
+        let lastOwner = null
+        let emptySince = 0
+        let ownerClearTimer = 0
+        const OWNER_CLEAR_MS = 1800
+
+        function clearOwnerHysteresis() {
+          if (ownerClearTimer) {
+            clearTimeout(ownerClearTimer)
+            ownerClearTimer = 0
+          }
+          lastOwner = null
+          emptySince = 0
+        }
+
+        function scheduleOwnerClear() {
+          if (ownerClearTimer) return
+          ownerClearTimer = setTimeout(function () {
+            ownerClearTimer = 0
+            emptySince = 0
+            lastOwner = null
+            try {
+              sync()
+            } catch (error) {
+              /* ignored */
+            }
+          }, OWNER_CLEAR_MS)
+        }
 
         function activeState() {
           const current = store.get()
-          if (current.status !== 'live') return null
+          if (current.status !== 'live') {
+            clearOwnerHysteresis()
+            return null
+          }
           const state = current.state
           if (!state) return null
-          if (!assistantActive(state)) return null
+          if (!assistantActive(state)) {
+            clearOwnerHysteresis()
+            return null
+          }
           const assistant = (state.settings && state.settings.assistant) || {}
-          if (assistant.soloSession === false || assistant.hideOtherSessions === false) return null
+          if (assistant.soloSession === false || assistant.hideOtherSessions === false) {
+            clearOwnerHysteresis()
+            return null
+          }
           let ids = null
           if (clientRunningIds !== null) {
             ids = clientRunningIds
@@ -1512,19 +1553,42 @@ window.__ModuleLoader__.load({
               })
             : []
 
-          // The client running set is authoritative: nothing running means no solo
-          // mode even if the Host state is momentarily stale.
-          if (clientRunningIds !== null && clean.length === 0) return null
-
           // v0.4.6: exactly ONE owner. The Host's solo.primary wins; otherwise a
           // single running root, then the visible conversation if it is running.
           const solo = state.solo && typeof state.solo === 'object' ? state.solo : null
           const hostPrimary = solo ? solo.primary || solo.primarySession : null
+          const clientEmpty = clientRunningIds !== null && clean.length === 0
           let owner = null
-          if (typeof hostPrimary === 'string' && hostPrimary.length > 0) owner = hostPrimary
-          else if (clean.length === 1) owner = clean[0]
-          else if (clientCurrentId !== null && clean.indexOf(clientCurrentId) >= 0) owner = clientCurrentId
-          return owner === null ? null : [owner]
+          if (!clientEmpty) {
+            if (typeof hostPrimary === 'string' && hostPrimary.length > 0) owner = hostPrimary
+            else if (clean.length === 1) owner = clean[0]
+            else if (clientCurrentId !== null && clean.indexOf(clientCurrentId) >= 0) owner = clientCurrentId
+          }
+
+          if (owner !== null) {
+            lastOwner = owner
+            emptySince = 0
+            if (ownerClearTimer) {
+              clearTimeout(ownerClearTimer)
+              ownerClearTimer = 0
+            }
+            return [owner]
+          }
+
+          // Hysteresis applies only to the running set emptying: one transient
+          // empty snapshot (poll/hook hiccup) must not make the sidebar usable
+          // again. Keep the last owner for ~1.8s before the hard reset.
+          if (clientEmpty && lastOwner !== null) {
+            if (emptySince === 0) emptySince = Date.now()
+            if (Date.now() - emptySince < OWNER_CLEAR_MS) {
+              scheduleOwnerClear()
+              return [lastOwner]
+            }
+            clearOwnerHysteresis()
+          } else if (!clientEmpty) {
+            clearOwnerHysteresis()
+          }
+          return null
         }
 
         function stateNow() {
@@ -1764,6 +1828,7 @@ window.__ModuleLoader__.load({
 
         function stop() {
           running = false
+          clearOwnerHysteresis()
           try {
             document.removeEventListener('click', onDocumentClick, true)
             document.removeEventListener('keydown', onDocumentKeyDown, true)
@@ -2294,6 +2359,21 @@ window.__ModuleLoader__.load({
 
       /* ── Floating dual-ring widget (top-right) + pause overlay ── */
 
+      /** Short continuous clock for the ring centre: mm:ss below an hour, h:mm above. */
+      function fmtRingClock(ms) {
+        const total = Math.max(0, Math.floor(numberOr(ms, 0) / 1000))
+        const hours = Math.floor(total / 3600)
+        const minutes = Math.floor((total % 3600) / 60)
+        const seconds = total % 60
+        if (hours > 0) return hours + ':' + String(minutes).padStart(2, '0')
+        return String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0')
+      }
+
+      /** Today's used minutes, shown as the whole number inside the daily ring. */
+      function fmtRingMinutes(ms) {
+        return String(Math.max(0, Math.floor(numberOr(ms, 0) / 60000)))
+      }
+
       function Ring(props) {
         const radius = 14
         const circumference = 2 * Math.PI * radius
@@ -2411,13 +2491,46 @@ window.__ModuleLoader__.load({
         const limit = (state && state.limit) || {}
         const settings = (state && state.settings) || {}
         const assistantCfg = settings.assistant || {}
+        const alertsCfg = settings.alerts || {}
         const assistantOn = limit.assistantEnabled !== false && assistantCfg.enabled !== false
+
+        // Smooth continuous clock: the Host samples every few seconds, so advance
+        // the displayed value locally once per second while the value would really
+        // grow (live, not paused/resting/locked, user present). A new state resets
+        // the base, which keeps the display calibrated.
+        const clockActive =
+          store.isVisible() &&
+          assistantOn &&
+          assistantCfg.showRings !== false &&
+          limit.paused !== true &&
+          limit.resting !== true &&
+          limit.dailyLocked !== true &&
+          !awayTracker.isAway(alertsCfg, state || null)
+        const tickPair = React.useState(0)
+        const tickAt = tickPair[0]
+        const setTickAt = tickPair[1]
+        React.useEffect(
+          function () {
+            if (!clockActive) return undefined
+            const timer = setInterval(function () {
+              setTickAt(Date.now())
+            }, 1000)
+            return function () {
+              clearInterval(timer)
+            }
+          },
+          [clockActive],
+        )
+
         if (!store.isVisible() || !assistantOn || assistantCfg.showRings === false) return null
 
         const dailyLimit = Math.max(0, numberOr(limit.dailyLimitMs, 0))
         const dailyUsed = Math.max(0, numberOr(limit.dailyUsedMs, 0))
         const continuousLimit = Math.max(0, numberOr(limit.continuousLimitMs, 0))
-        const continuousUsed = Math.max(0, numberOr(limit.continuousUsedMs, 0))
+        const continuousBase = Math.max(0, numberOr(limit.continuousUsedMs, 0))
+        const stateAt = numberOr(snapshot.stateUpdatedAt, 0)
+        const elapsed = clockActive && tickAt > 0 && stateAt > 0 ? Math.max(0, tickAt - stateAt) : 0
+        const continuousUsed = continuousLimit > 0 ? Math.min(continuousLimit, continuousBase + elapsed) : continuousBase + elapsed
         const dailyRatio = progressRatio(dailyUsed, dailyLimit)
         const continuousRatio = progressRatio(continuousUsed, continuousLimit)
         const dailyTone = dailyLimit > 0 && dailyRatio >= 1 ? 'danger' : dailyLimit > 0 && dailyRatio >= 0.9 ? 'warn' : 'normal'
@@ -2427,12 +2540,11 @@ window.__ModuleLoader__.load({
             : limit.restDue === true || (continuousLimit > 0 && continuousRatio >= 0.8)
               ? 'warn'
               : 'normal'
-        const todayText = t('rings.today') + ' ' + fmtDuration(t, dailyUsed)
-        const continuousText =
-          continuousLimit > 0 ? t('rings.continuous') + ' ' + fmtClock(continuousUsed) : t('rings.continuous') + ' —'
+        const todayMinutes = fmtRingMinutes(dailyUsed)
+        const continuousClock = continuousLimit > 0 ? fmtRingClock(continuousUsed) : '—'
         const summary = t('rings.summary', {
           today: fmtDuration(t, dailyUsed),
-          continuous: continuousLimit > 0 ? fmtClock(continuousUsed) : '—',
+          continuous: continuousLimit > 0 ? fmtRingClock(continuousUsed) : '—',
         })
 
         return h(
@@ -2464,9 +2576,30 @@ window.__ModuleLoader__.load({
                   cursor: 'default',
                 },
               },
-              h(Ring, { kind: 'daily', used: dailyUsed, limit: dailyLimit, tone: dailyTone }),
-              h(Ring, { kind: 'continuous', used: continuousUsed, limit: continuousLimit, tone: continuousTone }),
-              h('span', { className: 'df-rings-text' }, h('b', null, todayText), h('span', null, continuousText)),
+              h(
+                'span',
+                { className: 'df-ring-box' },
+                h(Ring, { kind: 'daily', used: dailyUsed, limit: dailyLimit, tone: dailyTone }),
+                h(
+                  'span',
+                  { className: 'df-ring-center' },
+                  h('b', { className: 'df-ring-number' }, todayMinutes),
+                  h('span', { className: 'df-ring-unit' }, t('rings.minUnit')),
+                ),
+                h('span', { className: 'df-ring-caption' }, t('rings.today')),
+              ),
+              h(
+                'span',
+                { className: 'df-ring-box' },
+                h(Ring, { kind: 'continuous', used: continuousUsed, limit: continuousLimit, tone: continuousTone }),
+                h(
+                  'span',
+                  { className: 'df-ring-center' },
+                  h('b', { className: 'df-ring-number' }, continuousClock),
+                  h('span', { className: 'df-ring-unit' }, t('rings.continuousUnit')),
+                ),
+                h('span', { className: 'df-ring-caption' }, t('rings.continuous')),
+              ),
             ),
           ),
         )
@@ -2598,10 +2731,32 @@ window.__ModuleLoader__.load({
         const snapshot = useStore(true)
         const state = snapshot.state
         const limit = state && state.limit
-        const paused = Boolean(store.isVisible() && limit && limit.paused === true)
+        const pausedRaw = Boolean(store.isVisible() && limit && limit.paused === true)
+        const visiblePair = React.useState(false)
+        const pausedVisible = visiblePair[0]
+        const setPausedVisible = visiblePair[1]
+        const paused = pausedRaw && pausedVisible
         const resumingPair = React.useState(false)
         const resuming = resumingPair[0]
         const setResuming = resumingPair[1]
+
+        // Belt and braces: only show the pause card after paused stays true for
+        // ~600ms (the Host debounces too); hide immediately when it turns false.
+        React.useEffect(
+          function () {
+            if (!pausedRaw) {
+              setPausedVisible(false)
+              return undefined
+            }
+            const timer = setTimeout(function () {
+              setPausedVisible(true)
+            }, 600)
+            return function () {
+              clearTimeout(timer)
+            }
+          },
+          [pausedRaw],
+        )
 
         React.useEffect(
           function () {

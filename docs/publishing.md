@@ -75,10 +75,13 @@ Only needed for registry-based installs (`dsh plugin add dsh-deep-focus`).
 - [ ] `npm view dsh-deep-focus version` (npm route) or `dsh plugin add <repo>` works
       from a clean profile.
 - [ ] Plugins page shows the icon plus localized title/description.
-- [ ] Assistant panel opens; rings show today/continuous progress and are **not
-      clickable**.
+- [ ] Assistant panel opens; rings show today/continuous progress **with the value
+      inside each ring**, the continuous clock ticks every second, and the widget is
+      not clickable.
 - [ ] Idling for `usage.autoPauseSeconds` shows the shared today-usage card with
-      「已暂停计时」; input resumes. There is no separate gray-only pause layer.
+      「已暂停计时」 only after sustained idle (a single stale sample or a brief pause
+      in input must not flash it); input resumes. There is no separate gray-only
+      pause layer.
 - [ ] Rest screen and daily overlay both show the **same today-usage card**; daily
       overlay has only 「再使用 20 分钟」 and 「跳过」 (skip does not extend). With DSH
       hidden, hitting the cap tries `window.focus()` + one system notification (best
@@ -90,7 +93,8 @@ Only needed for registry-based installs (`dsh plugin add dsh-deep-focus`).
       「专注时只允许一个对话」 switch); save/discard is right-aligned.
 - [ ] One-conversation mode jumps back to the running conversation; other rows are
       grayed and not clickable; nothing is hidden; the switch turns the behavior
-      off and on again.
+      off and on again. When the running set empties, the gray state is held ~1.5 s
+      before restoring (no flicker on transient empty polls).
 - [ ] Away chime: finish a task in your own conversation while unfocused/idle past
       `alerts.awayIdleSeconds` — it repeats until input, capped at ~2 minutes.
       Turn the same check on a subagent/teammate turn: it must stay silent.

@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.4.8] - 2026-11-05
+
+Patch release. Versions 0.1.0–0.4.7 were never published.
+
+### Changed
+
+- **Floating rings show their values**: each ring now has its number in the middle
+  (today: minutes used; continuous: mm:ss), and the continuous clock is interpolated
+  locally so it ticks smoothly every second instead of stepping with the ~5 s
+  sampler.
+- Sidebar graying is held for ~1.5 s after the running set becomes empty before it
+  restores, so transient empty polls no longer make rows flicker back to normal.
+
+### Fixed
+
+- **Auto-pause no longer flashes**: the host enters the pause state only after
+  sustained idle (two consecutive fresh samples), any active sample resets the
+  counter, stale samples are ignored, and the pause card appears only once the
+  state has held ~0.6 s. The shared card appears only when the pause is real.
+
 ## [0.4.7] - 2026-11-05
 
 Patch release. Versions 0.1.0–0.4.6 were never published.

@@ -77,10 +77,14 @@ never accumulate. One aggregate line per minute: `{ t, activeMs, apps: { key: ms
   `extendedUntil`, increments `extendCountToday` and clears the lock; only a
   positive `dailyExtendLimit` can be exhausted.
 - **Pause:** `POST /pause` stops counting (`paused`, `pausedAt`, `pausedReason:
-  "manual"`). The Host also enters it automatically when the machine has been idle
-  for `autoPauseSeconds` (`pausedReason: "idle"`, `paused` event). Activity after
-  the 1.5 s grace resumes it (`resumed`); `POST /resume` force-resumes. In the UI
-  only the automatic path is used — the rings are display-only.
+  "manual"`). The Host also enters it automatically only after **sustained idle** —
+  at least two consecutive fresh samples at/after `autoPauseSeconds`, with any
+  active sample resetting the streak and stale samples (older than the last
+  resume) ignored — so a single high sample cannot flash the overlay
+  (`pausedReason: "idle"`, `paused` event). Activity after the 1.5 s grace resumes
+  it (`resumed`); `POST /resume` force-resumes. In the UI only the automatic path
+  is used — the rings are display-only — and the pause card is shown only after the
+  paused state has held ~0.6 s.
 - **Rollover:** at local midnight the lock, extension window/count and due flags
   reset. Turning the assistant off ends a rest and clears lock/pause
   (`assistant-off`).
@@ -130,7 +134,7 @@ newest running root — so exactly one conversation is pinned.
 | --- | --- | --- |
 | `sidebar.panellist` | `focus-assistant` | assistant entry below Plugins |
 | `main` (keyed) | `focus-assistant` | overview, 7-day trend, 8-field settings (incl. the one-conversation switch), enable/pause, right-aligned save row |
-| `shell.overlay` | `dsh-deep-focus-rings` | display-only two-ring widget (not clickable) |
+| `shell.overlay` | `dsh-deep-focus-rings` | display-only two-ring widget (not clickable); each ring shows its value inside (today minutes, continuous mm:ss) and the continuous clock is interpolated to tick once per second |
 | `shell.overlay` | `dsh-deep-focus-pause-gray` | auto/manual pause: the shared today-usage card with 「已暂停计时 · 动一下鼠标或键盘继续」 (no actions) |
 | `shell.overlay` | `dsh-deep-focus-rest` | forced-rest screen using the shared today-usage card + 「跳过休息」 |
 | `shell.overlay` | `dsh-deep-focus-daily-lock` | daily overlay on the same card: 「再使用 20 分钟」/「跳过」 |
@@ -148,7 +152,8 @@ One conversation at a time is style-only and pins to **one primary conversation*
 the host records each root session's last turn start and exposes the newest one as
 `solo.primary`. The client uses only that session as the owner (fallbacks: the
 single running root, then the visible running conversation; no owner → nothing is
-grayed). It auto-jumps once to the primary, adds one `<style>` +
+grayed). To avoid flicker it keeps the owner/gray state for ~1.5 s after the
+running set becomes empty and ignores transient empty snapshots. It auto-jumps once to the primary, adds one `<style>` +
 `data-dsh-focus-solo` attribute dimming **all** other session and workspace rows
 (`opacity`, no hiding) and blocks their clicks with a gentle reminder — including
 other running conversations; a capture-phase click/keydown guard covers keyboard
