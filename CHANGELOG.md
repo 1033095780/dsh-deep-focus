@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.4.12] - 2026-11-05
+
+Patch release. Versions 0.1.0–0.4.9 were never published.
+
+### Changed
+
+- The floating rings' captions are no longer too terse: 「今日已用」/「连续使用」
+  (en: "Today used"/"Continuous use"), slightly larger type, and the aria summary
+  now reads 「今日已用 20 分钟，连续使用 01:16」 so the widget is self-explanatory.
+
 ## [0.4.11] - 2026-11-05
 
 Patch release. Versions 0.1.0–0.4.9 were never published.
