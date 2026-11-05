@@ -68,11 +68,9 @@ window.__ModuleLoader__.load({
     const NS = 'deepFocus'
     const I18N = {
       zh: {
-        'rings.aria': '今日已用 {today}，连续 {continuous}，点击暂停计时',
+        'rings.aria': '今日已用 {today}，连续 {continuous}',
         'rings.today': '今日',
         'rings.continuous': '连续',
-        'rings.pause': '暂停计时',
-        'rings.paused': '已暂停',
         'rings.busy': '正在暂停…',
         'rings.summary': '今日 {today} / 连续 {continuous}',
         'pause.title': '已暂停计时',
@@ -127,7 +125,7 @@ window.__ModuleLoader__.load({
         'hub.todayAppsTotal': '今日应用合计 {time}',
         'group.limits': '使用限制',
         'group.assistant': '会话显示',
-        'group.alerts': '提醒与音效',
+        'group.alerts': '提示与统计',
         'group.usage': '统计与数据',
         'field.dailyMinutes': '每日使用上限',
         'field.dailyMinutes.hint': '分钟，0 = 不限',
@@ -160,7 +158,7 @@ window.__ModuleLoader__.load({
         'field.sampleSeconds.hint': '秒，3–30',
         'field.idleThresholdSeconds': '空闲判定阈值',
         'field.idleThresholdSeconds.hint': '秒，0 = 关闭',
-        'field.autoPauseSeconds': '空闲多久自动暂停',
+        'field.autoPauseSeconds': '空闲自动休息',
         'field.autoPauseSeconds.hint': '秒，0 = 关闭',
         'field.retentionDays': '数据保留',
         'field.retentionDays.hint': '天',
@@ -187,6 +185,7 @@ window.__ModuleLoader__.load({
         'daily.skipHint': '仅隐藏今日提醒（best effort），不影响统计与限制。',
         'daily.error': '操作失败，请稍后重试',
         'daily.used': '今日已用',
+        'today.total': '今日总计',
         'rest.title': '休息中',
         'rest.body': '深呼吸，站起来走走，看看远处。',
         'rest.auto': '休息结束后会自动恢复。',
@@ -229,11 +228,9 @@ window.__ModuleLoader__.load({
         'wd.6': '周六',
       },
       en: {
-        'rings.aria': 'Used {today} today, continuous {continuous}. Click to pause tracking.',
+        'rings.aria': 'Used {today} today, continuous {continuous}',
         'rings.today': 'Today',
         'rings.continuous': 'Continuous',
-        'rings.pause': 'Pause tracking',
-        'rings.paused': 'Paused',
         'rings.busy': 'Pausing…',
         'rings.summary': '{today} today / {continuous} continuous',
         'pause.title': 'Tracking paused',
@@ -288,7 +285,7 @@ window.__ModuleLoader__.load({
         'hub.todayAppsTotal': 'App time today {time}',
         'group.limits': 'Usage limits',
         'group.assistant': 'Conversation display',
-        'group.alerts': 'Alerts & sound',
+        'group.alerts': 'Alerts & tracking',
         'group.usage': 'Tracking & data',
         'field.dailyMinutes': 'Daily usage limit',
         'field.dailyMinutes.hint': 'minutes, 0 = unlimited',
@@ -321,7 +318,7 @@ window.__ModuleLoader__.load({
         'field.sampleSeconds.hint': 'seconds, 3–30',
         'field.idleThresholdSeconds': 'Idle threshold',
         'field.idleThresholdSeconds.hint': 'seconds, 0 disables',
-        'field.autoPauseSeconds': 'Auto-pause after idle',
+        'field.autoPauseSeconds': 'Auto-rest after idle',
         'field.autoPauseSeconds.hint': 'seconds, 0 = off',
         'field.retentionDays': 'Keep history',
         'field.retentionDays.hint': 'days',
@@ -348,6 +345,7 @@ window.__ModuleLoader__.load({
         'daily.skipHint': 'Only hides this reminder for today (best effort); tracking and limits are unchanged.',
         'daily.error': 'Something went wrong — try again shortly',
         'daily.used': 'Used today',
+        'today.total': 'Total today',
         'rest.title': 'Resting',
         'rest.body': 'Breathe slowly, stand up, and look into the distance.',
         'rest.auto': 'It clears automatically when the rest ends.',
@@ -813,8 +811,7 @@ window.__ModuleLoader__.load({
       '.df-rest-card{box-sizing:border-box;display:flex;flex-direction:column;align-items:center;gap:14px;padding:28px 32px;border:1px solid var(--dsw-alias-border-l1);border-radius:20px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 24px 60px color-mix(in srgb, var(--dsw-alias-bg-overlay) 70%, transparent)}',
       '.df-rings-layer{position:absolute;top:min(calc(var(--dsh-frame-top-clearance, 0px) + 96px), calc(100% - 150px));right:16px;z-index:75;display:flex;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none}',
       '@media (max-height: 540px){.df-rings-layer{top:calc(var(--dsh-frame-top-clearance, 0px) + 56px)}}',
-      '.df-rings{position:static;display:flex;align-items:center;gap:10px;box-sizing:border-box;padding:9px 11px;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent);backdrop-filter:blur(8px);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:11px;line-height:1.2;cursor:pointer;pointer-events:auto;box-shadow:0 8px 24px color-mix(in srgb, var(--dsw-alias-bg-overlay) 40%, transparent);transition:border-color .16s ease,opacity .16s ease}',
-      '.df-rings:hover{border-color:var(--dsw-alias-border-l2)}',
+      '.df-rings{position:static;display:flex;align-items:center;gap:10px;box-sizing:border-box;padding:9px 11px;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent);backdrop-filter:blur(8px);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:11px;line-height:1.2;cursor:default;pointer-events:auto;box-shadow:0 8px 24px color-mix(in srgb, var(--dsw-alias-bg-overlay) 40%, transparent)}',
       '.df-rings:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}',
       '.df-rings[data-busy="true"]{opacity:.7;cursor:default}',
       '.df-rings[data-paused="true"]{border-color:var(--dsw-alias-state-warn-primary)}',
@@ -899,7 +896,9 @@ window.__ModuleLoader__.load({
       '[data-df-root] .df-switch[disabled]{opacity:.5;cursor:default}',
       '[data-df-root] .df-switch::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--dsw-alias-bg-base);transition:transform .16s ease}',
       '[data-df-root] .df-switch[aria-checked="true"]::after{transform:translateX(16px)}',
-      '[data-df-root] .df-savebar{position:sticky;bottom:0;z-index:1;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 0;margin-top:6px;border-top:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base)}',
+      '[data-df-root] .df-savebar{position:static;display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap;width:100%;box-sizing:border-box;padding:14px 0 6px;margin-top:14px;border-top:1px solid var(--dsw-alias-border-l2);background:transparent}',
+      '[data-df-root] .df-savebar-actions{display:flex;align-items:center;gap:10px;margin-left:auto}',
+      '.df-overlay-reason{color:var(--dsw-alias-label-secondary);font-size:13px;margin:0}',
       '[data-df-root] .df-save-state{font-size:12px;color:var(--dsw-alias-label-secondary)}',
       '[data-df-root] .df-save-state[data-kind="error"]{color:var(--dsw-alias-state-error-primary)}',
       '[data-df-root] .df-save-state[data-kind="saved"]{color:var(--dsw-alias-state-success-primary)}',
@@ -2442,12 +2441,6 @@ window.__ModuleLoader__.load({
       function FloatingRings(props) {
         useLocaleTick()
         const snapshot = useStore(true)
-        const busyPair = React.useState(false)
-        const busy = busyPair[0]
-        const setBusy = busyPair[1]
-        const errorPair = React.useState(null)
-        const error = errorPair[0]
-        const setError = errorPair[1]
 
         const useSessionsHook =
           props && typeof props.useSessions === 'function' ? props.useSessions : useAbsentSessionSource
@@ -2470,7 +2463,7 @@ window.__ModuleLoader__.load({
           }
           return null
         })
-        const signature = runningIds === null ? '\u0000' : runningIds.join('|')
+        const signature = runningIds === null ? ' ' : runningIds.join('|')
         React.useEffect(
           function () {
             soloHider.setClientRunning(runningIds)
@@ -2480,7 +2473,6 @@ window.__ModuleLoader__.load({
           },
           [signature],
         )
-
         React.useEffect(
           function () {
             focusGuard.setContext(currentSessionId, runningIds)
@@ -2511,28 +2503,13 @@ window.__ModuleLoader__.load({
             : limit.restDue === true || (continuousLimit > 0 && continuousRatio >= 0.8)
               ? 'warn'
               : 'normal'
-        const paused = limit.paused === true
         const todayText = t('rings.today') + ' ' + fmtDuration(t, dailyUsed)
         const continuousText =
           continuousLimit > 0 ? t('rings.continuous') + ' ' + fmtClock(continuousUsed) : t('rings.continuous') + ' —'
-        const ariaLabel = t('rings.aria', {
+        const summary = t('rings.summary', {
           today: fmtDuration(t, dailyUsed),
           continuous: continuousLimit > 0 ? fmtClock(continuousUsed) : '—',
         })
-
-        async function togglePause() {
-          if (busy) return
-          setBusy(true)
-          setError(null)
-          let result
-          try {
-            result = paused ? await store.resume() : await store.pause()
-          } catch (caught) {
-            result = { ok: false }
-          }
-          setBusy(false)
-          if (!result || !result.ok) setError(t('error.generic'))
-        }
 
         return h(
           Fragment,
@@ -2542,25 +2519,31 @@ window.__ModuleLoader__.load({
             'div',
             { className: 'df-rings-layer', 'data-df-root': 'rings-layer' },
             h(
-              'button',
+              'div',
               {
-                type: 'button',
                 className: 'df-rings',
-                style: widgetButtonStyle({ cursor: busy ? 'default' : 'pointer' }),
                 'data-df-root': 'rings',
                 'data-dsh-deep-focus-root': 'rings',
-                'data-busy': busy ? 'true' : undefined,
-                'data-paused': paused ? 'true' : undefined,
-                title: paused ? t('rings.paused') : t('rings.pause'),
-                'aria-label': ariaLabel,
-                disabled: busy,
-                onClick: togglePause,
+                role: 'img',
+                'aria-label': t('rings.aria', {
+                  today: fmtDuration(t, dailyUsed),
+                  continuous: continuousLimit > 0 ? fmtClock(continuousUsed) : '—',
+                }),
+                title: summary,
+                style: {
+                  appearance: 'none',
+                  borderStyle: 'solid',
+                  borderColor: 'var(--dsw-alias-border-l1)',
+                  color: 'var(--dsw-alias-label-primary)',
+                  font: 'inherit',
+                  background: 'color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent)',
+                  cursor: 'default',
+                },
               },
               h(Ring, { kind: 'daily', used: dailyUsed, limit: dailyLimit, tone: dailyTone }),
               h(Ring, { kind: 'continuous', used: continuousUsed, limit: continuousLimit, tone: continuousTone }),
               h('span', { className: 'df-rings-text' }, h('b', null, todayText), h('span', null, continuousText)),
             ),
-            error ? h('span', { className: 'df-rings-error', role: 'alert' }, error) : null,
           ),
         )
       }
@@ -2759,6 +2742,33 @@ window.__ModuleLoader__.load({
 
       /* ── Daily overtime overlay ──────────────────────────────────────── */
 
+      /** One shared "today usage" card for the daily-limit and forced-rest overlays. */
+      function TodayUsageCard(props) {
+        const tt = props.t
+        return h(
+          'div',
+          {
+            className: 'df-card df-today-card',
+            ref: props.cardRef,
+            role: 'dialog',
+            'aria-modal': 'true',
+            'aria-label': props.title,
+            tabIndex: -1,
+            'data-dsh-deep-focus-root': props.root || 'today-card',
+          },
+          h('h2', { className: 'df-overlay-title' }, props.title),
+          props.reason ? h('p', { className: 'df-overlay-reason' }, props.reason) : null,
+          h('div', { className: 'df-kv' }, h('span', null, tt('today.total')), h('b', null, fmtDuration(tt, props.usedMs))),
+          h('hr', { className: 'df-divider' }),
+          h('p', { className: 'df-muted' }, tt('daily.apps')),
+          h(AppRows, { t: tt, rows: props.rows }),
+          props.extra || null,
+          props.error ? h('p', { className: 'df-error', role: 'alert' }, props.error) : null,
+          h('div', { className: 'df-actions', style: { justifyContent: 'flex-end' } }, props.actions),
+          props.footer || null,
+        )
+      }
+
       function DailyLockOverlay() {
         useLocaleTick()
         const snapshot = useStore(false)
@@ -2767,44 +2777,26 @@ window.__ModuleLoader__.load({
         const dayKey = state && state.usage ? state.usage.dayKey : null
         const locked = Boolean(store.isVisible() && limit && limit.dailyLocked === true)
         const acked = store.isAcked(dayKey)
-        const busyState = React.useState(false)
-        const busy = busyState[0]
-        const setBusy = busyState[1]
-        const errorState = React.useState(null)
-        const error = errorState[0]
-        const setError = errorState[1]
+        const busyPair = React.useState(false)
+        const busy = busyPair[0]
+        const setBusy = busyPair[1]
+        const errorPair = React.useState(null)
+        const error = errorPair[0]
+        const setError = errorPair[1]
         const cardRef = React.useRef(null)
 
         React.useEffect(
           function () {
             if (!locked || acked) return undefined
             const card = cardRef.current
-            if (!card) return undefined
-            const autofocus = card.querySelector('[data-df-autofocus]')
-            try {
-              ;(autofocus || card).focus({ preventScroll: true })
-            } catch (caught) {
-              /* ignored */
-            }
-            const onKeyDown = function (event) {
-              if (event.key !== 'Tab') return
-              const nodes = card.querySelectorAll('button:not([disabled]),input:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])')
-              const list = Array.prototype.slice.call(nodes)
-              if (!list.length) return
-              const first = list[0]
-              const last = list[list.length - 1]
-              if (event.shiftKey && document.activeElement === first) {
-                event.preventDefault()
-                last.focus()
-              } else if (!event.shiftKey && document.activeElement === last) {
-                event.preventDefault()
-                first.focus()
+            if (card && typeof card.focus === 'function') {
+              try {
+                card.focus({ preventScroll: true })
+              } catch (caught) {
+                /* ignored */
               }
             }
-            card.addEventListener('keydown', onKeyDown)
-            return function () {
-              card.removeEventListener('keydown', onKeyDown)
-            }
+            return undefined
           },
           [locked, acked],
         )
@@ -2815,11 +2807,9 @@ window.__ModuleLoader__.load({
         const limits = settings.limits || {}
         const extendMinutes = clampNumber(limits.extendMinutes, 1, 120, 20)
         const extendLimitCount = Math.max(0, numberOr(limit.extendLimit, 0))
-        // v4.1: dailyExtendLimit 0 (or absent) means unlimited extensions.
         const unlimitedExtend = extendLimitCount <= 0
         const extendUsed = Math.max(0, numberOr(limit.extendCountToday, 0))
         const remaining = unlimitedExtend ? null : Math.max(0, extendLimitCount - extendUsed)
-        const canExtend = true
         const usedMs = Math.max(0, numberOr(limit.dailyUsedMs, numberOr(state.usage && state.usage.activeTodayMs, 0)))
         const apps = todayAppsFromState(state)
 
@@ -2831,10 +2821,39 @@ window.__ModuleLoader__.load({
           setBusy(false)
           if (!result.ok) {
             const code = result.data && result.data.error && result.data.error.code
-            if (code === 'extend-limit-reached') setError(t('error.extendLimit'))
-            else setError(t('daily.error'))
+            setError(code === 'extend-limit-reached' ? t('error.extendLimit') : t('daily.error'))
           }
         }
+
+        const actions = [
+          h(
+            'button',
+            {
+              key: 'skip',
+              type: 'button',
+              className: 'df-btn',
+              style: secondaryButtonStyle(),
+              disabled: busy,
+              onClick: function () {
+                if (dayKey) store.ackToday(dayKey)
+              },
+            },
+            t('daily.skip'),
+          ),
+          h(
+            'button',
+            {
+              key: 'extend',
+              type: 'button',
+              className: 'df-btn df-btn-primary',
+              style: primaryButtonStyle(),
+              disabled: busy,
+              onClick: doExtend,
+              'data-df-autofocus': '',
+            },
+            t('daily.extend', { n: extendMinutes }),
+          ),
+        ]
 
         return h(
           Fragment,
@@ -2842,71 +2861,28 @@ window.__ModuleLoader__.load({
           h(Styles),
           h(
             'div',
-            {
-              className: 'df-overlay',
-              'data-df-root': 'daily-lock',
-              'data-dsh-deep-focus-root': 'daily-lock',
-              role: 'presentation',
-            },
-            h(
-              'div',
-              {
-                className: 'df-card',
-                ref: cardRef,
-                role: 'dialog',
-                'aria-modal': 'true',
-                'aria-label': t('daily.used'),
-                tabIndex: -1,
-              },
-              h('h2', { className: 'df-overlay-title' }, t('daily.title', { h: Math.floor(usedMs / 3600000), m: Math.floor((usedMs % 3600000) / 60000) })),
-              h(
-                'p',
-                { className: 'df-overlay-body' },
-                t('daily.body', { n: extendMinutes }),
-              ),
-              h('p', { className: 'df-overlay-note' }, t('daily.used') + ' · ' + fmtDuration(t, usedMs)),
-              h('hr', { className: 'df-divider' }),
-              h('div', { className: 'df-muted' }, t('daily.apps')),
-              h(AppRows, { t: t, rows: apps }),
-              error ? h('p', { className: 'df-error', role: 'alert' }, error) : null,
-              unlimitedExtend
+            { className: 'df-overlay', 'data-df-root': 'daily-lock', 'data-dsh-deep-focus-root': 'daily-lock', role: 'presentation' },
+            h(TodayUsageCard, {
+              t: t,
+              title: t('daily.title', {
+                h: Math.floor(usedMs / 3600000),
+                m: Math.floor((usedMs % 3600000) / 60000),
+              }),
+              usedMs: usedMs,
+              rows: apps,
+              actions: actions,
+              error: error,
+              cardRef: cardRef,
+              root: 'daily-card',
+              extra: unlimitedExtend
                 ? null
                 : h(
                     'p',
                     { className: 'df-muted' },
                     remaining > 0 ? t('daily.extendRemaining', { n: remaining }) : t('daily.extendNone'),
                   ),
-              h(
-                'div',
-                { className: 'df-actions', style: { justifyContent: 'flex-end' } },
-                h(
-                  'button',
-                  {
-                    type: 'button',
-                    className: 'df-btn',
-                    style: secondaryButtonStyle(),
-                    disabled: busy,
-                    onClick: function () {
-                      if (dayKey) store.ackToday(dayKey)
-                    },
-                  },
-                  t('daily.skip'),
-                ),
-                h(
-                  'button',
-                  {
-                    type: 'button',
-                    className: 'df-btn df-btn-primary',
-                    style: primaryButtonStyle(),
-                    disabled: busy || !canExtend,
-                    onClick: doExtend,
-                    'data-df-autofocus': '',
-                  },
-                  t('daily.extend', { n: extendMinutes }),
-                ),
-              ),
-              h('p', { className: 'df-muted' }, t('daily.skipHint')),
-            ),
+              footer: h('p', { className: 'df-muted' }, t('daily.skipHint')),
+            }),
           ),
         )
       }
@@ -2923,31 +2899,19 @@ window.__ModuleLoader__.load({
         const busyPair = React.useState(false)
         const busy = busyPair[0]
         const setBusy = busyPair[1]
-        const errorPair = React.useState(null)
-        const error = errorPair[0]
-        const setError = errorPair[1]
 
         React.useEffect(
           function () {
             if (!resting) return undefined
             const card = cardRef.current
-            if (!card) return undefined
-            try {
-              card.focus({ preventScroll: true })
-            } catch (caught) {
-              /* ignored */
-            }
-            const onKeyDown = function (event) {
-              if (event.key === 'Tab') {
-                event.preventDefault()
-                return
+            if (card && typeof card.focus === 'function') {
+              try {
+                card.focus({ preventScroll: true })
+              } catch (caught) {
+                /* ignored */
               }
-              if (event.key === 'Escape') event.preventDefault()
             }
-            card.addEventListener('keydown', onKeyDown)
-            return function () {
-              card.removeEventListener('keydown', onKeyDown)
-            }
+            return undefined
           },
           [resting],
         )
@@ -2955,15 +2919,18 @@ window.__ModuleLoader__.load({
         if (!resting) return null
         const remaining = restRemainingMs(limit, snapshot.clockOffset)
         const needsActivity = limit.restNeedsActivity === true || remaining <= 0
+        const usedMs = Math.max(
+          0,
+          numberOr(limit.dailyUsedMs, numberOr(state.usage && state.usage.activeTodayMs, 0)),
+        )
+        const apps = todayAppsFromState(state)
 
         async function skipRest() {
           if (busy) return
           setBusy(true)
-          setError(null)
           const result = await store.finishRest()
           setBusy(false)
           if (result.ok) store.pushToast('rest-skipped', t('rest.thenRestart'))
-          else setError(t('error.generic'))
         }
 
         return h(
@@ -2973,20 +2940,15 @@ window.__ModuleLoader__.load({
           h(
             'div',
             { className: 'df-rest', 'data-df-root': 'rest', 'data-dsh-deep-focus-root': 'rest', role: 'presentation' },
-            h(
-              'div',
-              {
-                className: 'df-rest-inner',
-                ref: cardRef,
-                role: 'dialog',
-                'aria-modal': 'true',
-                'aria-label': t('rest.title'),
-                tabIndex: -1,
-                'data-df': 'rest-card',
-              },
-              h('div', { className: 'df-rest-orb', 'aria-hidden': 'true' }),
-              h('h2', { className: 'df-rest-title' }, t('rest.title')),
-              needsActivity
+            h(TodayUsageCard, {
+              t: t,
+              title: t('rest.title'),
+              reason: t('rest.body'),
+              usedMs: usedMs,
+              rows: apps,
+              cardRef: cardRef,
+              root: 'rest-card',
+              extra: needsActivity
                 ? h('p', { className: 'df-rest-body', role: 'status', 'aria-live': 'polite' }, t('rest.doneWaiting'))
                 : h(
                     'p',
@@ -2997,23 +2959,30 @@ window.__ModuleLoader__.load({
                     },
                     fmtClock(remaining),
                   ),
-              h('p', { className: 'df-rest-body' }, t('rest.body')),
-              needsActivity ? h('p', { className: 'df-rest-note' }, t('rest.waitingNote')) : null,
-              h('p', { className: 'df-rest-note' }, t('rest.auto')),
-              error ? h('p', { className: 'df-error', role: 'alert' }, error) : null,
-              h(
-                'div',
-                { className: 'df-actions', style: { justifyContent: 'center' } },
+              actions: [
                 h(
                   'button',
-                  { type: 'button', className: 'df-btn', style: secondaryButtonStyle(), disabled: busy, onClick: skipRest },
+                  {
+                    key: 'skip',
+                    type: 'button',
+                    className: 'df-btn',
+                    style: secondaryButtonStyle(),
+                    disabled: busy,
+                    onClick: skipRest,
+                  },
                   t('rest.skip'),
                 ),
+              ],
+              footer: h(
+                'p',
+                { className: 'df-muted' },
+                needsActivity ? t('rest.waitingNote') + ' ' + t('rest.auto') : t('rest.auto'),
               ),
-            ),
+            }),
           ),
         )
       }
+
 
       /* ── Toasts ──────────────────────────────────────────────────────── */
 
@@ -3429,55 +3398,16 @@ window.__ModuleLoader__.load({
                 ),
                 h(
                   FieldRow,
-                  { label: t('field.dailyExtendLimit'), hint: t('field.dailyExtendLimit.hint') },
+                  { label: t('field.autoPauseSeconds'), hint: t('field.autoPauseSeconds.hint') },
                   h(NumberInput, {
-                    value: draftLimits.dailyExtendLimit,
+                    value: draftUsage.autoPauseSeconds,
                     min: 0,
-                    max: 20,
-                    label: t('field.dailyExtendLimit'),
+                    max: 3600,
+                    step: 5,
+                    label: t('field.autoPauseSeconds'),
                     disabled: disabled,
                     onChange: function (value) {
-                      patch('limits.dailyExtendLimit', value)
-                    },
-                  }),
-                ),
-              ),
-              h(
-                Section,
-                { title: t('group.assistant') },
-                h(
-                  FieldRow,
-                  { label: t('field.soloSession'), hint: t('field.soloSession.hint') },
-                  h(Switch, {
-                    checked: draftAssistant.soloSession !== false,
-                    label: t('field.soloSession'),
-                    disabled: disabled,
-                    onChange: function (value) {
-                      patch('assistant.soloSession', value)
-                    },
-                  }),
-                ),
-                h(
-                  FieldRow,
-                  { label: t('field.hideOtherSessions'), hint: t('field.hideOtherSessions.hint') },
-                  h(Switch, {
-                    checked: draftAssistant.hideOtherSessions !== false,
-                    label: t('field.hideOtherSessions'),
-                    disabled: disabled,
-                    onChange: function (value) {
-                      patch('assistant.hideOtherSessions', value)
-                    },
-                  }),
-                ),
-                h(
-                  FieldRow,
-                  { label: t('field.showRings') },
-                  h(Switch, {
-                    checked: draftAssistant.showRings !== false,
-                    label: t('field.showRings'),
-                    disabled: disabled,
-                    onChange: function (value) {
-                      patch('assistant.showRings', value)
+                      patch('usage.autoPauseSeconds', value)
                     },
                   }),
                 ),
@@ -3513,155 +3443,6 @@ window.__ModuleLoader__.load({
                 ),
                 h(
                   FieldRow,
-                  { label: t('field.volume') },
-                  h('input', {
-                    className: 'df-range',
-                    type: 'range',
-                    min: 0,
-                    max: 100,
-                    step: 5,
-                    value: String(Math.round(numberOr(draftAlerts.volume, 0.6) * 100)),
-                    'aria-label': t('field.volume'),
-                    disabled: disabled,
-                    onChange: function (event) {
-                      patch('alerts.volume', Number(event.target.value) / 100)
-                    },
-                  }),
-                  h('span', { className: 'df-field-hint' }, t('settings.volumeValue', { n: Math.round(numberOr(draftAlerts.volume, 0.6) * 100) })),
-                ),
-                h(
-                  FieldRow,
-                  { label: t('field.quietHours'), hint: t('field.quietHours.hint') },
-                  h('input', {
-                    className: 'df-time',
-                    type: 'time',
-                    step: 60,
-                    value: typeof draftAlerts.quietHoursStart === 'string' ? draftAlerts.quietHoursStart : '',
-                    'aria-label': t('field.quietHoursStart'),
-                    disabled: disabled,
-                    onChange: function (event) {
-                      patch('alerts.quietHoursStart', event.target.value || null)
-                    },
-                  }),
-                  h('span', { className: 'df-field-hint' }, t('field.quietHoursEnd')),
-                  h('input', {
-                    className: 'df-time',
-                    type: 'time',
-                    step: 60,
-                    value: typeof draftAlerts.quietHoursEnd === 'string' ? draftAlerts.quietHoursEnd : '',
-                    'aria-label': t('field.quietHoursEnd'),
-                    disabled: disabled,
-                    onChange: function (event) {
-                      patch('alerts.quietHoursEnd', event.target.value || null)
-                    },
-                  }),
-                ),
-                h(
-                  FieldRow,
-                  { label: t('field.repeatUntilActive'), hint: t('field.repeatUntilActive.hint') },
-                  h(Switch, {
-                    checked: draftAlerts.repeatUntilActive !== false,
-                    label: t('field.repeatUntilActive'),
-                    disabled: disabled,
-                    onChange: function (value) {
-                      patch('alerts.repeatUntilActive', value)
-                    },
-                  }),
-                ),
-                h(
-                  FieldRow,
-                  { label: t('field.repeatIntervalMs'), hint: t('field.repeatIntervalMs.hint') },
-                  h(NumberInput, {
-                    value: draftAlerts.repeatIntervalMs,
-                    min: 500,
-                    max: 10000,
-                    step: 100,
-                    label: t('field.repeatIntervalMs'),
-                    disabled: disabled,
-                    onChange: function (value) {
-                      patch('alerts.repeatIntervalMs', value)
-                    },
-                  }),
-                ),
-                h(
-                  FieldRow,
-                  { label: t('field.awayIdleSeconds'), hint: t('field.awayIdleSeconds.hint') },
-                  h(NumberInput, {
-                    value: draftAlerts.awayIdleSeconds,
-                    min: 10,
-                    max: 3600,
-                    step: 5,
-                    label: t('field.awayIdleSeconds'),
-                    disabled: disabled,
-                    onChange: function (value) {
-                      patch('alerts.awayIdleSeconds', value)
-                    },
-                  }),
-                ),
-              ),
-              h(
-                Section,
-                { title: t('group.usage') },
-                h(
-                  FieldRow,
-                  { label: t('field.sampleSeconds'), hint: t('field.sampleSeconds.hint') },
-                  h(NumberInput, {
-                    value: draftUsage.sampleSeconds,
-                    min: 3,
-                    max: 30,
-                    label: t('field.sampleSeconds'),
-                    disabled: disabled,
-                    onChange: function (value) {
-                      patch('usage.sampleSeconds', value)
-                    },
-                  }),
-                ),
-                h(
-                  FieldRow,
-                  { label: t('field.idleThresholdSeconds'), hint: t('field.idleThresholdSeconds.hint') },
-                  h(NumberInput, {
-                    value: draftUsage.idleThresholdSeconds,
-                    min: 0,
-                    max: 3600,
-                    step: 5,
-                    label: t('field.idleThresholdSeconds'),
-                    disabled: disabled,
-                    onChange: function (value) {
-                      patch('usage.idleThresholdSeconds', value)
-                    },
-                  }),
-                ),
-                h(
-                  FieldRow,
-                  { label: t('field.autoPauseSeconds'), hint: t('field.autoPauseSeconds.hint') },
-                  h(NumberInput, {
-                    value: draftUsage.autoPauseSeconds,
-                    min: 0,
-                    max: 3600,
-                    step: 5,
-                    label: t('field.autoPauseSeconds'),
-                    disabled: disabled,
-                    onChange: function (value) {
-                      patch('usage.autoPauseSeconds', value)
-                    },
-                  }),
-                ),
-                h(
-                  FieldRow,
-                  { label: t('field.retentionDays'), hint: t('field.retentionDays.hint') },
-                  h(NumberInput, {
-                    value: draftUsage.retentionDays,
-                    min: 1,
-                    max: 365,
-                    label: t('field.retentionDays'),
-                    disabled: disabled,
-                    onChange: function (value) {
-                      patch('usage.retentionDays', value)
-                    },
-                  }),
-                ),
-                h(
-                  FieldRow,
                   { label: t('field.trackApps'), hint: t('field.trackApps.hint') },
                   h(Switch, {
                     checked: draftUsage.trackApps !== false,
@@ -3672,50 +3453,48 @@ window.__ModuleLoader__.load({
                     },
                   }),
                 ),
-                sampling && sampling !== 'ok'
-                  ? h(
-                      'p',
-                      { className: 'df-error', role: 'status' },
-                      t(sampling === 'off' ? 'settings.sampling.off' : 'settings.sampling.degraded'),
-                    )
-                  : null,
-                h('p', { className: 'df-field-hint' }, t('settings.note.sampling')),
               ),
-              h(
-                Section,
-                { title: t('settings.group.privacy') },
-                h('p', { className: 'df-field-hint' }, t('hub.privacy')),
-              ),
+              h('p', { className: 'df-field-hint' }, t('hub.privacy')),
               h(
                 'div',
                 { className: 'df-savebar' },
                 h(
-                  'button',
-                  {
-                    type: 'button',
-                    className: 'df-btn df-btn-primary',
-                    style: primaryButtonStyle(),
-                    disabled: !dirty || saving,
-                    onClick: save,
-                  },
-                  t('hub.save'),
+                  'div',
+                  { className: 'df-savebar-actions' },
+                  saving
+                    ? h('span', { className: 'df-save-state' }, '…')
+                    : saveError
+                      ? h('span', { className: 'df-save-state', 'data-kind': 'error', role: 'alert' }, saveError)
+                      : saved
+                        ? h('span', { className: 'df-save-state', 'data-kind': 'saved' }, t('hub.saved'))
+                        : dirty
+                          ? h('span', { className: 'df-save-state' }, t('hub.dirty'))
+                          : null,
+                  dirty
+                    ? h(
+                        'button',
+                        {
+                          type: 'button',
+                          className: 'df-btn',
+                          style: secondaryButtonStyle(),
+                          disabled: saving,
+                          onClick: discard,
+                        },
+                        t('hub.discard'),
+                      )
+                    : null,
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'df-btn df-btn-primary',
+                      style: primaryButtonStyle(),
+                      disabled: !dirty || saving,
+                      onClick: save,
+                    },
+                    t('hub.save'),
+                  ),
                 ),
-                dirty
-                  ? h(
-                      'button',
-                      { type: 'button', className: 'df-btn', style: secondaryButtonStyle(), disabled: saving, onClick: discard },
-                      t('hub.discard'),
-                    )
-                  : null,
-                saving
-                  ? h('span', { className: 'df-save-state' }, '…')
-                  : saveError
-                    ? h('span', { className: 'df-save-state', 'data-kind': 'error', role: 'alert' }, saveError)
-                    : saved
-                      ? h('span', { className: 'df-save-state', 'data-kind': 'saved' }, t('hub.saved'))
-                      : dirty
-                        ? h('span', { className: 'df-save-state' }, t('hub.dirty'))
-                        : null,
               ),
             ),
           ),

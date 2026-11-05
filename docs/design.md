@@ -31,6 +31,11 @@ at a time, pure plugin — with these additions:
 7. **Idle auto-pause** — `usage.autoPauseSeconds` (default 60 s, `0` = off) makes
    the Host enter the same paused/gray state automatically after the keyboard/mouse
    has been idle that long; the state exposes `pausedReason` (`manual` | `idle`).
+8. **v0.4.3 simplification** — the floating rings are display-only (the UI no longer
+   triggers pause/resume); the forced-rest and daily-limit screens share one
+   “today usage” card; the assistant page exposes only seven common settings
+   (advanced knobs stay in the settings JSON/API); the settings save/discard row is
+   a normal right-aligned footer inside the panel content.
 
 **Pure-plugin boundary (by design, not a bug):** the plugin runs inside DSH and
 only enforces inside DSH. It cannot bring DSH to the front, cannot block other
@@ -147,13 +152,14 @@ when `webServer` is unavailable) instead of throwing.
 | `limits.extendMinutes` | Time granted by one 「再使用 20 分钟」 click. |
 | `limits.dailyExtendLimit` | Extensions per day; `0` = unlimited, a positive value is the maximum. |
 
-- **Pause mode:** `POST /pause` sets `paused`/`pausedAt` with `pausedReason:
-  "manual"`, stops counting, and emits `paused`. The pause resumes only on a sampler
-  sample that is active (idle below `usage.idleThresholdSeconds`) and arrives at
-  least 1.5 s after `pausedAt` — so the click that entered pause is ignored.
+- **Pause mode (API-level):** `POST /pause` sets `paused`/`pausedAt` with
+  `pausedReason: "manual"`, stops counting, and emits `paused`. The pause resumes
+  only on a sampler sample that is active (idle below
+  `usage.idleThresholdSeconds`) and arrives at least 1.5 s after `pausedAt`.
   `POST /resume` also force-resumes; `paused`, `pausedAt`, `pausedReason` and
-  `pausedNeedsActivity` are exposed in `/state`. A forced rest supersedes a pause
-  (rest wins and clears it).
+  `pausedNeedsActivity` are exposed in `/state`. In v0.4.3 the UI no longer calls
+  these endpoints — the automatic idle rest is the only user-facing entry. A forced
+  rest supersedes a pause (rest wins and clears it).
 - **Idle auto-pause:** on each sample the Host checks `usage.autoPauseSeconds`
   (default 60, `0` = off); when the idle time reaches it and the assistant is
   enabled (not already paused or resting), it enters the same paused state with
@@ -231,6 +237,11 @@ than `usage.retentionDays` are pruned for the `usage` subdirectory (and any lega
     auto-pause.
 - `normalizeSettings()` deep-merges over `DEFAULT_SETTINGS`, drops unknown
   sections/keys, and clamps numbers/booleans and quiet hours.
+- **UI vs. settings:** the assistant page intentionally exposes only seven common
+  controls (`limits.dailyMinutes`, `limits.continuousMinutes`, `limits.restMinutes`,
+  `limits.extendMinutes`, `usage.autoPauseSeconds`, `alerts.sound`,
+  `usage.trackApps`). All other settings remain writable through the settings JSON
+  and `POST /settings`, they are just not surfaced in the UI.
 - **Migration:** a stored file whose `version` is not 4 (v1/v2/v3) is discarded and
   replaced with v4 defaults.
 
@@ -328,7 +339,7 @@ Slot registrations:
 | --- | --- | --- |
 | `sidebar.panellist` | `focus-assistant` | 「专注助手」/“Focus assistant” entry below the Plugins row. |
 | `main` (keyed) | `focus-assistant` | Assistant page: overview (daily/continuous progress, pause/rest status, per-app today, 7-day trend), settings form, enable/pause switch. |
-| `shell.overlay` | `dsh-deep-focus-rings` | Floating top-right glass card with two SVG rings (today vs. daily cap, continuous vs. continuous cap) and a small label; positioned below the host's top controls and clamped inside small windows; click enters pause. Hidden when the assistant is off or the two-ring setting is off. |
+| `shell.overlay` | `dsh-deep-focus-rings` | Floating top-right glass card with two SVG rings (today vs. daily cap, continuous vs. continuous cap) and a small label; positioned below the host's top controls and clamped inside small windows. **Display-only** — not clickable, no pause action. Hidden when the assistant is off or the two-ring setting is off. |
 | `shell.overlay` | `dsh-deep-focus-pause-gray` | Full-frame semi-transparent gray pause layer (`pointer-events: none` so it cannot trap the click): 「已暂停计时 · 动一下鼠标或键盘继续」. |
 | `shell.overlay` | `dsh-deep-focus-focus-veil` | Fallback veil over the conversation column when a non-owner conversation is shown while another conversation runs: dimmed content, a hint toast and discouraged sending. |
 | `shell.overlay` | `dsh-deep-focus-rest` | Full-frame forced-rest screen with the countdown, `restNeedsActivity` copy and the 「跳过休息」 button. |
@@ -338,24 +349,29 @@ Slot registrations:
 There is **no** `conversation.session.header.utilities` chip and **no** solo banner
 any more.
 
-**Pause flow:** clicking the rings `POST /pause`s and the client records the pause
-time; the gray layer renders from `limit.paused`. The client adds a one-shot
-`mousemove`/`keydown` listener after a 1.5 s grace and calls `POST /resume` when it
-fires; the Host also auto-resumes on its own activity sample, so whichever arrives
-first ends the pause. The same layer renders for an `autoPauseSeconds` idle pause
-(`limit.pausedReason: "idle"`, which also switches the pause title to the automatic
-variant). The layer clears when `limit.paused` becomes false, and on
-outage/cleanup.
+**Pause/rest flow:** the only UI path into the rest/pause state is the automatic one
+— the Host enters it on its own sampler sample when the idle time reaches
+`usage.autoPauseSeconds`, and the gray layer renders from `limit.paused`. The client
+adds a one-shot `mousemove`/`keydown` listener after a 1.5 s grace and calls
+`POST /resume` when it fires; the Host also auto-resumes on its own activity sample,
+so whichever arrives first ends the pause. The layer title reflects
+`limit.pausedReason` (`"idle"` gets the automatic-rest variant). The layer clears
+when `limit.paused` becomes false, and on outage/cleanup. The rings are display-only
+and do not call `POST /pause`; those endpoints remain available to the API.
 
 **Rest flow:** the rest overlay renders from `limit.resting`; when
-`restNeedsActivity` is true it shows 「休息完成 · 动一下鼠标键盘继续」 instead of a
-running countdown. The 「跳过休息」 button calls `POST /rest/finish`. The Host ends
-the rest only after its time elapsed **and** activity was observed (or the 30-minute
-cap), so the overlay cannot disappear while the user is away.
+`restNeedsActivity` is true it shows 「休息完成 · 动一下鼠标键盘继续」. The rest
+screen and the daily screen share one “today usage” card component: title/reason,
+today's total, per-app breakdown and that screen's buttons. The 「跳过休息」 button
+calls `POST /rest/finish`. The Host ends the rest only after its time elapsed **and**
+activity was observed (or the 30-minute cap), so the overlay cannot disappear while
+the user is away.
 
-**Daily flow:** the overlay renders from `limit.dailyLocked`; 「再使用 20 分钟」
-calls `POST /extend`, 「跳过」 writes the per-day ack key and hides the overlay
-locally.
+**Daily flow:** the daily overlay renders from `limit.dailyLocked` on the same shared
+card and has exactly two actions: 「再使用 20 分钟」 calls `POST /extend`, 「跳过」
+writes the per-day ack key and hides the overlay locally (it never extends or
+changes limits). Settings footer: the save/discard buttons are a right-aligned row in
+the panel's content column.
 
 **One conversation at a time is style-only — nothing is hidden, and the client
 also pins the UI to the running conversation.** While `solo.active` and

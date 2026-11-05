@@ -80,14 +80,13 @@ A sample is counted as *active* only when the idle time is below
 `usage.idleThresholdSeconds`. Nothing about *what you did inside* an application is
 recorded — only that it was the foreground process at that moment.
 
-**Pause mode and the away-aware completion chime reuse exactly this signal.** Pause
-stops counting until a sample reports real activity again; the idle auto-pause
-(`usage.autoPauseSeconds`) simply enters that same paused state when the idle time
-reaches the threshold, and `limits.json` remembers whether the pause was manual or
-idle (`pausedReason`). The chime decides whether you are "away" from the browser's
-own focus state (`document.hidden` / focus) and the same idle time. **No new data is
-collected for any of these features**, and paused or resting time is excluded from
-the daily total.
+**Automatic rest and the away-aware completion chime reuse exactly this signal.**
+When the keyboard/mouse has been idle for `usage.autoPauseSeconds`, the assistant
+enters the rest/pause state (reported in `limits.json` as the transient pause state
+with `pausedReason: "idle"`); real activity resumes it. The chime decides whether you
+are "away" from the browser's own focus state (`document.hidden` / focus) and the
+same idle time. **No new data is collected for any of these features**, and paused or
+resting time is excluded from the daily total.
 
 ## App names
 
@@ -133,9 +132,9 @@ The assistant is a self-discipline aid, not a security boundary:
 - It cannot bring DSH to the front, cannot block other applications, and cannot
   count or enforce anything while DSH is closed. Those would require a separate
   desktop guard, which v0.4 does not include.
-- The rings, the pause gray layer, the rest screen and the daily overlay exist only
-  inside the DSH window; switching to another application is always possible.
-  **Rest and pause are not enforced outside DSH.**
+- The rings, the automatic rest screen and the daily overlay exist only inside the
+  DSH window; switching to another application is always possible. **Rest and pause
+  are not enforced outside DSH.**
 - The data is readable by your user account; treat it as personal activity
   metadata (it reveals which apps you used and for how long), not as sensitive
   content.

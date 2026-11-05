@@ -9,6 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.4.3] - Unreleased
+
+A UX simplification release on top of 0.4.2. Versions 0.1.0–0.4.2 were never
+published.
+
+### Changed
+
+- **The floating two-ring widget is now display-only.** The click-to-pause
+  behaviour and its copy are gone; the rings only show today's/continuous progress.
+  Entering the rest/pause state is automatic: after `usage.autoPauseSeconds`
+  (default 60 s, `0` = off) without keyboard/mouse input the assistant grays the
+  DSH window, and real activity resumes it. The `pause`/`resume` API endpoints
+  remain available but the UI no longer triggers them.
+- **One shared “today usage” card.** The forced-rest screen and the daily-limit
+  screen now render the same card — title/reason, today's total, per-app breakdown
+  and that screen's action buttons — instead of two separate layouts.
+- **Daily-limit screen only has two actions:** 「再使用 20 分钟」 / “Use 20 more
+  minutes” and 「跳过」 / “Skip”. Skip only dismisses today's reminder in the current
+  browser; it does not extend anything.
+- **The settings UI is intentionally minimal.** The assistant page exposes only
+  seven controls: daily limit, continuous limit, rest length, extension length,
+  auto-rest idle seconds, sound, and app-tracking. Every advanced knob (extension
+  cap, quiet hours, away/repeat chime settings, sampling intervals, retention,
+  ring/solo toggles, …) remains in the settings JSON and the plugin API but is no
+  longer surfaced in the UI.
+
+### Fixed
+
+- **Settings action row layout** — the save/discard buttons no longer stick to the
+  bottom-left corner; they sit in a normal right-aligned footer inside the panel's
+  content column, with proper padding and theme colors.
+
 ## [0.4.2] - Unreleased
 
 A follow-up UX pass on 0.4.1. Versions 0.1.0–0.4.1 were never published.

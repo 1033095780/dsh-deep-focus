@@ -553,14 +553,29 @@ check('READMEs describe the v0.4 product', () => {
     fail('README.md must document the floating two-ring widget')
   }
   if (!/top-right|top right/i.test(en)) fail('README.md must document that the rings float in the top-right')
-  if (!/pause/i.test(en) || !/gray|grays|grey/i.test(en)) {
-    fail('README.md must document that clicking the widget pauses counting and grays the DSH window')
+  if (!/display[- ]only|read[- ]only|not clickable/i.test(en)) {
+    fail('README.md must document that the floating rings are display-only')
   }
-  if (!/real keyboard\/mouse activity|move the mouse or type|real activity/i.test(en)) {
-    fail('README.md must document that the pause resumes only on real keyboard/mouse activity')
+  if (!/auto(?:matic)?(?:ally)? (?:rest|pause)|idle auto-rest|automatic rest/i.test(en) || !/usage\.autoPauseSeconds/i.test(en)) {
+    fail('README.md must document the automatic idle rest and usage.autoPauseSeconds')
   }
-  if (!/auto-pause|pauses? automatically|automatic(?:ally)? paus/i.test(en) || !/usage\.autoPauseSeconds/i.test(en)) {
-    fail('README.md must document the idle auto-pause and usage.autoPauseSeconds')
+  if (!/move the mouse or type|movement|resumes? (?:it|counting)/i.test(en)) {
+    fail('README.md must document that the automatic rest resumes on keyboard/mouse activity')
+  }
+  if (!/today[- ]usage card/i.test(en) || !/(?:shared|same)/i.test(en)) {
+    fail('README.md must document the shared today-usage card used by both screens')
+  }
+  if (!/only two actions|two actions/i.test(en)) {
+    fail('README.md must document that the daily overlay has two actions')
+  }
+  if (!/skip[^.]{0,140}(?:without extend|does not extend|no extension)/i.test(en)) {
+    fail('README.md must state that daily “Skip” does not extend')
+  }
+  if (!/seven (?:common )?(?:settings|controls)|7 (?:common )?(?:settings|controls)/i.test(en)) {
+    fail('README.md must document that the settings UI exposes seven common controls')
+  }
+  if (!/advanced[^.]{0,120}(?:JSON|API|not shown|not exposed)/i.test(en)) {
+    fail('README.md must state that advanced knobs stay in settings JSON/API and are not exposed in the UI')
   }
   if (!/jump(?:s)? back|auto-jump|pins? the ui|returns? to the running/i.test(en)) {
     fail('README.md must document that one-conversation mode jumps back to the running conversation')
@@ -600,14 +615,29 @@ check('READMEs describe the v0.4 product', () => {
   }
   if (!/双环/.test(zh) || !/悬浮/.test(zh)) fail('README.zh.md must document the floating two-ring widget')
   if (!/右上角/.test(zh)) fail('README.zh.md must document that the rings float in the top-right')
-  if (!/暂停/.test(zh) || !/灰/.test(zh)) {
-    fail('README.zh.md must document that clicking the widget pauses counting and grays the DSH window')
+  if (!/仅显示|只显示/.test(zh)) {
+    fail('README.zh.md must document that the floating rings are display-only')
   }
-  if (!/动(?:一下)?鼠标|动键鼠|真实(?:键鼠|活动)/.test(zh)) {
-    fail('README.zh.md must document that the pause resumes only on real keyboard/mouse activity')
+  if (!/自动(?:休息|暂停)/.test(zh) || !/usage\.autoPauseSeconds/.test(zh)) {
+    fail('README.zh.md must document the automatic idle rest and usage.autoPauseSeconds')
   }
-  if (!/自动暂停/.test(zh) || !/usage\.autoPauseSeconds/.test(zh)) {
-    fail('README.zh.md must document the idle auto-pause and usage.autoPauseSeconds')
+  if (!/动(?:一下)?鼠标|动键鼠|移动鼠标/.test(zh)) {
+    fail('README.zh.md must document that the automatic rest resumes on keyboard/mouse activity')
+  }
+  if (!/今日用量/.test(zh) || !/(?:共用|同一张|同一个)/.test(zh)) {
+    fail('README.zh.md must document the shared today-usage card used by both screens')
+  }
+  if (!/两个操作/.test(zh)) {
+    fail('README.zh.md must document that the daily overlay has two actions')
+  }
+  if (!/跳过[^。]{0,80}(?:不续期|不会续期|不延长)/.test(zh)) {
+    fail('README.zh.md must state that daily「跳过」does not extend')
+  }
+  if (!/(?:7|七) ?(?:个|项)[^。]{0,30}(?:设置|控制)/.test(zh)) {
+    fail('README.zh.md must document that the settings UI exposes seven common controls')
+  }
+  if (!/高级[^。]{0,80}(?:JSON|API|界面)/.test(zh)) {
+    fail('README.zh.md must state that advanced knobs stay in settings JSON/API and are not exposed in the UI')
   }
   if (!/自动跳回|跳回正在运行/.test(zh)) {
     fail('README.zh.md must document that one-conversation mode jumps back to the running conversation')
@@ -644,6 +674,8 @@ check('READMEs describe the v0.4 product', () => {
     /fade out|fade back in/i,
     /sidebar hiding|hide other conversations|hides? other conversations/i,
     /隐藏其它会话|隐藏其他会话/,
+    /click(?:ing)? the (?:widget|rings)[^.\n]{0,80}(?:pause|gray)/i,
+    /点击[^。\n]{0,20}(?:双环)[^。\n]{0,20}(?:暂停|变灰)/,
     /enter (?:your |the )?password/i,
     /unlock password/i,
     /密码解锁/,
@@ -654,12 +686,12 @@ check('READMEs describe the v0.4 product', () => {
   for (const pattern of forbidden) {
     if (pattern.test(en) || pattern.test(zh)) fail(`README still advertises a removed earlier-version concept: ${pattern}`)
   }
-  return 'v0.4.x: rings/pause/idle auto-pause/rest+skip/away chime/auto-jump+gray+veil/unlimited extends, v0.3 rules'
+  return 'v0.4.x: display-only rings/auto-rest/shared usage card/rest+skip/away chime/auto-jump+gray+veil/7 settings, unlimited extends, v0.3 rules'
 })
 
 check('package version is the v0.4 series', () => {
   if (!/^0\.4\.\d+$/.test(pkg.version)) {
-    fail(`package.json version is "${pkg.version}"; the release kit documents v0.4.x (0.4.1/0.4.2 patch releases included)`)
+    fail(`package.json version is "${pkg.version}"; the release kit documents v0.4.x (0.4.1–0.4.3 patch releases included)`)
   }
   return pkg.version
 })
@@ -682,8 +714,8 @@ check('LICENSE and CHANGELOG', () => {
   for (const heading of ['### Added', '### Changed', '### Removed', '### Fixed']) {
     if (!changelog.includes(heading)) fail(`CHANGELOG.md v0.4 entry is missing "${heading}"`)
   }
-  if (!/0\.1\.0[^\n]*0\.4\.0[^\n]*never published/i.test(changelog)) {
-    fail('CHANGELOG.md must note that 0.1.0–0.4.0 were never published')
+  if (!/0\.1\.0[^\n]*0\.4\.[0-9][^\n]*never published/i.test(changelog)) {
+    fail('CHANGELOG.md must note that 0.1.0–0.4.x were never published')
   }
   return `MIT, changelog covers ${pkg.version}`
 })

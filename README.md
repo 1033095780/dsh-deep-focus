@@ -1,6 +1,6 @@
 # dsh-deep-focus
 
-A focus assistant for DeepSeek Harness: a **floating two-ring widget** shows how much of your daily 3-hour cap and 30-minute continuous limit you have used, clicking it **pauses counting and grays the DSH window** until you actually touch the keyboard or mouse, and when you drift away a **chime repeats until you come back** — all inside DSH, without blocking a single tool call.
+A focus assistant for DeepSeek Harness: a **display-only floating two-ring widget** shows how much of your daily 3-hour cap and 30-minute continuous limit you have used, a **60-second idle break** grays the DSH window until you come back to the keyboard, and when you drift away a **chime repeats until you return** — all inside DSH, without blocking a single tool call.
 
 English | [简体中文](README.zh.md)
 
@@ -10,8 +10,8 @@ Coding agents make it effortless to spread across five conversations at once. Th
 
 `dsh-deep-focus` puts a gentle, honest boundary around that:
 
-- **two rings, always visible** in the top-right corner: today's whole-machine usage vs. the daily cap, and continuous use vs. the continuous cap;
-- when you need a real break, **click the rings**: counting pauses, the DSH window grays, and nothing resumes until you move the mouse or type again;
+- **two rings, always visible** in the top-right corner: today's whole-machine usage vs. the daily cap, and continuous use vs. the continuous cap. They just show progress — there is nothing to click;
+- stop touching the keyboard/mouse for **60 seconds** and the assistant enters a gray rest/pause state automatically; moving or typing brings you straight back;
 - after **30 continuous minutes** it stops the work with a **10-minute rest**; the rest only ends when the time is up **and** you are back — or you press 「跳过休息」;
 - at **3 hours of daily active use** DSH shows a gray overlay with today's per-app breakdown, a “Use 20 more minutes” action and a **Skip** button;
 - by default it keeps **one conversation at a time**: while any conversation's agent is running, the other conversations and workspace folders are grayed out and cannot be clicked — a gentle reminder appears instead — while the current conversation stays normal.
@@ -22,10 +22,11 @@ It never blocks a tool call, never interrupts another conversation's agent, and 
 
 | Feature | What it does |
 | --- | --- |
-| **Floating two-ring widget** | Top-right of the DSH window: a compact glass card with one ring for today's usage and one for the continuous timer, plus a small label. Click it to pause. |
-| **Pause & gray** | Clicking the widget stops counting and grays the DSH window with a calm 「已暂停计时」 note. The pause ends only on **real keyboard/mouse activity** (a short grace period ignores the click that started it). It also pauses automatically after `usage.autoPauseSeconds` (default 60 s) without input, and movement resumes it. |
-| **Daily cap (3 h by default)** | Gray overlay with today's total, per-app breakdown, 「再使用 20 分钟」 / “Use 20 more minutes” (configurable minutes; the extension count is unlimited by default) and 「跳过」 / “Skip” (a per-day acknowledgment). |
-| **Continuous cap → forced rest** | 30 continuous minutes → a full-screen **10-minute rest**. It finishes only when the rest time elapsed **and** you are back at the machine; while you are away it waits. 「跳过休息」 / “Skip rest” ends it immediately. Rest time is not counted toward the daily cap. |
+| **Floating two-ring widget** | Top-right of the DSH window: a compact glass card with one ring for today's usage and one for the continuous timer, plus a small label. **Display-only** — it shows progress and is not clickable. |
+| **Automatic rest on idle** | After `usage.autoPauseSeconds` (default 60 s, `0` = off) without keyboard/mouse input the assistant automatically enters a gray rest/pause state; moving the mouse or typing resumes it. There is no manual click-to-pause. |
+| **Daily cap (3 h by default)** | Gray overlay built on the shared today-usage card, with two actions: 「再使用 20 分钟」 / “Use 20 more minutes” (configurable minutes; unlimited by default) and 「跳过」 / “Skip” (only dismisses today's reminder, without extending). |
+| **Continuous cap → forced rest** | 30 continuous minutes → a full-screen **10-minute rest** that reuses the same today-usage card. It finishes only when the rest time elapsed **and** you are back; while away it waits. 「跳过休息」 / “Skip rest” ends it immediately. Rest time is not counted toward the daily cap. |
+| **Shared today-usage card** | Both the forced-rest screen and the daily-limit screen render one card: title/reason, today's total, per-app breakdown, and the screen's action buttons. |
 | **Completion chime only when away** | No chime while you are actively watching. If the window is unfocused/hidden or the machine has been idle for `alerts.awayIdleSeconds`, the chime repeats every `alerts.repeatIntervalMs` until input returns. |
 | **One conversation at a time** | Default on. While a root conversation's agent is running, the UI **jumps back to that conversation**, and the other conversations **and workspace folders** are grayed out and cannot be clicked (a gentle reminder appears). If a non-owner conversation is somehow visible, its content is veiled and sending is discouraged until the run finishes. Nothing is hidden; the running agent is never touched. No banner text. |
 | **Focus assistant panel** | One sidebar entry under the Plugins row: overview (today, continuous timer, rest/pause status, per-app breakdown, 7-day trend), settings, and the enable/pause switch. |
@@ -38,7 +39,7 @@ There is **no pomodoro timer** in this version — the assistant replaces timer-
 
 <!-- screenshots:pending -->
 
-> **Placeholder:** screenshots are not committed yet, so this section intentionally contains no image links (nothing to 404). The capture list (floating rings, paused gray state, rest screen with skip, daily overlay with skip) is in [docs/publishing.md](docs/publishing.md#readme-screenshots). They will replace this placeholder before the first public release.
+> **Placeholder:** screenshots are not committed yet, so this section intentionally contains no image links (nothing to 404). The capture list (display-only rings, shared today-usage card on the rest and daily screens, gray automatic-rest state) is in [docs/publishing.md](docs/publishing.md#readme-screenshots). They will replace this placeholder before the first public release.
 
 ## Install
 
@@ -65,13 +66,25 @@ The plugin ships source as-is: there is no build step and no runtime dependency 
 
 1. Open the **Focus assistant** entry in the sidebar, below the Plugins row (`专注助手` in Chinese).
 2. Watch the **floating two-ring widget** in the top-right corner of the DSH window; it shows today's usage and the continuous timer.
-3. Click the widget when you want a deliberate pause: counting stops, DSH grays, and moving the mouse or typing resumes it. The same gray pause appears automatically after `usage.autoPauseSeconds` (default 60 s) without input.
-4. When the continuous limit is reached, the rest screen appears; it waits until the rest time is over **and** you are back, or press 「跳过休息」.
-5. At the daily cap the gray overlay offers 「再使用 20 分钟」 and 「跳过」. Use the assistant panel's switch to pause enforcement entirely, and its settings to change any limit.
+3. Leave the keyboard/mouse alone for `usage.autoPauseSeconds` (default 60 s) and the assistant enters the gray rest state automatically; moving or typing resumes it. The rings stay display-only.
+4. When the continuous limit is reached, the rest screen appears — it shows the same today-usage card as the daily screen and waits until the rest time is over **and** you are back, or press 「跳过休息」.
+5. At the daily cap the gray overlay offers only two actions: 「再使用 20 分钟」 and 「跳过」. Use the assistant panel's switch to pause enforcement entirely, and its short settings form to change the common limits.
 
 ## Configuration
 
-All runtime settings live in the **Focus assistant** panel. The table below is generated from `src/shared/contract.js` by `node scripts/config-table.mjs`.
+The **Focus assistant** page intentionally exposes only seven common settings:
+
+| In the assistant page | What it controls |
+| --- | --- |
+| Daily usage limit | `limits.dailyMinutes` (minutes, `0` = unlimited) |
+| Continuous-use limit | `limits.continuousMinutes` (minutes, `0` = off) |
+| Rest length | `limits.restMinutes` (minutes) |
+| Extension length | `limits.extendMinutes` (minutes) |
+| Auto-rest after idle | `usage.autoPauseSeconds` (seconds, `0` = off) |
+| Sound | `alerts.sound` (on/off) |
+| App tracking | `usage.trackApps` (on/off) |
+
+Everything else — the extension count cap, quiet hours, the away/repeat chime settings, sampling intervals, retention, ring/solo toggles and the like — **stays in the settings JSON and the plugin API but is not shown in the UI**. The table below is the complete reference, generated from `src/shared/contract.js` by `node scripts/config-table.mjs`.
 
 <!-- config-table:start -->
 | Setting | Default | Unit | Notes |
@@ -104,16 +117,15 @@ All runtime settings live in the **Focus assistant** panel. The table below is g
 ## How the rules work
 
 - **What counts:** time is counted only while keyboard/mouse input was recent (`usage.idleThresholdSeconds`) and only while DSH is running. It is whole-machine time, not DSH-window time.
-- **Pause mode:** clicking the floating widget sends `POST /pause`; counting stops immediately and the window grays. It resumes only on real activity (`POST /resume` or the Host's own activity check with a short grace period), never from the click that paused it.
-- **Idle auto-pause:** if the keyboard/mouse is idle for `usage.autoPauseSeconds` (default 60, `0` = off), the Host pauses counting automatically and shows the same gray pause screen; moving the mouse or typing resumes it. Both manual and automatic pauses reuse the idle signal the plugin already samples.
-- **Continuous use** accumulates while you are active. When it reaches `limits.continuousMinutes` (default 30), the assistant **immediately** starts a forced rest of `limits.restMinutes` (default 10): the rest screen appears, active time stops accumulating, and the rest is excluded from the daily total.
+- **Automatic rest:** if the keyboard/mouse is idle for `usage.autoPauseSeconds` (default 60, `0` = off), the Host automatically enters the rest/pause state and grays the DSH window; moving the mouse or typing resumes it. This is the only way to enter that state from the UI — the rings are display-only, and the pause/resume API endpoints stay available for advanced use.
+- **Continuous use** accumulates while you are active. When it reaches `limits.continuousMinutes` (default 30), the assistant **immediately** starts a forced rest of `limits.restMinutes` (default 10): the rest screen appears with the shared today-usage card, active time stops accumulating, and the rest is excluded from the daily total.
   - The rest **finishes only when its time has elapsed and you are back** (real input detected); while you are away it simply keeps waiting, so you cannot "sleep through" the rest and have it silently end.
   - If you do not want to wait, **「跳过休息」 / “Skip rest”** ends it immediately. The continuous counter resets either way.
-- **Daily use** accumulates the same activity. When it reaches `limits.dailyMinutes` (default 180), DSH shows the gray daily overlay:
+- **Daily use** accumulates the same activity. When it reaches `limits.dailyMinutes` (default 180), DSH shows the gray daily overlay — the same today-usage card as the rest screen, with two actions:
   - **「再使用 20 分钟」 / “Use 20 more minutes”** grants `limits.extendMinutes` (default 20) immediately. `limits.dailyExtendLimit` defaults to `0`, which means **unlimited** extensions; set a positive value to cap how many times per day you can extend. When the extension expires the overlay returns. While unlimited, the overlay omits the remaining-count line.
-  - **「跳过」 / “Skip”** hides the overlay for the current day in this browser (best-effort acknowledgment, not enforcement).
+  - **「跳过」 / “Skip”** only dismisses today's reminder in this browser; it does **not** extend or change your limits (it is the daily acknowledgment flag in `localStorage`).
 - **Day rollover:** counters reset at local midnight.
-- **Pause vs. assistant off:** `assistant.enabled` off (panel switch) means statistics only — no rings, no rest, no overlays. Pause is temporary and resumes on activity.
+- **Rest vs. assistant off:** `assistant.enabled` off (panel switch) means statistics only — no rings, no rest, no overlays. The automatic rest is temporary and resumes on activity.
 - **Completion chime:** when an agent task completes while you are **away** (window unfocused/hidden, or machine idle ≥ `alerts.awayIdleSeconds`), the chime repeats every `alerts.repeatIntervalMs` until you move the mouse or type. While you are actively watching, no chime plays.
 
 ## One conversation at a time
@@ -124,20 +136,20 @@ All runtime settings live in the **Focus assistant** panel. The table below is g
 
 ## Focus assistant panel and usage statistics
 
-- **Entry:** sidebar, below the Plugins row — `专注助手` / “Focus assistant”. It opens one page with three parts: overview, settings, and the enable/pause switch.
-- **Overview:** today's active time vs. the daily cap, continuous time vs. the continuous cap, pause/rest status, per-app breakdown (top 8, name + mm:ss + bar), and a 7-day trend.
-- **Settings:** every limit and toggle from the configuration table above, with units in the labels — including `assistant.showRings` and the completion-chime repeat settings.
+- **Entry:** sidebar, below the Plugins row — `专注助手` / “Focus assistant”. It opens one page with three parts: overview, a short settings form, and the enable/pause switch.
+- **Overview:** today's active time vs. the daily cap, continuous time vs. the continuous cap, rest status, per-app breakdown (top 8, name + mm:ss + bar), and a 7-day trend.
+- **Settings:** only the seven common controls listed under [Configuration](#configuration), with units in the labels. Advanced knobs are not shown in the UI (they remain in the settings JSON/API). The save/discard action row sits right-aligned at the bottom of the panel content.
 - **Per-app tracking** samples the foreground application every few seconds and stores **only app names and durations** — no window titles, no keystrokes, no URLs. Turn `usage.trackApps` off to keep just the total. Windows foreground-app detection is first-class; macOS and Linux are best effort.
 
 ## Pure-plugin capability boundary
 
-This version is **a DSH plugin only**. It cannot do the things a desktop guard could, and the README says so plainly: it **cannot bring DSH to the front**, **cannot block other applications** (a rest does not stop you from using your machine), and **cannot count usage while DSH is closed**. The pause/rest visuals only cover the DSH window. A companion desktop guard that would cover those cases is a possible later phase and is not included.
+This version is **a DSH plugin only**. It cannot do the things a desktop guard could, and the README says so plainly: it **cannot bring DSH to the front**, **cannot block other applications** (a rest does not stop you from using your machine), and **cannot count usage while DSH is closed**. The rest visuals only cover the DSH window. A companion desktop guard that would cover those cases is a possible later phase and is not included.
 
 | Wanted behavior | This version | Why |
 | --- | --- | --- |
 | Count usage, show the two rings and the countdowns inside DSH | ✅ yes | Runs in the DSH Host and Web GUI |
 | Gray DSH-only daily overlay with per-app detail | ✅ yes | Rendered inside DSH |
-| Pause and rest screens inside DSH | ✅ yes | Rendered inside DSH |
+| Automatic rest and daily screens inside DSH | ✅ yes | Rendered inside DSH |
 | One conversation at a time (auto-jump + gray out + not clickable) | ✅ yes (UI only) | Never blocks tools or agents |
 | **Bring DSH to the front** | ❌ no | Needs a desktop window/OS API |
 | **Block other applications during rest** | ❌ no | Needs a global always-on-top overlay / input hook |
@@ -147,7 +159,7 @@ This version is **a DSH plugin only**. It cannot do the things a desktop guard c
 ## Data & privacy
 
 - Everything is local. Data lives in **`$DSH_HOME/plugin-data/dsh-deep-focus/`** (`$DSH_HOME` defaults to `~/.dsh`): `settings.json` (mode `0600`), `limits.json`, and per-day `usage/YYYY-MM-DD.jsonl` files.
-- The sampler reads idle time and the **name of the foreground application** (on Windows from the foreground window's process; no title text). The pause/away logic reuses that same idle signal and the browser's focus state — **no new data is recorded**. It never reads keystrokes, window titles, application contents, screenshots, or the clipboard.
+- The sampler reads idle time and the **name of the foreground application** (on Windows from the foreground window's process; no title text). The idle auto-rest and away chime reuse that same idle signal and the browser's focus state — **no new data is recorded**. It never reads keystrokes, window titles, application contents, screenshots, or the clipboard.
 - The browser stores only a per-day “Skip” acknowledgment flag in `localStorage`; it contains no usage data.
 - **No network access, no telemetry, no accounts, no third-party services.**
 - Rest time is excluded from the daily total, and history is pruned after `usage.retentionDays` (30 days by default). Delete the data directory to remove everything.
