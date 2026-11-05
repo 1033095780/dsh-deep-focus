@@ -62,8 +62,8 @@ const FIELDS = [
     key: 'limits.dailyExtendLimit',
     unit: 'count',
     note: {
-      en: 'Times per day the daily cap can be extended; 0 = no extensions.',
-      zh: '每日可延长次数；0 = 不允许延长。',
+      en: 'Extensions per day; 0 = unlimited, a positive value is the daily maximum.',
+      zh: '每日可续期次数；0 = 不限次数，正数才是每日上限。',
     },
   },
   {
@@ -86,8 +86,8 @@ const FIELDS = [
     key: 'assistant.hideOtherSessions',
     unit: '',
     note: {
-      en: 'Temporarily hide other conversations and workspace folders while one is running.',
-      zh: '有会话在运行时临时隐藏其它会话与工作区文件夹。',
+      en: 'Gray out other conversations and workspace folders while one is running (visible but not clickable).',
+      zh: '有会话在运行时把其它会话与工作区文件夹置灰（仍可见但不可点击）。',
     },
   },
   {
@@ -174,6 +174,14 @@ const FIELDS = [
       zh: '记录前台应用（只存应用名与时长，不记录窗口标题）。',
     },
   },
+  {
+    key: 'usage.autoPauseSeconds',
+    unit: 's',
+    note: {
+      en: 'Pause counting automatically after this much keyboard/mouse idle; 0 = off.',
+      zh: '键鼠空闲达到此时长后自动暂停计时；0 = 关闭。',
+    },
+  },
 ]
 
 const UNIT_LABELS = {
@@ -193,8 +201,8 @@ const COLUMNS = {
 }
 
 const FOOTER = {
-  en: '> Times are minutes unless the unit says otherwise. The defaults are the agreed product rules: a 3-hour daily cap, a forced 10-minute rest after 30 continuous minutes, 2 × 20-minute extensions per day, and a completion chime that only repeats while you are away. The assistant never blocks tools and only enforces inside DSH (see the capability boundary below).',
-  zh: '> 未特别注明时时间单位为分钟。默认值即已确认的产品规则：每日上限 3 小时、连续使用 30 分钟后强制休息 10 分钟、每日可续期 2 次（每次 20 分钟），完成提示音只在你离开时重复。助手绝不拦截工具，限制只在 DSH 内生效（见下方能力边界）。',
+  en: '> Times are minutes unless the unit says otherwise. The defaults are the agreed product rules: a 3-hour daily cap, a forced 10-minute rest after 30 continuous minutes, unlimited 20-minute extensions by default (set a positive daily limit to cap them), and a completion chime that only repeats while you are away. The assistant never blocks tools and only enforces inside DSH (see the capability boundary below).',
+  zh: '> 未特别注明时时间单位为分钟。默认值即已确认的产品规则：每日上限 3 小时、连续使用 30 分钟后强制休息 10 分钟、默认不限次数的 20 分钟续期（设置正数才会限制次数），完成提示音只在你离开时重复。助手绝不拦截工具，限制只在 DSH 内生效（见下方能力边界）。',
 }
 
 function loadDefaults() {

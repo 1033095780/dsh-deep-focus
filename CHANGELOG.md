@@ -9,6 +9,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.4.2] - Unreleased
+
+A follow-up UX pass on 0.4.1. Versions 0.1.0–0.4.1 were never published.
+
+### Added
+
+- **Idle auto-pause** — new setting `usage.autoPauseSeconds` (default `60`
+  seconds, `0` = off): when the keyboard/mouse has been idle that long, the
+  assistant automatically enters the paused state and shows the same gray pause
+  screen; real activity resumes it. `/state` now exposes `limit.pausedReason`
+  (`"manual"` for the widget click, `"idle"` for the automatic pause).
+
+### Changed
+
+- **One-conversation mode now pins the UI to the running conversation** — when
+  another conversation's agent is running, the client automatically jumps back to
+  that conversation. The other conversation rows and workspace folder rows stay
+  grayed out and non-clickable (a click shows the gentle reminder); if a non-owner
+  conversation is somehow visible, its content is veiled/dimmed and sending is
+  discouraged until the run finishes. Nothing is hidden, so there is still no
+  animation, no layout change and no expanded/collapsed state to restore.
+
+## [0.4.1] - Unreleased
+
+A small UX fix release on top of 0.4.0. Versions 0.1.0–0.4.0 were never published.
+
+### Changed
+
+- **Floating two-ring widget moved lower** so it no longer overlaps the DSH top
+  area and stays clear of the host's top-right controls; it is clamped inside the
+  viewport on small windows.
+- **`limits.dailyExtendLimit` now defaults to `0`, which means unlimited daily
+  extensions** (a positive value is the maximum). The daily overlay omits the
+  remaining-count line while unlimited and never disables “Use 20 more minutes” for
+  a limit reason.
+- **Buttons use explicit theme colors** — the settings save/discard, daily overlay
+  extend/skip, rest skip and ring pause actions render primary/secondary styles
+  inline, so they can no longer appear white-on-white in dark mode.
+
+### Fixed
+
+- **One-conversation mode now grays out instead of hiding**: while a conversation
+  runs, the other conversation rows **and workspace folder rows** are dimmed and
+  made non-clickable (a click shows the gentle reminder), while the current
+  conversation row stays normal. Because nothing is hidden, folder
+  expanded/collapsed state and the sidebar layout are untouched — this removes the
+  broken “restore previous sidebar state” behavior from 0.4.0.
+- Removed the in-app “pure plugin cannot block other apps” disclaimer from the rest
+  screen; the capability boundary remains documented in the README/docs.
+
 ## [0.4.0] - Unreleased
 
 First public release; versions 0.1.0, 0.2.0 and 0.3.0 were never published. v0.4 is

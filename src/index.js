@@ -121,10 +121,11 @@ function createRuntime(ctx) {
       }
 
       // One-second enforcement tick: a rest window must end promptly even if the
-      // sampler stalls, and the daily cap should react without waiting for a sample.
+      // sampler stalls, the daily cap should react without waiting for a sample,
+      // and auto-pause uses the latest accepted idle value.
       timers.push(setInterval(() => {
         try {
-          limits.evaluate()
+          limits.evaluate(now(), { idleMs: sampler.lastIdleMs() })
         } catch {
           // A single bad tick must not stop the timer loop.
         }

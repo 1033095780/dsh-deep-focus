@@ -144,6 +144,28 @@ test('a skipped rest ends immediately and counting resumes', async () => {
   assert.ok(usage.activeTodayMs > 0)
 })
 
+test('idle beyond autoPauseSeconds auto-pauses through the sampler path', async () => {
+  const env = makeActivity()
+  await env.ready
+  env.step(100, BASE)
+  env.step(100, BASE + STEP_MS)
+  const before = env.tracker.snapshot(env.clock).activeTodayMs
+
+  // Crossing the default 60s idle threshold auto-pauses: counting stops.
+  env.step(60_000, BASE + STEP_MS + 1000)
+  assert.equal(env.limits.getView(env.clock).paused, true)
+  assert.equal(env.limits.getView(env.clock).pausedReason, 'idle')
+  env.step(60_000, env.clock + 10_000)
+  assert.equal(env.tracker.snapshot(env.clock).activeTodayMs, before)
+  assert.equal(env.kinds().filter((kind) => kind === EVENT.paused).length, 1)
+
+  // Real activity after the grace window resumes it.
+  env.step(100, env.clock + 2000)
+  assert.equal(env.limits.getView(env.clock).paused, false)
+  assert.equal(env.limits.getView(env.clock).pausedReason, null)
+  assert.ok(env.kinds().includes(EVENT.resumed))
+})
+
 test('a manually paused session still auto-resumes after activity', async () => {
   const env = makeActivity()
   await env.ready

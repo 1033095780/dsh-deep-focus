@@ -14,6 +14,10 @@ test('normalizeSettings fills every v4 default', () => {
   assert.equal(settings.alerts.repeatUntilActive, true)
   assert.equal(settings.alerts.repeatIntervalMs, 1000)
   assert.equal(settings.alerts.awayIdleSeconds, 30)
+  // 0 = unlimited extensions per day (the v0.4.1 default).
+  assert.equal(settings.limits.dailyExtendLimit, 0)
+  // Auto-pause defaults to one minute of idle.
+  assert.equal(settings.usage.autoPauseSeconds, 60)
 })
 
 test('v4 has no focus, lock or security sections and drops showCountdown', () => {
@@ -34,20 +38,23 @@ test('normalizeSettings clamps numbers and drops unknown keys', () => {
   const settings = normalizeSettings({
     limits: { dailyMinutes: -5, continuousMinutes: 9_999, restMinutes: 0, extendMinutes: 0, dailyExtendLimit: 99 },
     alerts: { repeatIntervalMs: 100, awayIdleSeconds: 1, volume: 2, nope: 1 },
-    usage: { sampleSeconds: 1, retentionDays: 10_000 },
+    usage: { sampleSeconds: 1, retentionDays: 10_000, autoPauseSeconds: 99_999 },
     unknownSection: { a: 1 },
   })
   assert.equal(settings.limits.dailyMinutes, 0)
   assert.equal(settings.limits.continuousMinutes, 600)
   assert.equal(settings.limits.restMinutes, 1)
   assert.equal(settings.limits.extendMinutes, 1)
-  assert.equal(settings.limits.dailyExtendLimit, 20)
+  assert.equal(settings.limits.dailyExtendLimit, 99)
   assert.equal(settings.alerts.repeatIntervalMs, 500)
   assert.equal(settings.alerts.awayIdleSeconds, 10)
   assert.equal(settings.alerts.nope, undefined)
   assert.equal(settings.alerts.volume, 1)
   assert.equal(settings.usage.sampleSeconds, 3)
   assert.equal(settings.usage.retentionDays, 365)
+  assert.equal(settings.usage.autoPauseSeconds, 3_600)
+  assert.equal(normalizeSettings({ usage: { autoPauseSeconds: -5 } }).usage.autoPauseSeconds, 0)
+  assert.equal(normalizeSettings({ usage: { autoPauseSeconds: 0 } }).usage.autoPauseSeconds, 0)
   assert.equal(settings.unknownSection, undefined)
   assert.equal(normalizeSettings({ alerts: { repeatIntervalMs: 999_999 } }).alerts.repeatIntervalMs, 10_000)
   assert.equal(normalizeSettings({ alerts: { awayIdleSeconds: 99_999 } }).alerts.awayIdleSeconds, 3_600)

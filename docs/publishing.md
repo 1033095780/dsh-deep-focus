@@ -22,7 +22,7 @@ discovery. This document is the release checklist; it is not run by CI.
 
 `npm publish --provenance` requires the package manifest to declare where its
 source lives. The manifest in this workspace does not have those fields yet (the
-release kit cannot edit `package.json`), so add them as part of the `0.4.0`
+release kit cannot edit `package.json`), so add them as part of the `0.4.2`
 release commit:
 
 ```jsonc
@@ -70,8 +70,8 @@ npm --version    # >= 11.5.1 is required by the publish workflow; it upgrades np
    ```
 
    (A bootstrap publish does not have provenance. That is fine; subsequent
-   releases from GitHub Actions will. None of 0.1.0–0.3.0 was published, so
-   `0.4.0` is the first public version.)
+   releases from GitHub Actions will. Versions 0.1.0–0.4.1 were never published,
+   so `0.4.2` is the first public version.)
 
 2. Open `https://www.npmjs.com/package/dsh-deep-focus/access` →
    **Trusted Publisher** → **GitHub Actions** and fill in:
@@ -94,9 +94,9 @@ See the npm documentation for the current rules:
 ## Release procedure
 
 1. **Update the version**
-   - `package.json` → `version` (`0.4.0` for this release).
+   - `package.json` → `version` (`0.4.2` for this release).
    - `CHANGELOG.md` → move the `[Unreleased]` entries to
-     `## [0.4.0] - YYYY-MM-DD`.
+     `## [0.4.2] - YYYY-MM-DD`.
    - No dependency or lockfile changes are needed (the plugin has no dependencies).
 
 2. **Run the gates locally**
@@ -112,14 +112,14 @@ See the npm documentation for the current rules:
 
    ```bash
    git add -A
-   git commit -m "release: 0.4.0"
-   git tag v0.4.0
+   git commit -m "release: 0.4.2"
+   git tag v0.4.2
    git push origin main --tags
    ```
 
-4. **Create the GitHub Release** from tag `v0.4.0`. Publishing the release (not
+4. **Create the GitHub Release** from tag `v0.4.2`. Publishing the release (not
    drafting it) triggers `publish.yml`. The workflow refuses to publish when the
-   tag (`v0.4.0` → `0.4.0`) does not match `package.json`'s version.
+   tag (`v0.4.2` → `0.4.2`) does not match `package.json`'s version.
 
 5. **Watch the run** in the Actions tab. It re-runs syntax checks, `verify.mjs`
    and `npm test`, then runs `npm publish --provenance --access public`.
@@ -153,7 +153,15 @@ Before announcing the release:
       off.
 - [ ] **Pause / gray**: clicking the widget grays the DSH window and stops counting;
       moving the mouse or typing resumes it; clicking the widget itself must not
-      immediately resume it (the grace period).
+      immediately resume it (the grace period). Then set `usage.autoPauseSeconds`
+      to a few seconds, stop touching the keyboard/mouse and confirm the same gray
+      pause appears automatically, and resumes on input.
+- [ ] **Solo mode / auto-jump**: start an agent turn in conversation A while you are
+      viewing conversation B; the UI jumps back to A, other conversation rows **and
+      workspace folder rows** are grayed out and cannot be clicked (a click shows the
+      gentle reminder), a non-owner conversation that is somehow visible has veiled
+      content and discouraged sending, folder expanded/collapsed state is untouched,
+      no banner appears, and no tool call is blocked.
 - [ ] **Forced rest**: temporarily set `limits.continuousMinutes` to 1 and confirm
       the rest screen appears; while the machine is idle the rest keeps waiting even
       after its timer; on activity it finishes; 「跳过休息」 ends it immediately.
@@ -161,17 +169,20 @@ Before announcing the release:
       totals.
 - [ ] **Daily overlay**: temporarily set `limits.dailyMinutes` to 1 and confirm the
       gray overlay shows today's total plus per-app rows; 「再使用 20 分钟」 grants the
-      configured extension and respects `limits.dailyExtendLimit`; 「跳过」 hides it
-      for the day.
+      configured extension and respects `limits.dailyExtendLimit` when it is
+      positive (`0` = unlimited, no remaining-count line); 「跳过」 hides it for the
+      day.
 - [ ] **Away chime**: with `alerts.repeatUntilActive` on, complete a task while the
       window is unfocused or the machine is idle past `alerts.awayIdleSeconds`;
       confirm the chime repeats at `alerts.repeatIntervalMs` until input returns,
       and that no chime plays while actively watching.
-- [ ] **Solo mode**: start an agent turn in one conversation; other conversations
-      **and workspace folders** fade out, return when it finishes, no banner appears,
-      and no tool call is blocked.
+- [ ] **Solo mode / auto-jump**: start an agent turn in one conversation; the UI
+      jumps back to the running conversation, other conversation rows **and workspace
+      folder rows** are grayed out and cannot be clicked (a click shows the gentle
+      reminder), the current row stays normal, folder expanded/collapsed state is
+      untouched, no banner appears, and no tool call is blocked.
 - [ ] **Disabled/outage**: disable the plugin while the UI is visible; everything it
-      rendered disappears immediately, the sidebar restores, and no stale hiding or
+      rendered disappears immediately, the sidebar restores, and no stale graying or
       swallowed clicks remain.
 - [ ] `scripts/verify.mjs` passes on a clean checkout (`git clean -xdf`-safe: it
       needs no install step).
@@ -187,11 +198,11 @@ file paths visible.
 | --- | --- | --- |
 | `docs/images/rings-light.png` | Light | The floating two-ring widget in the top-right corner: today's usage ring + continuous ring, close enough to read the labels. |
 | `docs/images/rings-dark.png` | Dark | The same widget in dark mode (also fine to capture together with a running conversation). |
-| `docs/images/pause-gray-dark.png` | Dark | The paused state: DSH window grayed with the 「已暂停计时 · 动一下鼠标或键盘继续」 note. |
+| `docs/images/pause-gray-dark.png` | Dark | The paused state: DSH window grayed with the 「已暂停计时 · 动一下鼠标或键盘继续」 note. Also covers the automatic idle pause. |
 | `docs/images/rest-skip-dark.png` | Dark | The forced-rest screen with the countdown and the 「跳过休息」 / “Skip rest” button. |
 | `docs/images/daily-overlay-dark.png` | Dark | The gray daily overlay: today's total, per-app breakdown, 「再使用 20 分钟」 and 「跳过」. |
 | `docs/images/assistant-panel-light.png` | Light | The **Focus assistant** page from the sidebar: overview, usage bars, per-app rows, 7-day trend. |
-| `docs/images/solo-mode-light.png` (optional) | Light | Sidebar while solo mode is hiding other conversations and folders (no banner). |
+| `docs/images/solo-mode-light.png` (optional) | Light | Sidebar while solo mode has auto-jumped to the running conversation and grayed out the other conversations and folders; may also show the veiled non-owner conversation. |
 
 There are intentionally **no pomodoro/focus-timer or header-chip screenshots** —
 those features no longer exist in v0.4.
@@ -212,7 +223,7 @@ The DSH plugin market reads configured plugin indexes, and the
 Open a PR with one entry in the list's Markdown file:
 
 ```markdown
-- [dsh-deep-focus](https://github.com/<OWNER>/dsh-deep-focus) — Focus assistant for DeepSeek Harness: floating two-ring usage widget, click-to-pause with a gray DSH window, per-app statistics, a 3-hour daily cap, activity-gated 10-minute rests with skip, one-conversation-at-a-time sidebar hiding, and an away-only repeating completion chime — pure plugin, never blocks tools. Install: `dsh plugin add dsh-deep-focus`.
+- [dsh-deep-focus](https://github.com/<OWNER>/dsh-deep-focus) — Focus assistant for DeepSeek Harness: floating two-ring usage widget, click-to-pause / idle auto-pause with a gray DSH window, per-app statistics, a 3-hour daily cap, activity-gated 10-minute rests with skip, one-conversation-at-a-time auto-jump + gray-out (folders and sessions, never blocked), and an away-only repeating completion chime — pure plugin, never blocks tools. Install: `dsh plugin add dsh-deep-focus`.
 ```
 
 - **Category recommendation:** `Workflow & Automation` (focus/session guidance).

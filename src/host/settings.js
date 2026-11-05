@@ -9,11 +9,14 @@ const NUMBER_RULES = {
   'limits.continuousMinutes': [0, 600],
   'limits.restMinutes': [1, 60],
   'limits.extendMinutes': [1, 120],
-  'limits.dailyExtendLimit': [0, 20],
+  // 0 = unlimited extensions per day.
+  'limits.dailyExtendLimit': [0, 999],
   'alerts.repeatIntervalMs': [500, 10_000],
   'alerts.awayIdleSeconds': [10, 3_600],
   'usage.sampleSeconds': [3, 30],
   'usage.idleThresholdSeconds': [0, 3_600],
+  // 0 = never auto-pause.
+  'usage.autoPauseSeconds': [0, 3_600],
   'usage.retentionDays': [1, 365],
 }
 

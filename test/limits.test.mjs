@@ -40,7 +40,8 @@ function makeLimits({ settings = {}, usage = null, nowValue = BASE, storage = nu
 function viewKeys() {
   return [
     'assistantEnabled', 'continuousLimitMs', 'continuousUsedMs', 'dailyLimitMs', 'dailyLocked', 'dailyUsedMs',
-    'extendCountToday', 'extendLimit', 'extendedUntil', 'paused', 'pausedAt', 'pausedNeedsActivity', 'restDue',
+    'extendCountToday', 'extendLimit', 'extendedUntil', 'paused', 'pausedAt', 'pausedNeedsActivity',
+    'pausedReason', 'restDue',
     'restNeedsActivity', 'restRemainingMs', 'restUntil', 'resting',
   ].sort()
 }
@@ -66,12 +67,66 @@ test('manual pause stops the clock and emits paused', () => {
   const view = env.limits.getView(BASE)
   assert.equal(view.paused, true)
   assert.equal(view.pausedAt, BASE)
+  assert.equal(view.pausedReason, 'manual')
   assert.equal(view.pausedNeedsActivity, true)
   const event = env.ring.list().at(-1)
   assert.equal(event.kind, EVENT.paused)
-  assert.deepEqual(event.meta, { at: BASE })
+  assert.deepEqual(event.meta, { at: BASE, reason: 'manual' })
   assert.equal(env.limits.isPaused(), true)
   assert.deepEqual(env.limits.pause(BASE + 1000), { ok: false, code: 'already-paused' })
+})
+
+test('idle longer than usage.autoPauseSeconds pauses automatically, exactly once', () => {
+  const env = makeLimits()
+  // The 1s enforcement tick carries the latest sampler idle value.
+  let view = env.limits.evaluate(BASE, { idleMs: 59_000 })
+  assert.equal(view.paused, false)
+  view = env.limits.evaluate(BASE + 1000, { idleMs: 60_000 })
+  assert.equal(view.paused, true)
+  assert.equal(view.pausedReason, 'idle')
+  assert.equal(view.pausedAt, BASE + 1000)
+  const pausedEvents = env.ring.list().filter((event) => event.kind === EVENT.paused)
+  assert.equal(pausedEvents.length, 1)
+  assert.deepEqual(pausedEvents[0].meta, { at: BASE + 1000, reason: 'idle' })
+  // Repeating the idle signal does not emit a second pause.
+  env.limits.evaluate(BASE + 5000, { idleMs: 90_000 })
+  assert.equal(env.ring.list().filter((event) => event.kind === EVENT.paused).length, 1)
+})
+
+test('the sampler path also auto-pauses, and activity resumes with a reason', () => {
+  const env = makeLimits()
+  env.limits.applySample({ idleMs: 60_000 }, BASE)
+  assert.equal(env.limits.getView(BASE).paused, true)
+  assert.equal(env.limits.getView(BASE).pausedReason, 'idle')
+  // Activity inside the grace window is ignored.
+  env.limits.applySample({ idleMs: 100 }, BASE + 500)
+  assert.equal(env.limits.getView(BASE).paused, true)
+  // Activity after the grace window resumes and clears the reason.
+  env.limits.applySample({ idleMs: 100 }, BASE + PAUSE_ACTIVITY_GRACE_MS + 100)
+  const view = env.limits.getView(BASE)
+  assert.equal(view.paused, false)
+  assert.equal(view.pausedReason, null)
+  assert.equal(env.ring.list().at(-1).kind, EVENT.resumed)
+  assert.equal(env.ring.list().at(-1).meta.reason, 'activity')
+})
+
+test('usage.autoPauseSeconds 0 disables the automatic pause', () => {
+  const env = makeLimits({ settings: { usage: { autoPauseSeconds: 0 } } })
+  const view = env.limits.evaluate(BASE, { idleMs: 10 * 60_000 })
+  assert.equal(view.paused, false)
+  env.limits.applySample({ idleMs: 10 * 60_000 }, BASE + 1000)
+  assert.equal(env.limits.getView(BASE + 1000).paused, false)
+})
+
+test('auto-pause never fires during a rest or while the assistant is off', () => {
+  const resting = makeLimits()
+  resting.limits.startRest(BASE)
+  resting.limits.evaluate(BASE + 1000, { idleMs: 10 * 60_000 })
+  assert.equal(resting.limits.getView(BASE + 1000).paused, false)
+
+  const off = makeLimits({ settings: { assistant: { enabled: false } } })
+  off.limits.evaluate(BASE, { idleMs: 10 * 60_000 })
+  assert.equal(off.limits.getView(BASE).paused, false)
 })
 
 test('a pause resumes only after the grace window and real activity', () => {
@@ -100,6 +155,7 @@ test('POST /resume force-resumes and conflicts when not paused', () => {
   const resumed = env.limits.resume(BASE + 1000)
   assert.equal(resumed.ok, true)
   assert.equal(resumed.view.paused, false)
+  assert.equal(resumed.view.pausedReason, null)
   assert.equal(env.ring.list().at(-1).meta.reason, 'manual')
   assert.deepEqual(env.limits.resume(BASE + 2000), { ok: false, code: 'not-paused' })
 })
@@ -192,6 +248,7 @@ test('the daily cap locks and extend grants another window', () => {
   env.usage.activeTodayMs = 180 * 60_000
   let view = env.limits.evaluate(BASE)
   assert.equal(view.dailyLocked, true)
+  assert.equal(view.extendLimit, 0)
   const extended = env.limits.extend(BASE + 1000)
   assert.equal(extended.ok, true)
   view = env.limits.getView(BASE + 1000)
@@ -199,6 +256,40 @@ test('the daily cap locks and extend grants another window', () => {
   assert.equal(view.extendCountToday, 1)
   assert.equal(view.extendedUntil, BASE + 1000 + 20 * 60_000)
   assert.equal(env.ring.list().at(-1).kind, EVENT.extended)
+})
+
+test('dailyExtendLimit 0 means unlimited extensions', () => {
+  const env = makeLimits()
+  env.usage.activeTodayMs = 180 * 60_000
+  env.limits.evaluate(BASE)
+  let clock = BASE
+  for (let round = 1; round <= 3; round += 1) {
+    clock += 1000
+    const extended = env.limits.extend(clock)
+    assert.equal(extended.ok, true, `round ${round}`)
+    assert.equal(env.limits.getView(clock).extendCountToday, round)
+    // Wait out the granted window so the next round starts from a fresh lock.
+    clock = env.limits.getView(clock).extendedUntil + 1000
+    env.limits.evaluate(clock)
+    assert.equal(env.limits.getView(clock).dailyLocked, true)
+  }
+  assert.equal(env.limits.getView(clock).extendLimit, 0)
+})
+
+test('a positive dailyExtendLimit blocks at the limit', () => {
+  const env = makeLimits({ settings: { limits: { dailyExtendLimit: 2 } } })
+  env.usage.activeTodayMs = 180 * 60_000
+  env.limits.evaluate(BASE)
+  assert.equal(env.limits.getView(BASE).extendLimit, 2)
+  let clock = BASE
+  for (let round = 1; round <= 2; round += 1) {
+    clock += 1000
+    assert.equal(env.limits.extend(clock).ok, true, `round ${round}`)
+    clock = env.limits.getView(clock).extendedUntil + 1000
+    env.limits.evaluate(clock)
+    assert.equal(env.limits.getView(clock).dailyLocked, true)
+  }
+  assert.deepEqual(env.limits.extend(clock + 1000), { ok: false, code: 'extend-limit-reached' })
 })
 
 test('daily counters reset at the next local day', () => {
@@ -226,6 +317,7 @@ test('load restores a waiting rest and a pause', async () => {
         restUntil: null,
         paused: true,
         pausedAt: BASE - 1000,
+        pausedReason: 'idle',
         dailyLocked: false,
         lockedSince: null,
         extendedUntil: null,
@@ -239,6 +331,7 @@ test('load restores a waiting rest and a pause', async () => {
   const view = env.limits.getView(BASE)
   assert.equal(view.paused, true)
   assert.equal(view.pausedAt, BASE - 1000)
+  assert.equal(view.pausedReason, 'idle')
 
   const restStorage = {
     readJson: async () => ({

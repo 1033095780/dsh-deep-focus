@@ -14,7 +14,7 @@ Coding agents make it effortless to spread across five conversations at once. Th
 - when you need a real break, **click the rings**: counting pauses, the DSH window grays, and nothing resumes until you move the mouse or type again;
 - after **30 continuous minutes** it stops the work with a **10-minute rest**; the rest only ends when the time is up **and** you are back — or you press 「跳过休息」;
 - at **3 hours of daily active use** DSH shows a gray overlay with today's per-app breakdown, a “Use 20 more minutes” action and a **Skip** button;
-- by default it keeps **one conversation at a time**: while any conversation's agent is running, the other conversations and workspace folders fade out of the sidebar and come back when it finishes.
+- by default it keeps **one conversation at a time**: while any conversation's agent is running, the other conversations and workspace folders are grayed out and cannot be clicked — a gentle reminder appears instead — while the current conversation stays normal.
 
 It never blocks a tool call, never interrupts another conversation's agent, and never enforces anything outside DSH. See [Pure-plugin capability boundary](#pure-plugin-capability-boundary) for exactly what that means.
 
@@ -23,11 +23,11 @@ It never blocks a tool call, never interrupts another conversation's agent, and 
 | Feature | What it does |
 | --- | --- |
 | **Floating two-ring widget** | Top-right of the DSH window: a compact glass card with one ring for today's usage and one for the continuous timer, plus a small label. Click it to pause. |
-| **Pause & gray** | Clicking the widget stops counting and grays the DSH window with a calm 「已暂停计时」 note. The pause ends only on **real keyboard/mouse activity** (a short grace period ignores the click that started it). |
-| **Daily cap (3 h by default)** | Gray overlay with today's total, per-app breakdown, 「再使用 20 分钟」 / “Use 20 more minutes” (configurable minutes and daily count) and 「跳过」 / “Skip” (a per-day acknowledgment). |
+| **Pause & gray** | Clicking the widget stops counting and grays the DSH window with a calm 「已暂停计时」 note. The pause ends only on **real keyboard/mouse activity** (a short grace period ignores the click that started it). It also pauses automatically after `usage.autoPauseSeconds` (default 60 s) without input, and movement resumes it. |
+| **Daily cap (3 h by default)** | Gray overlay with today's total, per-app breakdown, 「再使用 20 分钟」 / “Use 20 more minutes” (configurable minutes; the extension count is unlimited by default) and 「跳过」 / “Skip” (a per-day acknowledgment). |
 | **Continuous cap → forced rest** | 30 continuous minutes → a full-screen **10-minute rest**. It finishes only when the rest time elapsed **and** you are back at the machine; while you are away it waits. 「跳过休息」 / “Skip rest” ends it immediately. Rest time is not counted toward the daily cap. |
 | **Completion chime only when away** | No chime while you are actively watching. If the window is unfocused/hidden or the machine has been idle for `alerts.awayIdleSeconds`, the chime repeats every `alerts.repeatIntervalMs` until input returns. |
-| **One conversation at a time** | Default on. While a root conversation's agent is running, the other conversations **and workspace folders** smoothly fade out of the sidebar, then return when it finishes. No banner text. The running agent is never touched. |
+| **One conversation at a time** | Default on. While a root conversation's agent is running, the UI **jumps back to that conversation**, and the other conversations **and workspace folders** are grayed out and cannot be clicked (a gentle reminder appears). If a non-owner conversation is somehow visible, its content is veiled and sending is discouraged until the run finishes. Nothing is hidden; the running agent is never touched. No banner text. |
 | **Focus assistant panel** | One sidebar entry under the Plugins row: overview (today, continuous timer, rest/pause status, per-app breakdown, 7-day trend), settings, and the enable/pause switch. |
 | **Per-app usage statistics** | Foreground-application sampling while DSH runs: DeepSeek Harness, browsers, QQ, WeChat, VS Code, terminals, and so on. App name + duration only. |
 | **Local and private** | Everything stays in `$DSH_HOME/plugin-data/dsh-deep-focus/`; no network, no telemetry, no accounts. |
@@ -65,7 +65,7 @@ The plugin ships source as-is: there is no build step and no runtime dependency 
 
 1. Open the **Focus assistant** entry in the sidebar, below the Plugins row (`专注助手` in Chinese).
 2. Watch the **floating two-ring widget** in the top-right corner of the DSH window; it shows today's usage and the continuous timer.
-3. Click the widget when you want a deliberate pause: counting stops, DSH grays, and moving the mouse or typing resumes it.
+3. Click the widget when you want a deliberate pause: counting stops, DSH grays, and moving the mouse or typing resumes it. The same gray pause appears automatically after `usage.autoPauseSeconds` (default 60 s) without input.
 4. When the continuous limit is reached, the rest screen appears; it waits until the rest time is over **and** you are back, or press 「跳过休息」.
 5. At the daily cap the gray overlay offers 「再使用 20 分钟」 and 「跳过」. Use the assistant panel's switch to pause enforcement entirely, and its settings to change any limit.
 
@@ -80,10 +80,10 @@ All runtime settings live in the **Focus assistant** panel. The table below is g
 | `limits.continuousMinutes` | 30 | min | Continuous-use cap before the assistant forces a rest; 0 = no forced rest. |
 | `limits.restMinutes` | 10 | min | Length of a forced rest. Rest time is not counted toward the daily cap. |
 | `limits.extendMinutes` | 20 | min | Extra usage granted by one click on “Use 20 more minutes”. |
-| `limits.dailyExtendLimit` | 2 | count | Times per day the daily cap can be extended; 0 = no extensions. |
+| `limits.dailyExtendLimit` | 0 | count | Extensions per day; 0 = unlimited, a positive value is the daily maximum. |
 | `assistant.enabled` | On | — | Track and enforce the rules; off = keep statistics only (nothing enforces). |
 | `assistant.soloSession` | On | — | One conversation at a time in the UI while a root conversation is running. |
-| `assistant.hideOtherSessions` | On | — | Temporarily hide other conversations and workspace folders while one is running. |
+| `assistant.hideOtherSessions` | On | — | Gray out other conversations and workspace folders while one is running (visible but not clickable). |
 | `assistant.showRings` | On | — | Show the floating top-right widget with the two usage rings. |
 | `alerts.sound` | On | — | Play the short chime for rest, pause and completion alerts. |
 | `alerts.volume` | 0.6 | 0–1 | Chime volume. |
@@ -96,19 +96,21 @@ All runtime settings live in the **Focus assistant** panel. The table below is g
 | `usage.idleThresholdSeconds` | 60 | s | Idle time below this counts as active. |
 | `usage.retentionDays` | 30 | days | Days of local usage history kept. |
 | `usage.trackApps` | On | — | Record which foreground application is active (app name + duration only; no window titles). |
+| `usage.autoPauseSeconds` | 60 | s | Pause counting automatically after this much keyboard/mouse idle; 0 = off. |
 
-> Times are minutes unless the unit says otherwise. The defaults are the agreed product rules: a 3-hour daily cap, a forced 10-minute rest after 30 continuous minutes, 2 × 20-minute extensions per day, and a completion chime that only repeats while you are away. The assistant never blocks tools and only enforces inside DSH (see the capability boundary below).
+> Times are minutes unless the unit says otherwise. The defaults are the agreed product rules: a 3-hour daily cap, a forced 10-minute rest after 30 continuous minutes, unlimited 20-minute extensions by default (set a positive daily limit to cap them), and a completion chime that only repeats while you are away. The assistant never blocks tools and only enforces inside DSH (see the capability boundary below).
 <!-- config-table:end -->
 
 ## How the rules work
 
 - **What counts:** time is counted only while keyboard/mouse input was recent (`usage.idleThresholdSeconds`) and only while DSH is running. It is whole-machine time, not DSH-window time.
 - **Pause mode:** clicking the floating widget sends `POST /pause`; counting stops immediately and the window grays. It resumes only on real activity (`POST /resume` or the Host's own activity check with a short grace period), never from the click that paused it.
+- **Idle auto-pause:** if the keyboard/mouse is idle for `usage.autoPauseSeconds` (default 60, `0` = off), the Host pauses counting automatically and shows the same gray pause screen; moving the mouse or typing resumes it. Both manual and automatic pauses reuse the idle signal the plugin already samples.
 - **Continuous use** accumulates while you are active. When it reaches `limits.continuousMinutes` (default 30), the assistant **immediately** starts a forced rest of `limits.restMinutes` (default 10): the rest screen appears, active time stops accumulating, and the rest is excluded from the daily total.
   - The rest **finishes only when its time has elapsed and you are back** (real input detected); while you are away it simply keeps waiting, so you cannot "sleep through" the rest and have it silently end.
   - If you do not want to wait, **「跳过休息」 / “Skip rest”** ends it immediately. The continuous counter resets either way.
 - **Daily use** accumulates the same activity. When it reaches `limits.dailyMinutes` (default 180), DSH shows the gray daily overlay:
-  - **「再使用 20 分钟」 / “Use 20 more minutes”** grants `limits.extendMinutes` (default 20) immediately, up to `limits.dailyExtendLimit` times per day (default 2, `0` = no extensions). When the extension expires the overlay returns.
+  - **「再使用 20 分钟」 / “Use 20 more minutes”** grants `limits.extendMinutes` (default 20) immediately. `limits.dailyExtendLimit` defaults to `0`, which means **unlimited** extensions; set a positive value to cap how many times per day you can extend. When the extension expires the overlay returns. While unlimited, the overlay omits the remaining-count line.
   - **「跳过」 / “Skip”** hides the overlay for the current day in this browser (best-effort acknowledgment, not enforcement).
 - **Day rollover:** counters reset at local midnight.
 - **Pause vs. assistant off:** `assistant.enabled` off (panel switch) means statistics only — no rings, no rest, no overlays. Pause is temporary and resumes on activity.
@@ -116,9 +118,9 @@ All runtime settings live in the **Focus assistant** panel. The table below is g
 
 ## One conversation at a time
 
-- **Default on** (`assistant.soloSession` + `assistant.hideOtherSessions`). While any root conversation's agent is running, the other conversations **and workspace folders** fade out of the sidebar, then fade back in when it finishes. There is no banner text any more.
-- The conversation that is running stays fully usable, and other background agents keep running to completion — this is a UI affordance, **not** a lock. No tool call is blocked, no agent is interrupted.
-- When nothing is running, the sidebar restores itself automatically. Disabling the plugin or losing contact with the Host restores it immediately as well (animations are skipped under `prefers-reduced-motion`).
+- **Default on** (`assistant.soloSession` + `assistant.hideOtherSessions`). While any root conversation's agent is running, the UI **jumps back to that running conversation** and keeps it usable. The other conversation rows **and workspace folder rows** are grayed out and cannot be clicked; clicking one only shows the gentle reminder. If a non-owner conversation is somehow visible, its content is veiled/grayed and sending is discouraged until the run finishes. Nothing is hidden — folder collapse/expand state is never touched — and there is no banner text.
+- Background agents keep running to completion — this is a UI affordance, **not** a lock. No tool call is blocked, no agent is interrupted.
+- When nothing is running, the auto-jump stops and the gray styles and click guard are removed immediately. Disabling the plugin or losing contact with the Host clears them right away as well.
 
 ## Focus assistant panel and usage statistics
 
@@ -136,7 +138,7 @@ This version is **a DSH plugin only**. It cannot do the things a desktop guard c
 | Count usage, show the two rings and the countdowns inside DSH | ✅ yes | Runs in the DSH Host and Web GUI |
 | Gray DSH-only daily overlay with per-app detail | ✅ yes | Rendered inside DSH |
 | Pause and rest screens inside DSH | ✅ yes | Rendered inside DSH |
-| One conversation at a time (sidebar hiding + animation) | ✅ yes (UI only) | Never blocks tools or agents |
+| One conversation at a time (auto-jump + gray out + not clickable) | ✅ yes (UI only) | Never blocks tools or agents |
 | **Bring DSH to the front** | ❌ no | Needs a desktop window/OS API |
 | **Block other applications during rest** | ❌ no | Needs a global always-on-top overlay / input hook |
 | **Count or enforce while DSH is closed** | ❌ no | The plugin runs inside the DSH process |
@@ -158,7 +160,7 @@ See [docs/privacy.md](docs/privacy.md) for the full detail.
 - Usage is sampled **only while DSH runs**; time with DSH closed is not tracked, and the UI cannot show it.
 - **Windows is first-class.** macOS and Linux foreground-app detection is implemented but best effort.
 - Foreground tracking is per executable: some apps share a process name, and unknown executables appear under their raw name.
-- Solo mode animates sidebar hiding; it is a visual affordance, not a hard block, and background agents keep working.
+- Solo mode jumps back to the running conversation and grays out other conversation/folder rows, blocking their clicks; it is a visual affordance, not a hard block, and background agents keep working.
 - The “Skip” acknowledgment is stored per day per browser; another browser or clearing site data can show the overlay again.
 - The completion chime repeats only inside the DSH browser window; if the machine sleeps or DSH is closed, nothing rings.
 - No cross-device sync and no reports.

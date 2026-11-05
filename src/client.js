@@ -76,6 +76,10 @@ window.__ModuleLoader__.load({
         'rings.busy': '正在暂停…',
         'rings.summary': '今日 {today} / 连续 {continuous}',
         'pause.title': '已暂停计时',
+        'pause.autoTitle': '已自动暂停计时',
+        'veil.hint': '专注中：已切回正在运行的会话',
+        'veil.aria': '专注模式：当前视图不是正在运行的会话',
+        'veil.blocked': '先完成正在运行的任务再发送吧',
         'pause.hint': '动一下鼠标或键盘继续',
         'pause.aria': '计时已暂停，动一下鼠标或键盘继续',
         'rest.skip': '跳过休息',
@@ -134,7 +138,7 @@ window.__ModuleLoader__.load({
         'field.extendMinutes': '每次续期时长',
         'field.extendMinutes.hint': '分钟',
         'field.dailyExtendLimit': '每日续期次数',
-        'field.dailyExtendLimit.hint': '次，0 = 不允许',
+        'field.dailyExtendLimit.hint': '次，0 = 不限',
         'field.soloSession': '单会话模式',
         'field.soloSession.hint': '有会话运行时限制进入其它会话',
         'field.hideOtherSessions': '隐藏其它文件夹和会话',
@@ -156,6 +160,8 @@ window.__ModuleLoader__.load({
         'field.sampleSeconds.hint': '秒，3–30',
         'field.idleThresholdSeconds': '空闲判定阈值',
         'field.idleThresholdSeconds.hint': '秒，0 = 关闭',
+        'field.autoPauseSeconds': '空闲多久自动暂停',
+        'field.autoPauseSeconds.hint': '秒，0 = 关闭',
         'field.retentionDays': '数据保留',
         'field.retentionDays.hint': '天',
         'field.trackApps': '按应用统计使用时长',
@@ -177,18 +183,17 @@ window.__ModuleLoader__.load({
         'daily.extend': '再使用 {n} 分钟',
         'daily.extendRemaining': '今日还可续期 {n} 次',
         'daily.extendNone': '今日续期次数已用完',
-        'daily.extendDisabled': '今日不可续期',
         'daily.skip': '跳过',
         'daily.skipHint': '仅隐藏今日提醒（best effort），不影响统计与限制。',
         'daily.error': '操作失败，请稍后重试',
         'daily.used': '今日已用',
         'rest.title': '休息中',
         'rest.body': '深呼吸，站起来走走，看看远处。',
-        'rest.note': '纯插件版不会阻止你使用其它应用；休息时间不计入今日使用时长。',
         'rest.auto': '休息结束后会自动恢复。',
         'rest.remaining': '剩余',
         'rest.aria': '休息倒计时 {time}',
         'toast.taskCompleted': '对话完成',
+        'toast.gentleSwitch': '当前任务完成后再切换吧',
         'toast.taskCompletedTask': '对话完成：{task}',
         'time.hm': '{h} 小时 {m} 分',
         'time.m': '{m} 分钟',
@@ -232,6 +237,10 @@ window.__ModuleLoader__.load({
         'rings.busy': 'Pausing…',
         'rings.summary': '{today} today / {continuous} continuous',
         'pause.title': 'Tracking paused',
+        'pause.autoTitle': 'Tracking auto-paused',
+        'veil.hint': 'Focus mode: switched back to the running conversation',
+        'veil.aria': 'Focus mode: the current view is not the running conversation',
+        'veil.blocked': 'Finish the running task before sending',
         'pause.hint': 'Move the mouse or press a key to continue',
         'pause.aria': 'Tracking is paused. Move the mouse or press a key to continue.',
         'rest.skip': 'Skip rest',
@@ -290,7 +299,7 @@ window.__ModuleLoader__.load({
         'field.extendMinutes': 'Extension length',
         'field.extendMinutes.hint': 'minutes',
         'field.dailyExtendLimit': 'Extensions per day',
-        'field.dailyExtendLimit.hint': 'times, 0 = none',
+        'field.dailyExtendLimit.hint': 'times, 0 = unlimited',
         'field.soloSession': 'One-conversation mode',
         'field.soloSession.hint': 'limits entering other conversations while one runs',
         'field.hideOtherSessions': 'Hide other folders and conversations',
@@ -312,6 +321,8 @@ window.__ModuleLoader__.load({
         'field.sampleSeconds.hint': 'seconds, 3–30',
         'field.idleThresholdSeconds': 'Idle threshold',
         'field.idleThresholdSeconds.hint': 'seconds, 0 disables',
+        'field.autoPauseSeconds': 'Auto-pause after idle',
+        'field.autoPauseSeconds.hint': 'seconds, 0 = off',
         'field.retentionDays': 'Keep history',
         'field.retentionDays.hint': 'days',
         'field.trackApps': 'Track per-app usage',
@@ -333,18 +344,17 @@ window.__ModuleLoader__.load({
         'daily.extend': 'Use {n} more minutes',
         'daily.extendRemaining': '{n} extension(s) left today',
         'daily.extendNone': 'No extensions left today',
-        'daily.extendDisabled': 'Extensions are disabled today',
         'daily.skip': 'Skip',
         'daily.skipHint': 'Only hides this reminder for today (best effort); tracking and limits are unchanged.',
         'daily.error': 'Something went wrong — try again shortly',
         'daily.used': 'Used today',
         'rest.title': 'Resting',
         'rest.body': 'Breathe slowly, stand up, and look into the distance.',
-        'rest.note': 'This pure-plugin version cannot block other applications, and rest time is not counted toward the daily limit.',
         'rest.auto': 'It clears automatically when the rest ends.',
         'rest.remaining': 'Remaining',
         'rest.aria': 'Rest countdown {time}',
         'toast.taskCompleted': 'Conversation finished',
+        'toast.gentleSwitch': "Finish the current task before switching \u2014 you've got this.",
         'toast.taskCompletedTask': 'Finished: {task}',
         'time.hm': '{h}h {m}m',
         'time.m': '{m}m',
@@ -801,7 +811,8 @@ window.__ModuleLoader__.load({
       '.df-rest-body{color:var(--dsw-alias-label-secondary);font-size:14px;margin:0}',
       '.df-rest-note{color:var(--dsw-alias-label-secondary);font-size:12px;margin:0;max-width:440px}',
       '.df-rest-card{box-sizing:border-box;display:flex;flex-direction:column;align-items:center;gap:14px;padding:28px 32px;border:1px solid var(--dsw-alias-border-l1);border-radius:20px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 24px 60px color-mix(in srgb, var(--dsw-alias-bg-overlay) 70%, transparent)}',
-      '.df-rings-layer{position:absolute;top:calc(var(--dsh-frame-top-clearance, 0px) + 56px);right:16px;z-index:75;display:flex;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none}',
+      '.df-rings-layer{position:absolute;top:min(calc(var(--dsh-frame-top-clearance, 0px) + 96px), calc(100% - 150px));right:16px;z-index:75;display:flex;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none}',
+      '@media (max-height: 540px){.df-rings-layer{top:calc(var(--dsh-frame-top-clearance, 0px) + 56px)}}',
       '.df-rings{position:static;display:flex;align-items:center;gap:10px;box-sizing:border-box;padding:9px 11px;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent);backdrop-filter:blur(8px);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:11px;line-height:1.2;cursor:pointer;pointer-events:auto;box-shadow:0 8px 24px color-mix(in srgb, var(--dsw-alias-bg-overlay) 40%, transparent);transition:border-color .16s ease,opacity .16s ease}',
       '.df-rings:hover{border-color:var(--dsw-alias-border-l2)}',
       '.df-rings:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}',
@@ -824,6 +835,9 @@ window.__ModuleLoader__.load({
       '.df-pause-card{box-sizing:border-box;max-width:420px;display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 20px;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:13px;text-align:center;box-shadow:0 12px 32px color-mix(in srgb, var(--dsw-alias-bg-overlay) 45%, transparent)}',
       '.df-pause-title{font-size:15px;font-weight:600;margin:0}',
       '.df-pause-hint{color:var(--dsw-alias-label-secondary);font-size:12px;margin:0}',
+      '.df-veil-layer{position:absolute;inset:0;z-index:116;pointer-events:none}',
+      '.df-veil{position:absolute;top:0;right:0;bottom:0;left:0;background:color-mix(in srgb, var(--dsw-alias-bg-overlay) 16%, transparent);backdrop-filter:grayscale(.35);pointer-events:none}',
+      '.df-veil-hint{position:absolute;top:calc(var(--dsh-frame-top-clearance, 0px) + 64px);left:50%;transform:translateX(-50%);box-sizing:border-box;max-width:calc(100vw - 32px);padding:6px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:999px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:12px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;box-shadow:0 6px 18px color-mix(in srgb, var(--dsw-alias-bg-overlay) 40%, transparent)}',
       /* toasts */
       '.df-toasts{position:absolute;top:var(--dsh-frame-overlay-top,56px);right:16px;z-index:60;display:flex;flex-direction:column;gap:8px;max-width:340px;pointer-events:none}',
       '.df-toast{box-sizing:border-box;padding:9px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:10px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:12px;line-height:1.45;box-shadow:0 8px 24px color-mix(in srgb, var(--dsw-alias-bg-overlay) 55%, transparent);animation:df-toast-in .18s ease-out}',
@@ -955,6 +969,13 @@ window.__ModuleLoader__.load({
         if (key) return t(key)
         if (row && typeof row.name === 'string' && row.name.length > 0) return row.name
         return row && typeof row.id === 'string' && row.id.length > 0 ? row.id : t('stats.unknownApp')
+      }
+
+      /** Escape a value for use inside a double-quoted attribute selector. */
+      function cssAttrValue(value) {
+        return String(value).replace(/["\\]/g, function (character) {
+          return '\\' + character
+        })
       }
 
       function cssEscape(value) {
@@ -1562,96 +1583,16 @@ window.__ModuleLoader__.load({
       // workspace/overflow rows fade out (~220ms) and then collapse to display:none;
       // restore runs the reverse. No inline styles and no banner.
 
+      /* ── Solo session mode: gray rows + gentle click interception ── */
+      // Client-primary running-set detection. A single injected style node + one
+      // <html> attribute reduce opacity of non-owner session/workspace/overflow
+      // rows; layout is never changed, so restore is exact and residue-free.
+
       const soloHider = (function createSoloHider() {
-        const PHASE_MS = 220
-        const MAX_COLLAPSED_HEIGHT = 120
         let styleElement = null
         let running = false
         let clientRunningIds = null
-        let activeIds = null
-        let phase = ''
-        let phaseTimer = 0
-        let frameId = 0
-        const listeners = new Set()
-
-        function prefersReducedMotion() {
-          try {
-            return (
-              typeof window !== 'undefined' &&
-              typeof window.matchMedia === 'function' &&
-              window.matchMedia('(prefers-reduced-motion: reduce)').matches === true
-            )
-          } catch (error) {
-            return false
-          }
-        }
-
-        function nextFrame(callback) {
-          try {
-            if (typeof requestAnimationFrame === 'function') return requestAnimationFrame(callback)
-          } catch (error) {
-            /* ignored */
-          }
-          return setTimeout(callback, 0)
-        }
-
-        function cancelFrame(id) {
-          if (!id) return
-          try {
-            if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(id)
-          } catch (error) {
-            /* ignored */
-          }
-          clearTimeout(id)
-        }
-
-        function notify() {
-          listeners.forEach(function (listener) {
-            try {
-              listener()
-            } catch (error) {
-              /* ignored */
-            }
-          })
-        }
-
-        function clearTimers() {
-          if (phaseTimer) {
-            clearTimeout(phaseTimer)
-            phaseTimer = 0
-          }
-          if (frameId) {
-            cancelFrame(frameId)
-            frameId = 0
-          }
-        }
-
-        function setPhase(value) {
-          phase = value
-          try {
-            if (value) document.documentElement.setAttribute(SOLO_HTML_ATTR, value)
-            else document.documentElement.removeAttribute(SOLO_HTML_ATTR)
-          } catch (error) {
-            /* ignored */
-          }
-        }
-
-        function removeStyle() {
-          try {
-            if (styleElement && styleElement.parentNode) styleElement.parentNode.removeChild(styleElement)
-          } catch (error) {
-            /* ignored */
-          }
-          styleElement = null
-        }
-
-        function teardownInstant() {
-          clearTimers()
-          activeIds = null
-          setPhase('')
-          removeStyle()
-          restoreLegacyDimMarks()
-        }
+        let lastBlockedAt = 0
 
         function activeState() {
           const current = store.get()
@@ -1674,8 +1615,12 @@ window.__ModuleLoader__.load({
           return clean.length > 0 ? clean : null
         }
 
-        /** Best effort: sidebar rows of the groups that contain a running session. */
-        function workspaceKeysForSessions(ids) {
+        function stateNow() {
+          return store.get().state
+        }
+
+        /** Nearest sidebar group rows that contain one of the running sessions. */
+        function ownerWorkspaceKeys(ids) {
           const keys = new Set()
           try {
             for (let index = 0; index < ids.length; index += 1) {
@@ -1684,70 +1629,57 @@ window.__ModuleLoader__.load({
               if (!row) continue
               let node = row
               for (let depth = 0; node && depth < 8; depth += 1, node = node.parentElement) {
+                const found = new Set()
                 if (node && typeof node.querySelectorAll === 'function') {
-                  const found = node.querySelectorAll('[data-row-key^="workspace:"]')
-                  for (let foundIndex = 0; foundIndex < found.length; foundIndex += 1) {
-                    const key = found[foundIndex].getAttribute && found[foundIndex].getAttribute('data-row-key')
-                    if (key && key.indexOf('workspace:') === 0) keys.add(key)
+                  const list = node.querySelectorAll('[data-row-key^="workspace:"]')
+                  for (let foundIndex = 0; foundIndex < list.length; foundIndex += 1) {
+                    const key = list[foundIndex].getAttribute && list[foundIndex].getAttribute('data-row-key')
+                    if (key && key.indexOf('workspace:') === 0) found.add(key)
                   }
                 }
                 let sibling = node && node.previousElementSibling
                 for (let step = 0; sibling && step < 3; step += 1, sibling = sibling.previousElementSibling) {
                   const siblingKey = sibling.getAttribute && sibling.getAttribute('data-row-key')
                   if (siblingKey && siblingKey.indexOf('workspace:') === 0) {
-                    keys.add(siblingKey)
+                    found.add(siblingKey)
                     break
                   }
+                }
+                if (found.size > 0) {
+                  found.forEach(function (key) {
+                    keys.add(key)
+                  })
+                  // Nearest enclosing group only: never walk up to the whole list.
+                  break
                 }
               }
             }
           } catch (error) {
-            /* fall back to hiding every workspace row */
+            /* fall back to graying every workspace row */
           }
           return keys
         }
 
-        function selectorGroups(ids) {
+        function buildCss(ids) {
           const sessionKeep = ids
             .map(function (id) {
-              return ':not([data-row-key="session:' + cssEscape(id) + '"])'
+              return ':not([data-row-key="session:' + cssAttrValue(id) + '"])'
             })
             .join('')
-          const workspaceKeep = Array.from(workspaceKeysForSessions(ids))
+          const workspaceKeep = Array.from(ownerWorkspaceKeys(ids))
             .map(function (key) {
-              return ':not([data-row-key="' + cssEscape(key) + '"])'
+              return ':not([data-row-key="' + cssAttrValue(key) + '"])'
             })
             .join('')
-          return {
-            session: '[data-row-key^="session:"]' + sessionKeep,
-            workspace: '[data-row-key^="workspace:"]' + workspaceKeep,
-            overflow: '[data-row-key^="overflow:"]',
-          }
-        }
-
-        function buildCss(ids) {
-          const groups = selectorGroups(ids)
-          const targets = [groups.session, groups.workspace, groups.overflow]
-          const base = targets
-            .map(function (selector) {
-              return 'html[data-dsh-focus-solo] ' + selector
-            })
-            .join(',')
-          let css = base + '{transition:opacity ' + PHASE_MS + 'ms ease,max-height ' + PHASE_MS + 'ms ease}'
-          css += 'html[data-dsh-focus-solo="out"] ' + groups.session + '{opacity:0;max-height:0!important;overflow:hidden;padding-top:0!important;padding-bottom:0!important;margin-top:0!important;margin-bottom:0!important}'
-          css += 'html[data-dsh-focus-solo="out"] ' + groups.workspace + '{opacity:0;max-height:0!important;overflow:hidden;padding-top:0!important;padding-bottom:0!important;margin-top:0!important;margin-bottom:0!important}'
-          css += 'html[data-dsh-focus-solo="out"] ' + groups.overflow + '{opacity:0;max-height:0!important;overflow:hidden}'
-          css += 'html[data-dsh-focus-solo="pre"] ' + groups.session + '{opacity:0;max-height:0;overflow:hidden;transition:none!important}'
-          css += 'html[data-dsh-focus-solo="pre"] ' + groups.workspace + '{opacity:0;max-height:0;overflow:hidden;transition:none!important}'
-          css += 'html[data-dsh-focus-solo="pre"] ' + groups.overflow + '{opacity:0;max-height:0;overflow:hidden;transition:none!important}'
-          css += 'html[data-dsh-focus-solo="in"] ' + groups.session + '{opacity:1;max-height:' + MAX_COLLAPSED_HEIGHT + 'px;overflow:visible}'
-          css += 'html[data-dsh-focus-solo="in"] ' + groups.workspace + '{opacity:1;max-height:' + MAX_COLLAPSED_HEIGHT + 'px;overflow:visible}'
-          css += 'html[data-dsh-focus-solo="in"] ' + groups.overflow + '{opacity:1;max-height:' + MAX_COLLAPSED_HEIGHT + 'px;overflow:visible}'
-          css += 'html[data-dsh-focus-solo="hidden"] ' + groups.session + '{display:none!important}'
-          css += 'html[data-dsh-focus-solo="hidden"] ' + groups.workspace + '{display:none!important}'
-          css += 'html[data-dsh-focus-solo="hidden"] ' + groups.overflow + '{display:none!important}'
-          css += '@media (prefers-reduced-motion: reduce){' + base + '{transition:none!important}}'
-          return css
+          return (
+            'html[data-dsh-focus-solo] [data-row-key^="session:"]' +
+            sessionKeep +
+            '{opacity:.45}' +
+            'html[data-dsh-focus-solo] [data-row-key^="workspace:"]' +
+            workspaceKeep +
+            '{opacity:.45}' +
+            'html[data-dsh-focus-solo] [data-row-key^="overflow:"]{opacity:.45}'
+          )
         }
 
         function ensureStyle(ids) {
@@ -1760,92 +1692,132 @@ window.__ModuleLoader__.load({
             }
             const css = buildCss(ids)
             if (styleElement.textContent !== css) styleElement.textContent = css
+            document.documentElement.setAttribute(SOLO_HTML_ATTR, ids.join(','))
           } catch (error) {
-            /* hiding is cosmetic; never break the app */
+            /* graying is cosmetic; never break the app */
           }
         }
 
-        function activate(ids) {
-          clearTimers()
-          activeIds = ids.slice()
-          ensureStyle(ids)
-          setPhase('out')
-          if (prefersReducedMotion()) {
-            setPhase('hidden')
-            notify()
-            return
+        /** Hard reset: remove the style node + html attribute, restore legacy marks. */
+        function teardown() {
+          try {
+            if (styleElement && styleElement.parentNode) styleElement.parentNode.removeChild(styleElement)
+          } catch (error) {
+            /* ignored */
           }
-          phaseTimer = setTimeout(function () {
-            phaseTimer = 0
-            setPhase('hidden')
-            notify()
-          }, PHASE_MS)
-          notify()
-        }
-
-        function refreshActive(ids) {
-          activeIds = ids.slice()
-          ensureStyle(ids)
-          if (phase === '' || phase === 'pre' || phase === 'in') {
-            clearTimers()
-            setPhase('out')
-            if (prefersReducedMotion()) {
-              setPhase('hidden')
-            } else {
-              phaseTimer = setTimeout(function () {
-                phaseTimer = 0
-                setPhase('hidden')
-                notify()
-              }, PHASE_MS)
-            }
+          styleElement = null
+          try {
+            document.documentElement.removeAttribute(SOLO_HTML_ATTR)
+            void document.documentElement.offsetHeight
+          } catch (error) {
+            /* ignored */
           }
-          notify()
-        }
-
-        function deactivate() {
-          if (phase === '' && styleElement === null) {
-            activeIds = null
-            return
-          }
-          clearTimers()
-          activeIds = null
-          if (styleElement === null || prefersReducedMotion()) {
-            teardownInstant()
-            notify()
-            return
-          }
-          // Phase 1: rows visible again but collapsed with no transition, then
-          // expand on the next frame so the browser has a start value to animate.
-          setPhase('pre')
-          frameId = nextFrame(function () {
-            frameId = 0
-            setPhase('in')
-            phaseTimer = setTimeout(function () {
-              phaseTimer = 0
-              teardownInstant()
-              notify()
-            }, PHASE_MS)
-          })
-          notify()
+          restoreLegacyDimMarks()
         }
 
         function sync() {
           if (!running) return
-          const current = store.get()
           const ids = activeState()
           if (ids === null) {
-            if (current.status !== 'live') teardownInstant()
-            else deactivate()
+            teardown()
             return
           }
-          if (activeIds === null) {
-            activate(ids)
-            return
+          ensureStyle(ids)
+        }
+
+        function notifyGentle() {
+          const now = Date.now()
+          if (now - lastBlockedAt < 1200) return
+          lastBlockedAt = now
+          store.pushToast('gentle-switch', t('toast.gentleSwitch'))
+        }
+
+        function isOwnUiTarget(target) {
+          let element = target
+          for (let depth = 0; element && depth < 20; depth += 1, element = element.parentElement) {
+            if (!element || typeof element.getAttribute !== 'function') continue
+            if (
+              element.getAttribute('data-dsh-deep-focus-root') !== null ||
+              element.getAttribute('data-df-root') !== null
+            ) {
+              return true
+            }
           }
-          const previous = activeIds.join('|')
-          const next = ids.join('|')
-          if (previous !== next) refreshActive(ids)
-          else if (phase === '') activate(ids)
+          return false
+        }
+
+        function soloInfo() {
+          if (!running) return null
+          const ids = activeState()
+          if (ids === null) return null
+          return { owners: new Set(ids), ownerWorkspaces: ownerWorkspaceKeys(ids) }
+        }
+
+        function blockedFrom(target) {
+          if (isOwnUiTarget(target)) return null
+          const info = soloInfo()
+          if (info === null) return null
+          const state = stateNow()
+          const known = new Set()
+          const sessions = state && Array.isArray(state.sessions) ? state.sessions : []
+          for (let index = 0; index < sessions.length; index += 1) {
+            const session = sessions[index]
+            if (session && typeof session.id === 'string' && session.id.length > 0) known.add(session.id)
+          }
+          let element = target
+          for (let depth = 0; element && depth < 12; depth += 1, element = element.parentElement) {
+            if (!element || typeof element.getAttribute !== 'function') continue
+            const rowKey = element.getAttribute('data-row-key')
+            if (typeof rowKey === 'string' && rowKey.length > 0) {
+              if (rowKey.indexOf('session:') === 0) {
+                const id = rowKey.slice(8)
+                if (info.owners.has(id)) return null
+                return id
+              }
+              if (rowKey.indexOf('workspace:') === 0) {
+                if (info.ownerWorkspaces.has(rowKey)) return null
+                return rowKey
+              }
+              if (rowKey.indexOf('overflow:') === 0) return rowKey
+            }
+            const attributes = element.attributes
+            if (!attributes) continue
+            for (let index = 0; index < attributes.length; index += 1) {
+              const value = attributes[index].value
+              if (!value || value.length > 200) continue
+              if (known.has(value) && !info.owners.has(value)) return value
+              const prefixed = value.slice(0, 8) === 'session:' ? value.slice(8) : null
+              if (prefixed && known.has(prefixed) && !info.owners.has(prefixed)) return prefixed
+            }
+          }
+          return null
+        }
+
+        function onDocumentClick(event) {
+          try {
+            if (blockedFrom(event.target)) {
+              event.preventDefault()
+              event.stopPropagation()
+              notifyGentle()
+            }
+          } catch (error) {
+            /* never break host clicks */
+          }
+        }
+
+        function onDocumentKeyDown(event) {
+          try {
+            if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return
+            const target = event.target
+            if (!target || typeof target.getAttribute !== 'function') return
+            if (blockedFrom(target)) {
+              event.preventDefault()
+              event.stopPropagation()
+              notifyGentle()
+            }
+          } catch (error) {
+            /* ignored */
+          }
         }
 
         function setClientRunning(ids) {
@@ -1861,6 +1833,70 @@ window.__ModuleLoader__.load({
           sync()
         }
 
+        function start() {
+          if (running) return
+          running = true
+          try {
+            document.addEventListener('click', onDocumentClick, true)
+            document.addEventListener('keydown', onDocumentKeyDown, true)
+          } catch (error) {
+            /* ignored */
+          }
+          sync()
+        }
+
+        function stop() {
+          running = false
+          try {
+            document.removeEventListener('click', onDocumentClick, true)
+            document.removeEventListener('keydown', onDocumentKeyDown, true)
+          } catch (error) {
+            /* ignored */
+          }
+          teardown()
+        }
+
+        function isActive() {
+          return running && activeState() !== null
+        }
+
+        function getOwners() {
+          const ids = activeState()
+          return ids === null ? new Set() : new Set(ids)
+        }
+
+        return {
+          start: start,
+          stop: stop,
+          sync: sync,
+          setClientRunning: setClientRunning,
+          isActive: isActive,
+          getOwners: getOwners,
+        }
+      })()
+
+      /* ── Focus guard: pin the UI to the running conversation ────── */
+      // When solo is active and the main view shows a different conversation, jump
+      // once to the running one; if the jump is impossible the veil stays as the
+      // gentle fallback. Never loops or fights the user.
+
+      const focusGuard = (function createFocusGuard() {
+        let currentSessionId = null
+        let runningIds = []
+        let lastAttemptKey = ''
+        let lastSwitchAt = 0
+        const listeners = new Set()
+
+        function notify() {
+          listeners.forEach(function (listener) {
+            try {
+              listener()
+            } catch (error) {
+              /* ignored */
+            }
+          })
+        }
+
         function subscribe(listener) {
           listeners.add(listener)
           return function () {
@@ -1868,29 +1904,96 @@ window.__ModuleLoader__.load({
           }
         }
 
-        function start() {
-          if (running) return
-          running = true
-          sync()
+        function currentOwners() {
+          if (runningIds.length > 0) return runningIds
+          const state = store.get().state
+          const solo = state && state.solo ? state.solo : null
+          if (solo && solo.active === true && Array.isArray(solo.sessions)) {
+            return solo.sessions.filter(function (id) {
+              return typeof id === 'string' && id.length > 0
+            })
+          }
+          return []
         }
 
-        function stop() {
-          running = false
-          teardownInstant()
+        function switchTo(target) {
+          try {
+            const workspace = ctx && typeof ctx.get === 'function' ? ctx.get('uiWorkspace') : undefined
+            if (workspace && typeof workspace.openSession === 'function') {
+              workspace.openSession(target)
+              return true
+            }
+          } catch (error) {
+            /* fall through to the session service */
+          }
+          try {
+            const sessions = ctx && typeof ctx.get === 'function' ? ctx.get('sessions') : undefined
+            if (sessions) {
+              const methods = ['openSession', 'open', 'select']
+              for (let index = 0; index < methods.length; index += 1) {
+                const method = methods[index]
+                if (typeof sessions[method] === 'function') {
+                  sessions[method](target)
+                  return true
+                }
+              }
+            }
+          } catch (error) {
+            /* the veil stays as the fallback */
+          }
+          return false
         }
 
-        function isActive() {
-          return running && activeIds !== null
+        function maybeJump() {
+          if (!soloHider.isActive()) {
+            lastAttemptKey = ''
+            return false
+          }
+          const owners = currentOwners()
+          if (owners.length === 0) return false
+          if (currentSessionId === null) return false
+          if (owners.indexOf(currentSessionId) >= 0) return false
+          const key = owners.join('|') + '|' + currentSessionId
+          if (key === lastAttemptKey && Date.now() - lastSwitchAt < 2500) return false
+          lastAttemptKey = key
+          lastSwitchAt = Date.now()
+          return switchTo(owners[0])
         }
 
-        return {
-          start: start,
-          stop: stop,
-          sync: sync,
-          isActive: isActive,
-          setClientRunning: setClientRunning,
-          subscribe: subscribe,
+        function setContext(nextCurrentSessionId, nextRunningIds) {
+          const current = typeof nextCurrentSessionId === 'string' ? nextCurrentSessionId : null
+          const ids = Array.isArray(nextRunningIds)
+            ? nextRunningIds.filter(function (id) {
+                return typeof id === 'string' && id.length > 0
+              })
+            : []
+          const changed = current !== currentSessionId || ids.join('|') !== runningIds.join('|')
+          currentSessionId = current
+          runningIds = ids
+          if (changed) {
+            notify()
+            maybeJump()
+          } else {
+            maybeJump()
+          }
         }
+
+        function sync() {
+          if (!soloHider.isActive()) lastAttemptKey = ''
+        }
+
+        function getInfo() {
+          const owners = currentOwners()
+          const active = soloHider.isActive()
+          return {
+            currentSessionId: currentSessionId,
+            owners: owners,
+            veilNeeded: Boolean(active && currentSessionId !== null && owners.indexOf(currentSessionId) < 0),
+            soloActive: active,
+          }
+        }
+
+        return { setContext: setContext, sync: sync, getInfo: getInfo, subscribe: subscribe, maybeJump: maybeJump }
       })()
 
       function start() {
@@ -1899,6 +2002,7 @@ window.__ModuleLoader__.load({
         soloHider.start()
         const unsubscribe = store.subscribe(function () {
           soloHider.sync()
+          focusGuard.sync()
         })
         const unlockAudio = function () {
           audio.unlock()
@@ -1955,6 +2059,71 @@ window.__ModuleLoader__.load({
 
       /* ── Small pieces ────────────────────────────────────────────────── */
 
+      const BUTTON_BASE_STYLE = {
+        appearance: 'none',
+        WebkitAppearance: 'none',
+        borderStyle: 'solid',
+        borderWidth: '1px',
+        borderRadius: '8px',
+        font: 'inherit',
+        fontSize: '13px',
+        lineHeight: '1.2',
+        boxSizing: 'border-box',
+        cursor: 'pointer',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '5px',
+        padding: '0 14px',
+        height: '32px',
+      }
+
+      function primaryButtonStyle(extra) {
+        return Object.assign({}, BUTTON_BASE_STYLE, {
+          background: 'var(--dsw-alias-brand-primary)',
+          borderColor: 'var(--dsw-alias-brand-primary)',
+          color: '#ffffff',
+          fontWeight: 600,
+        }, extra || {})
+      }
+
+      function secondaryButtonStyle(extra) {
+        return Object.assign({}, BUTTON_BASE_STYLE, {
+          background: 'var(--dsw-alias-bg-layer-2)',
+          borderColor: 'var(--dsw-alias-border-l1)',
+          color: 'var(--dsw-alias-label-primary)',
+        }, extra || {})
+      }
+
+      function smallButtonStyle(extra) {
+        return Object.assign(secondaryButtonStyle(), { height: '28px', padding: '0 10px', fontSize: '12px' }, extra || {})
+      }
+
+      function toggleButtonStyle(checked) {
+        return Object.assign({}, BUTTON_BASE_STYLE, {
+          width: '38px',
+          height: '22px',
+          padding: 0,
+          borderRadius: '999px',
+          background: checked ? 'var(--dsw-alias-brand-primary)' : 'var(--dsw-alias-bg-layer-2)',
+          borderColor: checked ? 'var(--dsw-alias-brand-primary)' : 'var(--dsw-alias-border-l1)',
+          color: 'var(--dsw-alias-label-primary)',
+        })
+      }
+
+      function widgetButtonStyle(extra) {
+        return Object.assign({}, BUTTON_BASE_STYLE, {
+          height: '50px',
+          padding: '9px 11px',
+          borderRadius: '14px',
+          gap: '10px',
+          background: 'color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent)',
+          borderColor: 'var(--dsw-alias-border-l1)',
+          color: 'var(--dsw-alias-label-primary)',
+          textAlign: 'left',
+        }, extra || {})
+      }
+
       function Styles() {
         return h('style', { 'data-df-styles': '1' }, CSS_TEXT)
       }
@@ -1991,6 +2160,7 @@ window.__ModuleLoader__.load({
           type: 'button',
           role: 'switch',
           className: 'df-switch',
+          style: toggleButtonStyle(Boolean(props.checked)),
           'aria-checked': props.checked ? 'true' : 'false',
           'aria-label': props.label,
           disabled: Boolean(props.disabled),
@@ -2286,6 +2456,20 @@ window.__ModuleLoader__.load({
         const sessionsSnapshot = useSessionsHook(selectWholeSource)
         const statusMap = useSessionStatusHook(selectWholeSource)
         const runningIds = runningRootIdsFrom(sessionsSnapshot, statusMap)
+        const currentSessionId = useSessionsHook(function (state) {
+          try {
+            const byId = state && state.byId ? state.byId : null
+            if (!byId) return null
+            const ids = Array.isArray(state.ids) && state.ids.length > 0 ? state.ids : Object.keys(byId)
+            for (let index = 0; index < ids.length; index += 1) {
+              const row = byId[ids[index]]
+              if (row && row.retainedBy && numberOr(row.retainedBy.mainView, 0) > 0) return ids[index]
+            }
+          } catch (error) {
+            /* ignore */
+          }
+          return null
+        })
         const signature = runningIds === null ? '\u0000' : runningIds.join('|')
         React.useEffect(
           function () {
@@ -2295,6 +2479,16 @@ window.__ModuleLoader__.load({
             }
           },
           [signature],
+        )
+
+        React.useEffect(
+          function () {
+            focusGuard.setContext(currentSessionId, runningIds)
+            return function () {
+              focusGuard.setContext(null, [])
+            }
+          },
+          [signature, currentSessionId],
         )
 
         const state = snapshot.state
@@ -2352,6 +2546,7 @@ window.__ModuleLoader__.load({
               {
                 type: 'button',
                 className: 'df-rings',
+                style: widgetButtonStyle({ cursor: busy ? 'default' : 'pointer' }),
                 'data-df-root': 'rings',
                 'data-dsh-deep-focus-root': 'rings',
                 'data-busy': busy ? 'true' : undefined,
@@ -2366,6 +2561,126 @@ window.__ModuleLoader__.load({
               h('span', { className: 'df-rings-text' }, h('b', null, todayText), h('span', null, continuousText)),
             ),
             error ? h('span', { className: 'df-rings-error', role: 'alert' }, error) : null,
+          ),
+        )
+      }
+
+      function useFocusGuardTick() {
+        const pair = React.useState(0)
+        const force = pair[1]
+        React.useEffect(function () {
+          return focusGuard.subscribe(function () {
+            force(function (value) {
+              return value + 1
+            })
+          })
+        }, [])
+      }
+
+      /** Fallback veil over the conversation column while a non-owner session shows. */
+      function FocusVeil() {
+        useLocaleTick()
+        const snapshot = useStore(false)
+        useFocusGuardTick()
+        const info = focusGuard.getInfo()
+        const visible = Boolean(store.isVisible() && info.veilNeeded)
+        const leftPair = React.useState(0)
+        const left = leftPair[0]
+        const setLeft = leftPair[1]
+
+        React.useEffect(
+          function () {
+            if (!visible) return undefined
+            const measure = function () {
+              try {
+                const sidebar = document.querySelector('[class*="sidebarCol"]')
+                const rect = sidebar && typeof sidebar.getBoundingClientRect === 'function' ? sidebar.getBoundingClientRect() : null
+                setLeft(rect && Number.isFinite(rect.right) ? Math.max(0, Math.round(rect.right)) : 0)
+              } catch (error) {
+                setLeft(0)
+              }
+            }
+            measure()
+            try {
+              window.addEventListener('resize', measure)
+            } catch (error) {
+              /* ignored */
+            }
+            return function () {
+              try {
+                window.removeEventListener('resize', measure)
+              } catch (error) {
+                /* ignored */
+              }
+            }
+          },
+          [visible],
+        )
+
+        React.useEffect(
+          function () {
+            if (!visible) return undefined
+            const onKeyDown = function (event) {
+              if (event.key !== 'Enter') return
+              const target = event.target
+              if (!target) return
+              const editable =
+                target.tagName === 'TEXTAREA' ||
+                (target.tagName === 'INPUT' && (target.type === 'text' || target.type === 'search')) ||
+                target.isContentEditable === true ||
+                target.getAttribute('contenteditable') === 'true' ||
+                target.getAttribute('contenteditable') === ''
+              if (!editable) return
+              event.preventDefault()
+              event.stopPropagation()
+              store.pushToast('gentle-switch', t('veil.blocked'))
+            }
+            const onClick = function (event) {
+              let element = event.target
+              for (let depth = 0; element && depth < 10; depth += 1, element = element.parentElement) {
+                if (!element || typeof element.getAttribute !== 'function') continue
+                if (element.getAttribute('data-dsh-deep-focus-root') !== null) return
+                const label = element.getAttribute('aria-label')
+                if (label && /send|发送/i.test(label)) {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  store.pushToast('gentle-switch', t('veil.blocked'))
+                  return
+                }
+              }
+            }
+            try {
+              document.addEventListener('keydown', onKeyDown, true)
+              document.addEventListener('click', onClick, true)
+            } catch (error) {
+              /* ignored */
+            }
+            return function () {
+              try {
+                document.removeEventListener('keydown', onKeyDown, true)
+                document.removeEventListener('click', onClick, true)
+              } catch (error) {
+                /* ignored */
+              }
+            }
+          },
+          [visible],
+        )
+
+        if (!visible) return null
+        return h(
+          Fragment,
+          null,
+          h(Styles),
+          h(
+            'div',
+            { className: 'df-veil-layer', 'data-df-root': 'veil-layer' },
+            h('div', { className: 'df-veil', style: { left: left + 'px' }, 'data-dsh-deep-focus-root': 'veil', 'aria-hidden': 'true' }),
+            h(
+              'div',
+              { className: 'df-veil-hint', 'data-dsh-deep-focus-root': 'veil-hint', role: 'status', 'aria-live': 'polite', 'aria-label': t('veil.aria') },
+              t('veil.hint'),
+            ),
           ),
         )
       }
@@ -2435,7 +2750,7 @@ window.__ModuleLoader__.load({
             h(
               'div',
               { className: 'df-pause-card' },
-              h('p', { className: 'df-pause-title' }, resuming ? t('rings.busy') : t('pause.title')),
+              h('p', { className: 'df-pause-title' }, resuming ? t('rings.busy') : limit && limit.pausedReason === 'idle' ? t('pause.autoTitle') : t('pause.title')),
               h('p', { className: 'df-pause-hint' }, t('pause.hint')),
             ),
           ),
@@ -2500,13 +2815,16 @@ window.__ModuleLoader__.load({
         const limits = settings.limits || {}
         const extendMinutes = clampNumber(limits.extendMinutes, 1, 120, 20)
         const extendLimitCount = Math.max(0, numberOr(limit.extendLimit, 0))
-        const canExtend = extendLimitCount > 0
-        const remaining = extendRemaining(limit)
+        // v4.1: dailyExtendLimit 0 (or absent) means unlimited extensions.
+        const unlimitedExtend = extendLimitCount <= 0
+        const extendUsed = Math.max(0, numberOr(limit.extendCountToday, 0))
+        const remaining = unlimitedExtend ? null : Math.max(0, extendLimitCount - extendUsed)
+        const canExtend = true
         const usedMs = Math.max(0, numberOr(limit.dailyUsedMs, numberOr(state.usage && state.usage.activeTodayMs, 0)))
         const apps = todayAppsFromState(state)
 
         async function doExtend() {
-          if (busy || !canExtend || remaining <= 0) return
+          if (busy) return
           setBusy(true)
           setError(null)
           const result = await store.extend()
@@ -2551,15 +2869,13 @@ window.__ModuleLoader__.load({
               h('div', { className: 'df-muted' }, t('daily.apps')),
               h(AppRows, { t: t, rows: apps }),
               error ? h('p', { className: 'df-error', role: 'alert' }, error) : null,
-              h(
-                'p',
-                { className: 'df-muted' },
-                canExtend
-                  ? remaining > 0
-                    ? t('daily.extendRemaining', { n: remaining })
-                    : t('daily.extendNone')
-                  : t('daily.extendDisabled'),
-              ),
+              unlimitedExtend
+                ? null
+                : h(
+                    'p',
+                    { className: 'df-muted' },
+                    remaining > 0 ? t('daily.extendRemaining', { n: remaining }) : t('daily.extendNone'),
+                  ),
               h(
                 'div',
                 { className: 'df-actions', style: { justifyContent: 'flex-end' } },
@@ -2568,6 +2884,7 @@ window.__ModuleLoader__.load({
                   {
                     type: 'button',
                     className: 'df-btn',
+                    style: secondaryButtonStyle(),
                     disabled: busy,
                     onClick: function () {
                       if (dayKey) store.ackToday(dayKey)
@@ -2580,7 +2897,8 @@ window.__ModuleLoader__.load({
                   {
                     type: 'button',
                     className: 'df-btn df-btn-primary',
-                    disabled: busy || !canExtend || remaining <= 0,
+                    style: primaryButtonStyle(),
+                    disabled: busy || !canExtend,
                     onClick: doExtend,
                     'data-df-autofocus': '',
                   },
@@ -2680,7 +2998,7 @@ window.__ModuleLoader__.load({
                     fmtClock(remaining),
                   ),
               h('p', { className: 'df-rest-body' }, t('rest.body')),
-              h('p', { className: 'df-rest-note' }, needsActivity ? t('rest.waitingNote') : t('rest.note')),
+              needsActivity ? h('p', { className: 'df-rest-note' }, t('rest.waitingNote')) : null,
               h('p', { className: 'df-rest-note' }, t('rest.auto')),
               error ? h('p', { className: 'df-error', role: 'alert' }, error) : null,
               h(
@@ -2688,7 +3006,7 @@ window.__ModuleLoader__.load({
                 { className: 'df-actions', style: { justifyContent: 'center' } },
                 h(
                   'button',
-                  { type: 'button', className: 'df-btn', disabled: busy, onClick: skipRest },
+                  { type: 'button', className: 'df-btn', style: secondaryButtonStyle(), disabled: busy, onClick: skipRest },
                   t('rest.skip'),
                 ),
               ),
@@ -2830,7 +3148,12 @@ window.__ModuleLoader__.load({
             parts.push(t('hub.status.continuousOff'))
           }
           if (limit.dailyLocked === true) {
-            parts.push(extendLeft > 0 ? t('hub.status.dailyLocked', { n: extendLeft }) : t('hub.status.dailyLockedNone'))
+            const extendLimitCount = Math.max(0, numberOr(limit.extendLimit, 0))
+            parts.push(
+              extendLimitCount > 0 && extendLeft > 0
+                ? t('hub.status.dailyLocked', { n: extendLeft })
+                : t('hub.status.dailyLockedNone'),
+            )
           } else if (limit.restDue === true) {
             parts.push(t('hub.status.restDue'))
           }
@@ -2959,7 +3282,15 @@ window.__ModuleLoader__.load({
                   }),
                   h(
                     'button',
-                    { type: 'button', className: 'df-btn df-btn-sm', onClick: function () { store.refreshSoon(); store.loadAppsTrend(true) } },
+                    {
+                      type: 'button',
+                      className: 'df-btn df-btn-sm',
+                      style: smallButtonStyle(),
+                      onClick: function () {
+                        store.refreshSoon()
+                        store.loadAppsTrend(true)
+                      },
+                    },
                     h(IconRefresh),
                     t('hub.refresh'),
                   ),
@@ -2968,6 +3299,7 @@ window.__ModuleLoader__.load({
                     {
                       type: 'button',
                       className: 'df-btn df-btn-sm df-btn-ghost',
+                      style: smallButtonStyle(),
                       onClick: function () {
                         selectConversationPanel()
                       },
@@ -3169,6 +3501,7 @@ window.__ModuleLoader__.load({
                     {
                       type: 'button',
                       className: 'df-btn df-btn-ghost',
+                      style: secondaryButtonStyle({ height: '30px', padding: '0 10px', fontSize: '12px' }),
                       disabled: disabled,
                       onClick: function () {
                         audio.unlock()
@@ -3300,6 +3633,21 @@ window.__ModuleLoader__.load({
                 ),
                 h(
                   FieldRow,
+                  { label: t('field.autoPauseSeconds'), hint: t('field.autoPauseSeconds.hint') },
+                  h(NumberInput, {
+                    value: draftUsage.autoPauseSeconds,
+                    min: 0,
+                    max: 3600,
+                    step: 5,
+                    label: t('field.autoPauseSeconds'),
+                    disabled: disabled,
+                    onChange: function (value) {
+                      patch('usage.autoPauseSeconds', value)
+                    },
+                  }),
+                ),
+                h(
+                  FieldRow,
                   { label: t('field.retentionDays'), hint: t('field.retentionDays.hint') },
                   h(NumberInput, {
                     value: draftUsage.retentionDays,
@@ -3341,8 +3689,24 @@ window.__ModuleLoader__.load({
               h(
                 'div',
                 { className: 'df-savebar' },
-                h('button', { type: 'button', className: 'df-btn df-btn-primary', disabled: !dirty || saving, onClick: save }, t('hub.save')),
-                dirty ? h('button', { type: 'button', className: 'df-btn', disabled: saving, onClick: discard }, t('hub.discard')) : null,
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'df-btn df-btn-primary',
+                    style: primaryButtonStyle(),
+                    disabled: !dirty || saving,
+                    onClick: save,
+                  },
+                  t('hub.save'),
+                ),
+                dirty
+                  ? h(
+                      'button',
+                      { type: 'button', className: 'df-btn', style: secondaryButtonStyle(), disabled: saving, onClick: discard },
+                      t('hub.discard'),
+                    )
+                  : null,
                 saving
                   ? h('span', { className: 'df-save-state' }, '…')
                   : saveError
@@ -3364,6 +3728,7 @@ window.__ModuleLoader__.load({
         start: start,
         components: {
           FloatingRings: FloatingRings,
+          FocusVeil: FocusVeil,
           PauseOverlay: PauseOverlay,
           DailyLockOverlay: DailyLockOverlay,
           RestOverlay: RestOverlay,
@@ -3418,6 +3783,7 @@ window.__ModuleLoader__.load({
           ['shell.overlay', { name: 'shell.overlay', id: 'dsh-deep-focus-toasts', order: 90 }, client.components.Toasts],
           ['shell.overlay', { name: 'shell.overlay', id: 'dsh-deep-focus-daily-lock', order: 100 }, client.components.DailyLockOverlay],
           ['shell.overlay', { name: 'shell.overlay', id: 'dsh-deep-focus-rest', order: 110 }, client.components.RestOverlay],
+          ['shell.overlay', { name: 'shell.overlay', id: 'dsh-deep-focus-focus-veil', order: 114 }, client.components.FocusVeil],
           ['shell.overlay', { name: 'shell.overlay', id: 'dsh-deep-focus-pause-gray', order: 118 }, client.components.PauseOverlay],
         ]
         staticEntries.forEach(function (entry) {

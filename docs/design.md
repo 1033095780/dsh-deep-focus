@@ -22,8 +22,15 @@ at a time, pure plugin — with these additions:
    「跳过」.
 5. **Away-only repeating completion chime** — silent while you are actively
    watching; when away it repeats at `alerts.repeatIntervalMs` until input returns.
-6. **Smooth solo hiding** — one-conversation mode now hides conversations **and**
-   workspace folders with a fade animation, and the old banner text is gone.
+6. **Gentle solo mode** — one-conversation mode pins the UI to the running
+   conversation: the client auto-jumps back to it, grays out the other conversation
+   rows **and** workspace folder rows, and makes them non-clickable (a click shows a
+   gentle reminder); a non-owner conversation that is somehow visible gets its
+   content veiled/dimmed and sending is discouraged until the run ends. Nothing is
+   hidden and the old banner text is gone.
+7. **Idle auto-pause** — `usage.autoPauseSeconds` (default 60 s, `0` = off) makes
+   the Host enter the same paused/gray state automatically after the keyboard/mouse
+   has been idle that long; the state exposes `pausedReason` (`manual` | `idle`).
 
 **Pure-plugin boundary (by design, not a bug):** the plugin runs inside DSH and
 only enforces inside DSH. It cannot bring DSH to the front, cannot block other
@@ -50,7 +57,7 @@ solo banner.
 | `src/host/limits.js` | Daily cap, continuous cap, forced rest (activity-gated), pause mode, extension windows, daily rollover. |
 | `src/host/events.js` | Event ring buffer, agent status map, completion alerts. |
 | `src/host/api.js` | Same-origin JSON HTTP API under `/plugins/dsh-deep-focus/api`. |
-| `src/client.js` | Self-contained browser half: assistant panel, floating rings, pause/rest/daily overlays, animated solo hiding, toasts. |
+| `src/client.js` | Self-contained browser half: assistant panel, floating rings, pause/rest/daily overlays, solo graying, toasts. |
 | `src/shared/contract.js` | Wire contract: routes, events, `DEFAULT_SETTINGS` (version 4). |
 | `src/locale/{en,zh}.json` | Plugin metadata (`meta.title`, `meta.description`). |
 | `src/icon.svg` | Plugin list icon. |
@@ -138,14 +145,19 @@ when `webServer` is unavailable) instead of throwing.
 | `limits.continuousMinutes` | Continuous-use cap; `0` = no forced rest. |
 | `limits.restMinutes` | Forced-rest length (minimum 1 minute). |
 | `limits.extendMinutes` | Time granted by one 「再使用 20 分钟」 click. |
-| `limits.dailyExtendLimit` | Extensions per day; `0` = no extensions. |
+| `limits.dailyExtendLimit` | Extensions per day; `0` = unlimited, a positive value is the maximum. |
 
-- **Pause mode:** `POST /pause` sets `paused`/`pausedAt`, stops counting, and emits
-  `paused`. The pause resumes only on a sampler sample that is active (idle below
-  `usage.idleThresholdSeconds`) and arrives at least 1.5 s after `pausedAt` — so the
-  click that entered pause is ignored. `POST /resume` also force-resumes; `paused`
-  and `pausedNeedsActivity` are exposed in `/state`. A forced rest supersedes a
-  pause (rest wins and clears it).
+- **Pause mode:** `POST /pause` sets `paused`/`pausedAt` with `pausedReason:
+  "manual"`, stops counting, and emits `paused`. The pause resumes only on a sampler
+  sample that is active (idle below `usage.idleThresholdSeconds`) and arrives at
+  least 1.5 s after `pausedAt` — so the click that entered pause is ignored.
+  `POST /resume` also force-resumes; `paused`, `pausedAt`, `pausedReason` and
+  `pausedNeedsActivity` are exposed in `/state`. A forced rest supersedes a pause
+  (rest wins and clears it).
+- **Idle auto-pause:** on each sample the Host checks `usage.autoPauseSeconds`
+  (default 60, `0` = off); when the idle time reaches it and the assistant is
+  enabled (not already paused or resting), it enters the same paused state with
+  `pausedReason: "idle"`. Real activity resumes it exactly like a manual pause.
 - **Continuous cap:** when continuous use reaches `continuousMinutes`, the assistant
   immediately enters a rest (`resting: true`, `restUntil`, event `rest-started`),
   resets the continuous counter, and the tracker suppresses accumulation. A
@@ -163,9 +175,11 @@ when `webServer` is unavailable) instead of throwing.
   daily cap is evaluated before the continuous cap, so a lock and a forced rest do
   not stack.
 - **Extension:** `POST /extend` sets `extendedUntil = now + extendMinutes`,
-  increments `extendCountToday`, clears `dailyLocked`, and emits `extended`; it
-  refuses with `not-locked` / `extend-limit-reached`. The overlay's 「跳过」 is a
-  client-side per-day acknowledgment, not an endpoint.
+  increments `extendCountToday`, clears `dailyLocked`, and emits `extended`. It
+  refuses with `not-locked`, or `extend-limit-reached` only when a **positive**
+  `limits.dailyExtendLimit` has been used up — `0` means unlimited extensions and
+  can never run out. The overlay omits the remaining-count line while unlimited.
+  The overlay's 「跳过」 is a client-side per-day acknowledgment, not an endpoint.
 - **Rollover:** at local midnight the daily lock, extension window and extension
   count reset.
 - **Switch changes:** turning the assistant off ends any rest, clears the daily lock
@@ -195,7 +209,7 @@ The event kinds are `task-completed`, `paused`, `resumed`, `rest-due`,
 | File | Contents |
 | --- | --- |
 | `settings.json` | Normalized v4 runtime settings (mode `0600`). No secrets. |
-| `limits.json` | Daily lock, extension window/count, rest state and pause state (transient). |
+| `limits.json` | Daily lock, extension window/count, rest state and pause state (transient; includes `pausedReason`). |
 | `usage/YYYY-MM-DD.jsonl` | One aggregate line per flush: `{ t, activeMs, apps }`. |
 
 Writes are atomic (temporary file + rename) and serialized per file. Unknown or
@@ -213,6 +227,8 @@ than `usage.retentionDays` are pruned for the `usage` subdirectory (and any lega
     500–10000) and `awayIdleSeconds` (clamped 10–3600); `alerts.taskDone` was
     removed (the completion chime is governed by `alerts.sound` and the away/repeat
     settings).
+  - `usage` gained `autoPauseSeconds` (default 60, `0` = off) for the idle
+    auto-pause.
 - `normalizeSettings()` deep-merges over `DEFAULT_SETTINGS`, drops unknown
   sections/keys, and clamps numbers/booleans and quiet hours.
 - **Migration:** a stored file whose `version` is not 4 (v1/v2/v3) is discarded and
@@ -247,11 +263,11 @@ Base: `/plugins/dsh-deep-focus/api` (same origin as the DSH Web GUI).
   "limit": {
     "assistantEnabled": true,
     "dailyLimitMs": 10800000, "dailyUsedMs": 0, "dailyLocked": false,
-    "extendedUntil": null, "extendCountToday": 0, "extendLimit": 2,
+    "extendedUntil": null, "extendCountToday": 0, "extendLimit": 0,
     "continuousLimitMs": 1800000, "continuousUsedMs": 0,
     "restDue": false, "resting": false, "restUntil": null, "restRemainingMs": 0,
     "restNeedsActivity": false,
-    "paused": false, "pausedAt": null, "pausedNeedsActivity": false
+    "paused": false, "pausedAt": null, "pausedReason": null, "pausedNeedsActivity": false
   },
   "settings": { /* v4 settings */ },
   "sessions": [{ "id": "...", "running": true }],
@@ -312,8 +328,9 @@ Slot registrations:
 | --- | --- | --- |
 | `sidebar.panellist` | `focus-assistant` | 「专注助手」/“Focus assistant” entry below the Plugins row. |
 | `main` (keyed) | `focus-assistant` | Assistant page: overview (daily/continuous progress, pause/rest status, per-app today, 7-day trend), settings form, enable/pause switch. |
-| `shell.overlay` | `dsh-deep-focus-rings` | Floating top-right glass card with two SVG rings (today vs. daily cap, continuous vs. continuous cap) and a small label; click enters pause. Hidden when the assistant is off or the two-ring setting is off. |
+| `shell.overlay` | `dsh-deep-focus-rings` | Floating top-right glass card with two SVG rings (today vs. daily cap, continuous vs. continuous cap) and a small label; positioned below the host's top controls and clamped inside small windows; click enters pause. Hidden when the assistant is off or the two-ring setting is off. |
 | `shell.overlay` | `dsh-deep-focus-pause-gray` | Full-frame semi-transparent gray pause layer (`pointer-events: none` so it cannot trap the click): 「已暂停计时 · 动一下鼠标或键盘继续」. |
+| `shell.overlay` | `dsh-deep-focus-focus-veil` | Fallback veil over the conversation column when a non-owner conversation is shown while another conversation runs: dimmed content, a hint toast and discouraged sending. |
 | `shell.overlay` | `dsh-deep-focus-rest` | Full-frame forced-rest screen with the countdown, `restNeedsActivity` copy and the 「跳过休息」 button. |
 | `shell.overlay` | `dsh-deep-focus-daily-lock` | Gray daily overlay: today's total, per-app rows, 「再使用 20 分钟」 and 「跳过」 (per-day `localStorage` acknowledgment). |
 | `shell.overlay` | `dsh-deep-focus-toasts` | Completion / rest / extension / pause toasts. |
@@ -325,7 +342,9 @@ any more.
 time; the gray layer renders from `limit.paused`. The client adds a one-shot
 `mousemove`/`keydown` listener after a 1.5 s grace and calls `POST /resume` when it
 fires; the Host also auto-resumes on its own activity sample, so whichever arrives
-first ends the pause. The layer clears when `limit.paused` becomes false, and on
+first ends the pause. The same layer renders for an `autoPauseSeconds` idle pause
+(`limit.pausedReason: "idle"`, which also switches the pause title to the automatic
+variant). The layer clears when `limit.paused` becomes false, and on
 outage/cleanup.
 
 **Rest flow:** the rest overlay renders from `limit.resting`; when
@@ -338,15 +357,20 @@ cap), so the overlay cannot disappear while the user is away.
 calls `POST /extend`, 「跳过」 writes the per-day ack key and hides the overlay
 locally.
 
-**One conversation at a time is a style injection, not DOM surgery.** While
-`solo.active` and `assistant.soloSession` + `assistant.hideOtherSessions` are on,
-the client hides session **and** workspace rows other than the running root
-sessions with one `<style>` node plus a timestamped `data-dsh-focus-solo` attribute
-on `<html>`. The attribute walks through `pre` → `out` (CSS transition fades
-opacity/max-height over ~220 ms) → `hidden` (`display: none`); restoring plays
-`in` → removed. It is timer-based, idempotent, cleared on outage/404/cleanup, and
-instant under `prefers-reduced-motion`. No host element gets inline styles, and
-there is no banner text.
+**One conversation at a time is style-only — nothing is hidden, and the client
+also pins the UI to the running conversation.** While `solo.active` and
+`assistant.soloSession` + `assistant.hideOtherSessions` are on, the client
+auto-jumps once to the running root conversation when the main view shows a
+different session; if the jump is impossible, a fallback veil over the
+conversation column dims the content, shows a hint and discourages sending until
+the run ends. It also adds one `<style>` node plus a `data-dsh-focus-solo`
+attribute on `<html>` that dims the other conversation rows **and workspace folder
+rows** (opacity only) and makes them non-clickable (`pointer-events: none`); the
+running conversation's own row stays untouched. A capture-phase click/keydown guard
+also blocks activation of dimmed rows and shows the gentle reminder, covering
+keyboard and programmatic paths. Ending solo, disabling the plugin or losing the
+Host simply removes the attribute and the style node — because nothing is hidden,
+there is no expanded/collapsed state or layout to restore. There is no banner text.
 
 Polling is 1 s while the page is visible and 5 s while hidden, with a single shared
 store and an in-flight guard. **Robustness:** after two consecutive failed polls
@@ -366,7 +390,10 @@ silently when blocked. The old `alerts.taskDone` toggle is gone.
 All listeners, observers, timers and styles are removed on `ctx.effect` cleanup. The
 UI uses DSH theme tokens (`--dsw-alias-*`) only, follows `ctx.locale` for
 English/Chinese, respects `prefers-reduced-motion`, and labels interactive elements
-for screen readers.
+for screen readers. Primary/secondary buttons carry their theme colors as explicit
+inline styles (plus `appearance: none` and `font: inherit`) rather than relying only
+on stylesheet classes, so they cannot render as invisible white buttons in dark
+mode.
 
 ## Failure handling
 
@@ -384,9 +411,10 @@ for screen readers.
 - `npm test` — `node --test` (auto-discovers `test/*.test.mjs`): pure functions for
   settings merge/clamp and v4 migration, per-app aggregation, app-name mapping,
   limits/rest transitions (continuous → rest, activity-gated rest, 30-minute cap,
-  rest excludes usage, daily lock + extend + extend limit + rollover, assistant off),
-  pause behavior (auto-resume only after activity + grace, forced resume), root
-  session selection, sampler line parsing. No DSH context required.
+  rest excludes usage, daily lock + unlimited/limited extend + rollover, assistant
+  off), pause behavior (auto-resume only after activity + grace, forced resume,
+  idle auto-pause via `autoPauseSeconds`), root session selection, sampler line
+  parsing. No DSH context required.
 - `node scripts/verify.mjs` — offline packaging smoke: manifest/entry points,
   locale parity, icon XML, v4 contract sanity (version 4, new repeat/rings keys, old
   chip/banner keys gone), no pomodoro code, no old header-chip/banner strings in

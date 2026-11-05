@@ -22,6 +22,7 @@ export function emptyLimitsState(dayKey) {
     restStartedAt: null,
     paused: false,
     pausedAt: null,
+    pausedReason: null,
     dailyLocked: false,
     lockedSince: null,
     extendedUntil: null,
@@ -88,6 +89,7 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
       restUntil: at + restMinutes * 60_000,
       paused: false,
       pausedAt: null,
+      pausedReason: null,
     }
     restDueEmitted = false
     tracker.resetContinuous()
@@ -96,10 +98,30 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
   }
 
   function resumeInternal(at, reason) {
-    state = { ...state, paused: false, pausedAt: null }
+    state = { ...state, paused: false, pausedAt: null, pausedReason: null }
     ring.emit(EVENT.resumed, { reason })
     persist()
     return getView(at)
+  }
+
+  /** Enter the paused state; `reason` is 'manual' (widget) or 'idle' (auto-pause). */
+  function pauseInternal(at, reason) {
+    state = { ...state, paused: true, pausedAt: at, pausedReason: reason }
+    lastActivityAt = null
+    ring.emit(EVENT.paused, { at, reason })
+    persist()
+    return getView(at)
+  }
+
+  /** Auto-pause once the machine has been idle long enough (0 disables it). */
+  function maybeAutoPause(idleMs, at) {
+    if (state.paused || state.resting) return
+    const s = settings.get()
+    if (s.assistant.enabled !== true) return
+    const seconds = Number.isFinite(s.usage.autoPauseSeconds) ? s.usage.autoPauseSeconds : 60
+    if (seconds <= 0) return
+    if (!Number.isFinite(idleMs) || idleMs < seconds * 1000) return
+    pauseInternal(at, 'idle')
   }
 
   function getView(at = now()) {
@@ -117,7 +139,8 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
       dailyLocked: enabled === true && state.dailyLocked === true,
       extendedUntil: state.extendedUntil,
       extendCountToday: state.extendCountToday,
-      extendLimit: minutes(s.limits.dailyExtendLimit, 2),
+      // 0 = unlimited (the sentinel the UI shows as "∞").
+      extendLimit: minutes(s.limits.dailyExtendLimit, 0),
       continuousLimitMs,
       continuousUsedMs: Math.round(usage.continuousMs),
       restDue: enabled === true && !resting && !state.paused && continuousLimitMs > 0
@@ -128,6 +151,7 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
       restNeedsActivity,
       paused: state.paused === true,
       pausedAt: state.paused === true ? state.pausedAt : null,
+      pausedReason: state.paused === true ? (state.pausedReason ?? 'manual') : null,
       pausedNeedsActivity: state.paused === true,
     }
   }
@@ -142,11 +166,15 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
     if (state.resting && state.restUntil !== null && at >= state.restUntil && active) {
       endRest(false, 'elapsed-and-active')
     }
+    maybeAutoPause(sample?.idleMs, at)
     return getView(at)
   }
 
-  /** One evaluation tick: finish an elapsed rest (or the activity wait cap), then enforce. */
-  function evaluate(at = now()) {
+  /**
+   * One evaluation tick: finish an elapsed rest (or its wait cap), then enforce.
+   * `options.idleMs` lets the 1s tick auto-pause using the latest sampler value.
+   */
+  function evaluate(at = now(), options = {}) {
     rollDay(at)
     const s = settings.get()
     const enabled = s.assistant.enabled === true
@@ -166,7 +194,7 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
 
     if (!enabled) {
       if (state.resting) endRest(true, 'assistant-off')
-      if (state.paused) state = { ...state, paused: false, pausedAt: null }
+      if (state.paused) state = { ...state, paused: false, pausedAt: null, pausedReason: null }
       if (state.dailyLocked || state.lockedSince !== null) {
         state = { ...state, dailyLocked: false, lockedSince: null }
         changed = true
@@ -175,6 +203,8 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
       if (changed) persist()
       return getView(at)
     }
+
+    maybeAutoPause(options.idleMs, at)
 
     // The daily cap is evaluated first so a lock never stacks a forced rest on top.
     if (!state.resting && !state.paused) {
@@ -232,11 +262,7 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
       if (settings.get().assistant.enabled !== true) return { ok: false, code: 'assistant-off' }
       if (state.resting) return { ok: false, code: 'already-resting' }
       if (state.paused) return { ok: false, code: 'already-paused' }
-      state = { ...state, paused: true, pausedAt: at }
-      lastActivityAt = null
-      ring.emit(EVENT.paused, { at })
-      persist()
-      return { ok: true, view: getView(at) }
+      return { ok: true, view: pauseInternal(at, 'manual') }
     },
 
     /** Force a resume (the UI's immediate exit from pause). */
@@ -266,6 +292,9 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
         restStartedAt: resting && Number.isFinite(document.restStartedAt) ? document.restStartedAt : null,
         paused,
         pausedAt: paused ? document.pausedAt : null,
+        pausedReason: paused
+          ? (document.pausedReason === 'idle' ? 'idle' : 'manual')
+          : null,
         dailyLocked: document.dailyLocked === true,
         lockedSince: Number.isFinite(document.lockedSince) ? document.lockedSince : null,
         extendedUntil: Number.isFinite(document.extendedUntil) ? document.extendedUntil : null,
@@ -305,8 +334,9 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
         evaluate(at)
         if (state.dailyLocked !== true) return { ok: false, code: 'not-locked' }
       }
-      const extendLimit = minutes(s.limits.dailyExtendLimit, 2)
-      if (extendLimit <= 0 || state.extendCountToday >= extendLimit) {
+      const extendLimit = minutes(s.limits.dailyExtendLimit, 0)
+      // `0` means unlimited extensions; only a positive limit can run out.
+      if (extendLimit > 0 && state.extendCountToday >= extendLimit) {
         return { ok: false, code: 'extend-limit-reached' }
       }
       const extendMinutes = Math.max(1, minutes(s.limits.extendMinutes, 20))
@@ -333,7 +363,7 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
       lastAssistantEnabled = next
       if (!next) {
         if (state.resting) endRest(true, 'assistant-off')
-        state = { ...state, dailyLocked: false, lockedSince: null, paused: false, pausedAt: null }
+        state = { ...state, dailyLocked: false, lockedSince: null, paused: false, pausedAt: null, pausedReason: null }
         restDueEmitted = false
         persist()
         ring.emit(EVENT.assistantOff, {})

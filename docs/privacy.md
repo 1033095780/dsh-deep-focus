@@ -35,7 +35,7 @@ Everything lives in one directory:
 ```text
 $DSH_HOME/plugin-data/dsh-deep-focus/
 ├── settings.json            # v4 runtime settings (mode 0600)
-├── limits.json              # today's daily lock, extension window/count, pause/rest state
+├── limits.json              # today's daily lock, extension window/count, pause/rest state (incl. pausedReason)
 └── usage/
     └── YYYY-MM-DD.jsonl     # ~one aggregate line per minute: { t, activeMs, apps }
 ```
@@ -81,10 +81,13 @@ A sample is counted as *active* only when the idle time is below
 recorded — only that it was the foreground process at that moment.
 
 **Pause mode and the away-aware completion chime reuse exactly this signal.** Pause
-stops counting until a sample reports real activity again; the chime decides whether
-you are "away" from the browser's own focus state (`document.hidden` / focus) and the
-same idle time. **No new data is collected for either feature**, and paused or
-resting time is excluded from the daily total.
+stops counting until a sample reports real activity again; the idle auto-pause
+(`usage.autoPauseSeconds`) simply enters that same paused state when the idle time
+reaches the threshold, and `limits.json` remembers whether the pause was manual or
+idle (`pausedReason`). The chime decides whether you are "away" from the browser's
+own focus state (`document.hidden` / focus) and the same idle time. **No new data is
+collected for any of these features**, and paused or resting time is excluded from
+the daily total.
 
 ## App names
 
@@ -114,7 +117,7 @@ idle/foreground probes listed above.
 ## Removing your data
 
 1. Disable or uninstall the plugin in DSH. Every UI element it renders disappears
-   immediately, the solo-mode hiding and its animation are removed, and the sidebar
+   immediately, the solo-mode graying and click guard are removed, and the sidebar
    returns to normal.
 2. Delete `$DSH_HOME/plugin-data/dsh-deep-focus/` (on Windows, the same path under
    your DSH home, e.g. `%USERPROFILE%\.dsh\plugin-data\dsh-deep-focus`).

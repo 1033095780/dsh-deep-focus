@@ -50,7 +50,8 @@ export const DEFAULT_SETTINGS = {
     continuousMinutes: 30,
     restMinutes: 10,
     extendMinutes: 20,
-    dailyExtendLimit: 2,
+    /** 0 = unlimited daily extensions; > 0 = maximum extensions per day. */
+    dailyExtendLimit: 0,
   },
   assistant: {
     enabled: true,
@@ -74,6 +75,8 @@ export const DEFAULT_SETTINGS = {
     idleThresholdSeconds: 60,
     retentionDays: 30,
     trackApps: true,
+    /** Auto-enter the paused/rest state after this many idle seconds (0 = off). */
+    autoPauseSeconds: 60,
   },
 }
 

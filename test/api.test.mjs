@@ -171,7 +171,8 @@ test('GET /state returns the v4 contract shape with root-only sessions and solo'
   assert.deepEqual(Object.keys(state.appsToday).sort(), ['top', 'totalMs'])
   assert.deepEqual(Object.keys(state.limit).sort(), [
     'assistantEnabled', 'continuousLimitMs', 'continuousUsedMs', 'dailyLimitMs', 'dailyLocked', 'dailyUsedMs',
-    'extendCountToday', 'extendLimit', 'extendedUntil', 'paused', 'pausedAt', 'pausedNeedsActivity', 'restDue',
+    'extendCountToday', 'extendLimit', 'extendedUntil', 'paused', 'pausedAt', 'pausedNeedsActivity',
+    'pausedReason', 'restDue',
     'restNeedsActivity', 'restRemainingMs', 'restUntil', 'resting',
   ])
   assert.deepEqual(Object.keys(state.settings).sort(), ['alerts', 'assistant', 'limits', 'usage', 'version'])
@@ -303,6 +304,7 @@ test('POST /pause and /resume with predictable conflicts', async () => {
   assert.equal(paused.json.state.limit.paused, true)
   assert.equal(paused.json.state.limit.pausedAt, paused.json.state.now)
   assert.equal(paused.json.state.limit.pausedNeedsActivity, true)
+  assert.equal(paused.json.state.limit.pausedReason, 'manual')
   assert.ok(paused.json.state.events.some((event) => event.kind === 'paused'))
 
   const pausedAgain = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.pause, body: '{}' }))
@@ -313,6 +315,7 @@ test('POST /pause and /resume with predictable conflicts', async () => {
   assert.equal(resumed.status, 200)
   assert.equal(resumed.json.state.limit.paused, false)
   assert.equal(resumed.json.state.limit.pausedAt, null)
+  assert.equal(resumed.json.state.limit.pausedReason, null)
   assert.ok(resumed.json.state.events.some((event) => event.kind === 'resumed'))
 
   const resumedAgain = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.resume, body: '{}' }))
@@ -323,6 +326,25 @@ test('POST /pause and /resume with predictable conflicts', async () => {
   const off = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.pause, body: '{}' }))
   assert.equal(off.status, 409)
   assert.equal(off.json.error.code, 'assistant-off')
+})
+
+test('idle auto-pause uses the latest sampler value and reports its reason', async () => {
+  const fixture = await makeFixture()
+  // The Host's 1s tick passes the sampler idle into limits.evaluate().
+  fixture.limits.evaluate(fixture.clock, { idleMs: 60_000 })
+  const state = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+  assert.equal(state.limit.paused, true)
+  assert.equal(state.limit.pausedReason, 'idle')
+  assert.equal(state.limit.pausedAt, fixture.clock)
+  const pausedEvent = state.events.filter((event) => event.kind === 'paused').at(-1)
+  assert.deepEqual(pausedEvent.meta, { at: fixture.clock, reason: 'idle' })
+
+  // usage.autoPauseSeconds = 0 disables the automatic pause entirely.
+  const offFixture = await makeFixture({ settingsPatch: { usage: { autoPauseSeconds: 0 } } })
+  offFixture.limits.evaluate(offFixture.clock, { idleMs: 10 * 60_000 })
+  const offState = (await call(offFixture.api, makeRequest({ url: ROUTES.state }))).json
+  assert.equal(offState.limit.paused, false)
+  assert.equal(offState.limit.pausedReason, null)
 })
 
 test('usage exposes machine idle time and the away flag', async () => {
@@ -401,32 +423,52 @@ test('manual rest start/skip and their conflicts', async () => {
   assert.equal(off.json.error.code, 'assistant-off')
 })
 
-test('the daily cap locks and extend grants two windows then refuses', async () => {
+test('the daily cap locks and extend is unlimited by default', async () => {
   const fixture = await makeFixture({ settingsPatch: { limits: { dailyMinutes: 1 } } })
   fixture.feedActive('chrome', 13)
   const locked = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
   assert.equal(locked.limit.dailyLocked, true)
   assert.equal(locked.limit.extendCountToday, 0)
-  assert.equal(locked.limit.extendLimit, 2)
+  // 0 = unlimited extensions (the v0.4.1 default).
+  assert.equal(locked.limit.extendLimit, 0)
   assert.ok(locked.limit.dailyUsedMs >= 60_000)
   assert.ok(locked.events.some((event) => event.kind === 'daily-locked'))
 
+  let expectedCount = 0
+  for (let round = 1; round <= 3; round += 1) {
+    const extended = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.extend, body: '{}' }))
+    assert.equal(extended.status, 200, `round ${round}`)
+    expectedCount += 1
+    assert.equal(extended.json.state.limit.extendCountToday, expectedCount)
+    assert.equal(extended.json.state.limit.dailyLocked, false)
+    assert.equal(extended.json.state.limit.extendedUntil - extended.json.state.now, 20 * 60_000)
+    assert.ok(extended.json.state.events.some((event) => event.kind === 'extended'))
+    fixture.advance(20 * 60_000 + 1000)
+    const relocked = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+    assert.equal(relocked.limit.dailyLocked, true, `round ${round} relock`)
+  }
+  // A fourth extension still succeeds: no daily cap on the count.
+  const unlimited = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.extend, body: '{}' }))
+  assert.equal(unlimited.status, 200)
+  assert.equal(unlimited.json.state.limit.extendCountToday, expectedCount + 1)
+})
+
+test('a positive extend limit still refuses at the limit', async () => {
+  const fixture = await makeFixture({ settingsPatch: { limits: { dailyMinutes: 1, dailyExtendLimit: 2 } } })
+  fixture.feedActive('chrome', 13)
+  const locked = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+  assert.equal(locked.limit.dailyLocked, true)
+  assert.equal(locked.limit.extendLimit, 2)
+
   const first = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.extend, body: '{}' }))
   assert.equal(first.status, 200)
-  assert.equal(first.json.state.limit.dailyLocked, false)
-  assert.equal(first.json.state.limit.extendCountToday, 1)
-  assert.equal(first.json.state.limit.extendedUntil - first.json.state.now, 20 * 60_000)
-  assert.ok(first.json.state.events.some((event) => event.kind === 'extended'))
-
   fixture.advance(20 * 60_000 + 1000)
-  const relocked = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
-  assert.equal(relocked.limit.dailyLocked, true)
-
+  await call(fixture.api, makeRequest({ url: ROUTES.state }))
   const second = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.extend, body: '{}' }))
   assert.equal(second.status, 200)
   assert.equal(second.json.state.limit.extendCountToday, 2)
-
   fixture.advance(20 * 60_000 + 1000)
+  await call(fixture.api, makeRequest({ url: ROUTES.state }))
   const third = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.extend, body: '{}' }))
   assert.equal(third.status, 409)
   assert.equal(third.json.error.code, 'extend-limit-reached')

@@ -348,9 +348,10 @@ check('contract.js is a sane v4 contract', async () => {
     'limits.continuousMinutes': 30,
     'limits.restMinutes': 10,
     'limits.extendMinutes': 20,
-    'limits.dailyExtendLimit': 2,
+    'limits.dailyExtendLimit': 0,
     'alerts.repeatIntervalMs': 1000,
     'alerts.awayIdleSeconds': 30,
+    'usage.autoPauseSeconds': 60,
   }
   for (const [key, expected] of Object.entries(expectedDefaults)) {
     if (getPath(defaults, key) !== expected) {
@@ -368,6 +369,7 @@ check('contract.js is a sane v4 contract', async () => {
     'usage.sampleSeconds',
     'usage.idleThresholdSeconds',
     'usage.retentionDays',
+    'usage.autoPauseSeconds',
   ]
   for (const key of numericKeys) {
     const value = getPath(defaults, key)
@@ -376,9 +378,10 @@ check('contract.js is a sane v4 contract', async () => {
   for (const key of ['limits.restMinutes', 'limits.extendMinutes', 'alerts.repeatIntervalMs', 'alerts.awayIdleSeconds', 'usage.sampleSeconds', 'usage.idleThresholdSeconds']) {
     if (getPath(defaults, key) < 1) fail(`DEFAULT_SETTINGS.${key} must be at least 1`)
   }
-  for (const key of ['limits.dailyMinutes', 'limits.continuousMinutes', 'limits.dailyExtendLimit']) {
+  for (const key of ['limits.dailyMinutes', 'limits.continuousMinutes', 'limits.dailyExtendLimit', 'usage.autoPauseSeconds']) {
     if (getPath(defaults, key) < 0) fail(`DEFAULT_SETTINGS.${key} cannot be negative`)
   }
+  if (getPath(defaults, 'usage.autoPauseSeconds') < 0) fail('usage.autoPauseSeconds must be 0 (off) or a positive idle threshold')
   if (getPath(defaults, 'alerts.repeatIntervalMs') < 500 || getPath(defaults, 'alerts.repeatIntervalMs') > 10_000) {
     fail('alerts.repeatIntervalMs default must stay inside the supported 500–10000 ms range')
   }
@@ -556,13 +559,28 @@ check('READMEs describe the v0.4 product', () => {
   if (!/real keyboard\/mouse activity|move the mouse or type|real activity/i.test(en)) {
     fail('README.md must document that the pause resumes only on real keyboard/mouse activity')
   }
+  if (!/auto-pause|pauses? automatically|automatic(?:ally)? paus/i.test(en) || !/usage\.autoPauseSeconds/i.test(en)) {
+    fail('README.md must document the idle auto-pause and usage.autoPauseSeconds')
+  }
+  if (!/jump(?:s)? back|auto-jump|pins? the ui|returns? to the running/i.test(en)) {
+    fail('README.md must document that one-conversation mode jumps back to the running conversation')
+  }
+  if (!/veil|veiled|dimmed/i.test(en)) {
+    fail('README.md must document the veiled/dimmed content of a visible non-owner conversation')
+  }
   if (!/skip rest/i.test(en)) fail('README.md must document the forced-rest “Skip rest” action')
   if (!/“Skip”|Skip button|\bSkip\b/.test(en)) fail('README.md must document the daily overlay “Skip” action')
   if (!/away/i.test(en) || !/repeat/i.test(en) || !/chime/i.test(en)) {
     fail('README.md must document that the completion chime only repeats while you are away')
   }
-  if (!/folders?/i.test(en) || !/fade|animat/i.test(en)) {
-    fail('README.md must document that solo mode hides workspace folders too and animates the hide/show')
+  if (!/folders?/i.test(en) || !/gray(?:s|ed)? out|dim(?:s|med)?/i.test(en)) {
+    fail('README.md must document that solo mode grays out workspace folders too')
+  }
+  if (!/not clickable|non-clickable|cannot be clicked|cannot click/i.test(en)) {
+    fail('README.md must document that grayed-out conversation/folder rows are not clickable')
+  }
+  if (!/0\s*=\s*unlimited/i.test(en)) {
+    fail('README.md must document that limits.dailyExtendLimit 0 = unlimited')
   }
   if (!/no banner|without a banner|no banner text/i.test(en)) fail('README.md must state that solo mode shows no banner')
   // Chinese mirrors.
@@ -588,15 +606,30 @@ check('READMEs describe the v0.4 product', () => {
   if (!/动(?:一下)?鼠标|动键鼠|真实(?:键鼠|活动)/.test(zh)) {
     fail('README.zh.md must document that the pause resumes only on real keyboard/mouse activity')
   }
+  if (!/自动暂停/.test(zh) || !/usage\.autoPauseSeconds/.test(zh)) {
+    fail('README.zh.md must document the idle auto-pause and usage.autoPauseSeconds')
+  }
+  if (!/自动跳回|跳回正在运行/.test(zh)) {
+    fail('README.zh.md must document that one-conversation mode jumps back to the running conversation')
+  }
+  if (!/遮罩|变暗/.test(zh)) {
+    fail('README.zh.md must document the veiled/dimmed content of a visible non-owner conversation')
+  }
   if (!/跳过休息/.test(zh)) fail('README.zh.md must document the forced-rest「跳过休息」action')
   if (!/跳过/.test(zh)) fail('README.zh.md must document the daily overlay「跳过」action')
   if (!/离开/.test(zh) || !/重复/.test(zh) || !/提示音/.test(zh)) {
     fail('README.zh.md must document that the completion chime only repeats while you are away')
   }
-  if (!/文件夹/.test(zh) || !/淡出|动画|平滑/.test(zh)) {
-    fail('README.zh.md must document that solo mode hides workspace folders too and animates the hide/show')
+  if (!/文件夹/.test(zh) || !/置灰|变灰/.test(zh)) {
+    fail('README.zh.md must document that solo mode grays out workspace folders too')
   }
-  if (!/不再显示任何提示横幅|没有提示条|去掉提示条/.test(zh)) fail('README.zh.md must state that solo mode shows no banner')
+  if (!/不可点|无法点击|不可点击/.test(zh)) {
+    fail('README.zh.md must document that grayed-out conversation/folder rows are not clickable')
+  }
+  if (!/0\s*=\s*不限/.test(zh)) {
+    fail('README.zh.md must document that limits.dailyExtendLimit 0 = unlimited')
+  }
+  if (!/不(?:再)?显示(?:任何)?提示横幅|没有提示条|去掉提示条/.test(zh)) fail('README.zh.md must state that solo mode shows no banner')
   const forbidden = [
     /25\s*[\/:]\s*5/,
     /focus block/i,
@@ -608,6 +641,9 @@ check('READMEs describe the v0.4 product', () => {
     /conversation\.session\.header\.utilities/,
     /dsh-deep-focus-countdown/,
     /其它文件夹和会话已暂时隐藏/,
+    /fade out|fade back in/i,
+    /sidebar hiding|hide other conversations|hides? other conversations/i,
+    /隐藏其它会话|隐藏其他会话/,
     /enter (?:your |the )?password/i,
     /unlock password/i,
     /密码解锁/,
@@ -618,12 +654,12 @@ check('READMEs describe the v0.4 product', () => {
   for (const pattern of forbidden) {
     if (pattern.test(en) || pattern.test(zh)) fail(`README still advertises a removed earlier-version concept: ${pattern}`)
   }
-  return 'v0.4 rings, pause/gray, rest+skip, away chime, solo folders+animation, v0.3 rules'
+  return 'v0.4.x: rings/pause/idle auto-pause/rest+skip/away chime/auto-jump+gray+veil/unlimited extends, v0.3 rules'
 })
 
 check('package version is the v0.4 series', () => {
   if (!/^0\.4\.\d+$/.test(pkg.version)) {
-    fail(`package.json version is "${pkg.version}"; the release kit documents v0.4.x`)
+    fail(`package.json version is "${pkg.version}"; the release kit documents v0.4.x (0.4.1/0.4.2 patch releases included)`)
   }
   return pkg.version
 })
@@ -646,8 +682,8 @@ check('LICENSE and CHANGELOG', () => {
   for (const heading of ['### Added', '### Changed', '### Removed', '### Fixed']) {
     if (!changelog.includes(heading)) fail(`CHANGELOG.md v0.4 entry is missing "${heading}"`)
   }
-  if (!/0\.1\.0[^\n]*0\.3\.0[^\n]*never published/i.test(changelog)) {
-    fail('CHANGELOG.md must note that 0.1.0–0.3.0 were never published')
+  if (!/0\.1\.0[^\n]*0\.4\.0[^\n]*never published/i.test(changelog)) {
+    fail('CHANGELOG.md must note that 0.1.0–0.4.0 were never published')
   }
   return `MIT, changelog covers ${pkg.version}`
 })
