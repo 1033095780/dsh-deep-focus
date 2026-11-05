@@ -1,0 +1,269 @@
+/**
+ * v3 limits state machine: daily whole-machine cap plus a continuous-use forced rest.
+ * Rest time is excluded from every counter (the tracker suppresses rest samples),
+ * daily counters reset at local midnight, and the assistant's off switch only tracks.
+ */
+import { EVENT } from '../shared/contract.js'
+import { localDayKey } from './storage.js'
+
+export const LIMITS_FILE = 'limits.json'
+/** `rest-due` fires when continuous usage reaches this share of the limit. */
+export const REST_DUE_RATIO = 0.8
+
+export function emptyLimitsState(dayKey) {
+  return {
+    dayKey,
+    resting: false,
+    restUntil: null,
+    restStartedAt: null,
+    dailyLocked: false,
+    lockedSince: null,
+    extendedUntil: null,
+    extendCountToday: 0,
+  }
+}
+
+export function createLimits({ settings, tracker, ring, storage = null, now = Date.now } = {}) {
+  let state = emptyLimitsState(localDayKey(now()))
+  let writeChain = Promise.resolve()
+  let restDueEmitted = false
+  let lastAssistantEnabled = settings.get().assistant.enabled === true
+
+  function persist() {
+    if (storage === null) return
+    writeChain = writeChain.then(() => storage.writeJson(LIMITS_FILE, state)).catch(() => {})
+  }
+
+  function minutes(value, fallback) {
+    const n = typeof value === 'number' ? value : Number(value)
+    return Number.isFinite(n) ? Math.max(0, Math.round(n)) : fallback
+  }
+
+  function rollDay(at) {
+    const dayKey = localDayKey(at)
+    if (state.dayKey === dayKey) return false
+    state = {
+      ...state,
+      dayKey,
+      dailyLocked: false,
+      lockedSince: null,
+      extendedUntil: null,
+      extendCountToday: 0,
+    }
+    restDueEmitted = false
+    persist()
+    return true
+  }
+
+  function startRest(at, reason) {
+    const restMinutes = Math.max(1, minutes(settings.get().limits.restMinutes, 10))
+    state = { ...state, resting: true, restStartedAt: at, restUntil: at + restMinutes * 60_000 }
+    restDueEmitted = false
+    tracker.resetContinuous()
+    ring.emit(EVENT.restStarted, { minutes: restMinutes, reason })
+    persist()
+  }
+
+  function endRest(early, reason) {
+    state = { ...state, resting: false, restUntil: null, restStartedAt: null }
+    tracker.resetContinuous()
+    ring.emit(EVENT.restFinished, { early: early === true, reason })
+    persist()
+  }
+
+  function getView(at = now()) {
+    const s = settings.get()
+    const usage = tracker.snapshot(at)
+    const enabled = s.assistant.enabled === true
+    const dailyLimitMs = minutes(s.limits.dailyMinutes, 180) * 60_000
+    const continuousLimitMs = minutes(s.limits.continuousMinutes, 30) * 60_000
+    const resting = state.resting === true && state.restUntil !== null && at < state.restUntil
+    return {
+      assistantEnabled: enabled,
+      dailyLimitMs,
+      dailyUsedMs: Math.round(usage.activeTodayMs),
+      dailyLocked: enabled === true && state.dailyLocked === true,
+      extendedUntil: state.extendedUntil,
+      extendCountToday: state.extendCountToday,
+      extendLimit: minutes(s.limits.dailyExtendLimit, 2),
+      continuousLimitMs,
+      continuousUsedMs: Math.round(usage.continuousMs),
+      restDue: enabled === true && !resting && continuousLimitMs > 0 && usage.continuousMs >= continuousLimitMs * REST_DUE_RATIO,
+      resting,
+      restUntil: resting ? state.restUntil : null,
+      restRemainingMs: resting ? Math.max(0, Math.round(state.restUntil - at)) : 0,
+    }
+  }
+
+  /** One evaluation tick: finish an elapsed rest, then enforce the forced rest and daily cap. */
+  function evaluate(at = now()) {
+    rollDay(at)
+    const s = settings.get()
+    const enabled = s.assistant.enabled === true
+    const usage = tracker.snapshot(at)
+    let changed = false
+
+    if (state.resting && (state.restUntil === null || at >= state.restUntil)) endRest(false, 'elapsed')
+
+    if (!enabled) {
+      if (state.resting) endRest(true, 'assistant-off')
+      if (state.dailyLocked || state.lockedSince !== null) {
+        state = { ...state, dailyLocked: false, lockedSince: null }
+        changed = true
+      }
+      restDueEmitted = false
+      if (changed) persist()
+      return getView(at)
+    }
+
+    // The daily cap is evaluated first so a lock never stacks a forced rest on top.
+    if (!state.resting) {
+      const dailyLimitMs = minutes(s.limits.dailyMinutes, 180) * 60_000
+      const over = dailyLimitMs > 0 && usage.activeTodayMs >= dailyLimitMs
+      const grace = state.extendedUntil !== null && at < state.extendedUntil
+      if (over && !grace) {
+        if (state.dailyLocked !== true) {
+          state = { ...state, dailyLocked: true, lockedSince: state.lockedSince ?? at, extendedUntil: null }
+          ring.emit(EVENT.dailyLocked, {
+            dailyUsedMs: Math.round(usage.activeTodayMs),
+            limitMs: dailyLimitMs,
+          })
+          changed = true
+        }
+      } else if (state.dailyLocked) {
+        state = { ...state, dailyLocked: false, lockedSince: null }
+        changed = true
+      }
+    }
+
+    const continuousLimitMs = minutes(s.limits.continuousMinutes, 30) * 60_000
+    if (!state.resting && !state.dailyLocked) {
+      if (continuousLimitMs > 0 && usage.continuousMs >= continuousLimitMs) {
+        startRest(at, 'continuous')
+      } else if (continuousLimitMs > 0 && usage.continuousMs >= continuousLimitMs * REST_DUE_RATIO) {
+        if (!restDueEmitted) {
+          restDueEmitted = true
+          ring.emit(EVENT.restDue, { remainingMs: Math.max(0, Math.round(continuousLimitMs - usage.continuousMs)) })
+        }
+      } else {
+        restDueEmitted = false
+      }
+    }
+
+    if (changed) persist()
+    return getView(at)
+  }
+
+  return {
+    get: () => state,
+    getView,
+    evaluate,
+    /** True while a rest window is actually running (after the latest evaluation). */
+    isResting(at = now()) {
+      return state.resting === true && state.restUntil !== null && at < state.restUntil
+    },
+
+    async load() {
+      const document = await storage?.readJson(LIMITS_FILE, null)
+      const at = now()
+      const dayKey = localDayKey(at)
+      if (document === null || document === undefined || typeof document !== 'object') {
+        state = emptyLimitsState(dayKey)
+        lastAssistantEnabled = settings.get().assistant.enabled === true
+        return state
+      }
+      const restUntil = Number.isFinite(document.restUntil) ? document.restUntil : null
+      const resting = document.resting === true && restUntil !== null && restUntil > at
+      state = {
+        dayKey,
+        resting,
+        restUntil: resting ? restUntil : null,
+        restStartedAt: resting && Number.isFinite(document.restStartedAt) ? document.restStartedAt : null,
+        dailyLocked: document.dailyLocked === true,
+        lockedSince: Number.isFinite(document.lockedSince) ? document.lockedSince : null,
+        extendedUntil: Number.isFinite(document.extendedUntil) ? document.extendedUntil : null,
+        extendCountToday: Number.isFinite(document.extendCountToday)
+          ? Math.max(0, Math.round(document.extendCountToday))
+          : 0,
+      }
+      if (document.dayKey !== dayKey) {
+        state = { ...state, dailyLocked: false, lockedSince: null, extendedUntil: null, extendCountToday: 0 }
+      }
+      lastAssistantEnabled = settings.get().assistant.enabled === true
+      return state
+    },
+
+    /** Manual "start rest now": 409 already-resting / assistant-off. */
+    startRest(at = now()) {
+      const enabled = settings.get().assistant.enabled === true
+      if (!enabled) return { ok: false, code: 'assistant-off' }
+      if (state.resting === true && state.restUntil !== null && at < state.restUntil) {
+        return { ok: false, code: 'already-resting' }
+      }
+      if (state.resting) state = { ...state, resting: false, restUntil: null, restStartedAt: null }
+      startRest(at, 'manual')
+      return { ok: true, view: getView(at) }
+    },
+
+    /** End the running rest early; the continuous quota is already reset. */
+    finishRest(at = now()) {
+      if (!(state.resting === true && state.restUntil !== null && at < state.restUntil)) {
+        if (state.resting) endRest(false, 'elapsed')
+        return { ok: false, code: 'not-resting' }
+      }
+      endRest(true, 'manual')
+      return { ok: true, view: getView(at) }
+    },
+
+    /** Grant another `extendMinutes` of DSH time after the daily cap. */
+    extend(at = now()) {
+      const s = settings.get()
+      if (s.assistant.enabled !== true) return { ok: false, code: 'not-locked' }
+      if (state.dailyLocked !== true) {
+        evaluate(at)
+        if (state.dailyLocked !== true) return { ok: false, code: 'not-locked' }
+      }
+      const extendLimit = minutes(s.limits.dailyExtendLimit, 2)
+      if (extendLimit <= 0 || state.extendCountToday >= extendLimit) {
+        return { ok: false, code: 'extend-limit-reached' }
+      }
+      const extendMinutes = Math.max(1, minutes(s.limits.extendMinutes, 20))
+      state = {
+        ...state,
+        extendedUntil: at + extendMinutes * 60_000,
+        extendCountToday: state.extendCountToday + 1,
+        dailyLocked: false,
+        lockedSince: null,
+      }
+      ring.emit(EVENT.extended, {
+        minutes: extendMinutes,
+        extendCountToday: state.extendCountToday,
+        extendLimit,
+      })
+      persist()
+      return { ok: true, view: getView(at) }
+    },
+
+    /** React to the assistant switch (called after the settings store changed). */
+    setAssistantEnabled(enabled, at = now()) {
+      const next = enabled === true
+      if (next === lastAssistantEnabled) return getView(at)
+      lastAssistantEnabled = next
+      if (!next) {
+        if (state.resting) endRest(true, 'assistant-off')
+        state = { ...state, dailyLocked: false, lockedSince: null }
+        restDueEmitted = false
+        persist()
+        ring.emit(EVENT.assistantOff, {})
+      } else {
+        ring.emit(EVENT.assistantOn, {})
+        evaluate(at)
+      }
+      return getView(at)
+    },
+
+    flush() {
+      return writeChain
+    },
+  }
+}

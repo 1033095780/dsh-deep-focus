@@ -3,69 +3,72 @@ import test from 'node:test'
 import { createSettingsStore, normalizeSettings, publicSettings } from '../src/host/settings.js'
 import { DEFAULT_SETTINGS } from '../src/shared/contract.js'
 
-test('normalizeSettings fills every v2 default', () => {
+test('normalizeSettings fills every v3 default', () => {
   const settings = normalizeSettings(undefined)
-  assert.deepEqual(settings.focus, DEFAULT_SETTINGS.focus)
+  assert.equal(settings.version, 3)
   assert.deepEqual(settings.limits, DEFAULT_SETTINGS.limits)
+  assert.deepEqual(settings.assistant, DEFAULT_SETTINGS.assistant)
   assert.deepEqual(settings.alerts, DEFAULT_SETTINGS.alerts)
   assert.deepEqual(settings.usage, DEFAULT_SETTINGS.usage)
+  assert.deepEqual(settings.limits, {
+    dailyMinutes: 180,
+    continuousMinutes: 30,
+    restMinutes: 10,
+    extendMinutes: 20,
+    dailyExtendLimit: 2,
+  })
 })
 
-test('v2 has no security or lock sections and limits default to off', () => {
-  const settings = normalizeSettings({ security: { passwordHash: 'x' }, lock: { singleConversation: true } })
-  assert.equal(settings.security, undefined)
+test('v3 has no focus, lock or security sections', () => {
+  const settings = normalizeSettings({ focus: { workMinutes: 25 }, lock: { singleConversation: true }, security: { passwordHash: 'x' } })
+  assert.equal(settings.focus, undefined)
   assert.equal(settings.lock, undefined)
-  assert.equal(settings.limits.dailyActiveMinutes, 0)
-  assert.equal(settings.limits.continuousWorkMinutes, 0)
-  assert.equal(settings.limits.sessionMinutes, 0)
-  assert.equal(settings.limits.unlockMinutes, 20)
-  assert.equal(settings.usage.trackApps, true)
-  assert.equal(settings.focus.grayOutOtherSessions, true)
+  assert.equal(settings.security, undefined)
 })
 
 test('normalizeSettings clamps numbers and drops unknown keys', () => {
   const settings = normalizeSettings({
-    focus: { workMinutes: 999, breakMinutes: 0, idlePauseSeconds: -5, nope: 1 },
-    limits: { dailyActiveMinutes: -10, unlockMinutes: 999 },
+    limits: { dailyMinutes: -5, continuousMinutes: 9_999, restMinutes: 0, extendMinutes: 0, dailyExtendLimit: 99, nope: 1 },
     usage: { sampleSeconds: 1, retentionDays: 10_000 },
     alerts: { volume: 2 },
     unknownSection: { a: 1 },
   })
-  assert.equal(settings.focus.workMinutes, 180)
-  assert.equal(settings.focus.breakMinutes, 1)
-  assert.equal(settings.focus.idlePauseSeconds, 0)
-  assert.equal(settings.focus.nope, undefined)
-  assert.equal(settings.limits.dailyActiveMinutes, 0)
-  assert.equal(settings.limits.unlockMinutes, 120)
+  assert.equal(settings.limits.dailyMinutes, 0)
+  assert.equal(settings.limits.continuousMinutes, 600)
+  assert.equal(settings.limits.restMinutes, 1)
+  assert.equal(settings.limits.extendMinutes, 1)
+  assert.equal(settings.limits.dailyExtendLimit, 20)
+  assert.equal(settings.limits.nope, undefined)
   assert.equal(settings.usage.sampleSeconds, 3)
   assert.equal(settings.usage.retentionDays, 365)
   assert.equal(settings.alerts.volume, 1)
   assert.equal(settings.unknownSection, undefined)
+  assert.equal(normalizeSettings({ limits: { dailyMinutes: 999_999 } }).limits.dailyMinutes, 1_440)
 })
 
 test('normalizeSettings coerces booleans and quiet hours', () => {
   const settings = normalizeSettings({
-    alerts: { turnDone: 'yes', quietHoursStart: '22:00', quietHoursEnd: '7:00' },
-    focus: { grayOutOtherSessions: 0 },
+    assistant: { enabled: 'yes', soloSession: 0 },
     usage: { trackApps: 'no' },
+    alerts: { quietHoursStart: '22:00', quietHoursEnd: '7:00' },
   })
-  assert.equal(settings.alerts.turnDone, DEFAULT_SETTINGS.alerts.turnDone)
-  assert.equal(settings.focus.grayOutOtherSessions, DEFAULT_SETTINGS.focus.grayOutOtherSessions)
+  assert.equal(settings.assistant.enabled, DEFAULT_SETTINGS.assistant.enabled)
+  assert.equal(settings.assistant.soloSession, DEFAULT_SETTINGS.assistant.soloSession)
   assert.equal(settings.usage.trackApps, DEFAULT_SETTINGS.usage.trackApps)
+  assert.equal(normalizeSettings({ assistant: { enabled: false } }).assistant.enabled, false)
   assert.equal(normalizeSettings({ usage: { trackApps: false } }).usage.trackApps, false)
   assert.equal(settings.alerts.quietHoursStart, '22:00')
   assert.equal(settings.alerts.quietHoursEnd, null)
   assert.equal(normalizeSettings({ alerts: { quietHoursStart: '08:30' } }).alerts.quietHoursStart, '08:30')
-  assert.equal(normalizeSettings({ alerts: { quietHoursStart: null } }).alerts.quietHoursStart, null)
 })
 
 test('publicSettings copies the merged settings', () => {
-  const settings = normalizeSettings({ focus: { workMinutes: 30 } })
+  const settings = normalizeSettings({ limits: { dailyMinutes: 60 } })
   const publicView = publicSettings(settings)
-  assert.equal(publicView.focus.workMinutes, 30)
-  assert.equal(publicView.limits.unlockMinutes, 20)
-  publicView.focus.workMinutes = 1
-  assert.equal(settings.focus.workMinutes, 30)
+  assert.equal(publicView.limits.dailyMinutes, 60)
+  assert.equal(publicView.assistant.enabled, true)
+  publicView.limits.dailyMinutes = 1
+  assert.equal(settings.limits.dailyMinutes, 60)
 })
 
 test('settings store persists and normalizes through the storage facade', async () => {
@@ -76,84 +79,91 @@ test('settings store persists and normalizes through the storage facade', async 
   }
   const store = createSettingsStore({ storage })
   await store.load()
-  await store.update({ focus: { workMinutes: 50 }, limits: { dailyActiveMinutes: 60 } })
-  assert.equal(store.get().focus.workMinutes, 50)
-  assert.equal(store.get().limits.dailyActiveMinutes, 60)
+  await store.update({ limits: { dailyMinutes: 60 }, assistant: { enabled: false } })
+  assert.equal(store.get().limits.dailyMinutes, 60)
+  assert.equal(store.get().assistant.enabled, false)
   assert.equal(writes.length, 1)
   assert.equal(writes[0].path, 'settings.json')
-  assert.equal(writes[0].value.focus.workMinutes, 50)
+  assert.equal(writes[0].value.version, 3)
 })
 
 test('settings updates cannot reintroduce removed sections', async () => {
   const store = createSettingsStore()
   await store.load()
-  await store.update({ security: { passwordHash: 'AAAA' }, lock: { singleConversation: true }, usage: { trackApps: false } })
+  await store.update({ focus: { workMinutes: 25 }, security: { passwordHash: 'AAAA' }, lock: { single: true } })
+  assert.equal(store.get().focus, undefined)
   assert.equal(store.get().security, undefined)
   assert.equal(store.get().lock, undefined)
-  assert.equal(store.get().usage.trackApps, false)
 })
 
-test('settings store loads and clamps a v2 file', async () => {
+test('a v3 settings file keeps and clamps its values', async () => {
   const storage = {
-    readJson: async () => ({ version: 2, focus: { workMinutes: 999 }, alerts: { volume: -1 }, limits: { dailyActiveMinutes: -1 } }),
+    readJson: async () => ({
+      version: 3,
+      limits: { dailyMinutes: 60, continuousMinutes: 45 },
+      assistant: { enabled: false },
+      alerts: { volume: -1 },
+    }),
     writeJson: async () => {},
   }
   const store = createSettingsStore({ storage })
   await store.load()
-  assert.equal(store.get().focus.workMinutes, 180)
+  assert.equal(store.get().limits.dailyMinutes, 60)
+  assert.equal(store.get().limits.continuousMinutes, 45)
+  assert.equal(store.get().assistant.enabled, false)
   assert.equal(store.get().alerts.volume, 0)
-  assert.equal(store.get().limits.dailyActiveMinutes, 0)
+  assert.equal(store.get().limits.restMinutes, 10)
 })
 
-test('a v1 settings file is discarded and replaced by v2 defaults', async () => {
-  const v1File = {
-    version: 1,
-    focus: { workMinutes: 50, autoStartBreak: false },
-    limits: { dailyActiveMinutes: 480, continuousWorkMinutes: 90, sessionMinutes: 90, unlockMinutes: 15 },
-    lock: { singleConversation: true, blockToolsOutsideFocus: true },
-    alerts: { taskDone: false, volume: 0.2 },
-    usage: { sampleSeconds: 10, retentionDays: 7, trackApps: false },
-    security: { passwordHash: 'aGVsbG8=', passwordSalt: 'd29ybGQ=' },
+test('v1 and v2 settings files are discarded for v3 defaults', async () => {
+  const files = [
+    {
+      version: 1,
+      focus: { workMinutes: 50 },
+      limits: { dailyActiveMinutes: 480, unlockMinutes: 15 },
+      security: { passwordHash: 'aGVsbG8=', passwordSalt: 'd29ybGQ=' },
+    },
+    {
+      version: 2,
+      focus: { workMinutes: 50, grayOutOtherSessions: false },
+      limits: { dailyActiveMinutes: 480, continuousWorkMinutes: 90, sessionMinutes: 90, unlockMinutes: 20 },
+      usage: { trackApps: false },
+    },
+  ]
+  for (const file of files) {
+    let wrote = null
+    const store = createSettingsStore({
+      storage: {
+        readJson: async () => file,
+        writeJson: async (path, value) => { wrote = { path, value } },
+      },
+    })
+    await store.load()
+    const settings = store.get()
+    assert.equal(settings.version, 3)
+    assert.deepEqual(settings.limits, DEFAULT_SETTINGS.limits)
+    assert.deepEqual(settings.assistant, DEFAULT_SETTINGS.assistant)
+    assert.equal(settings.usage.trackApps, true)
+    assert.equal(settings.focus, undefined)
+    assert.equal(settings.security, undefined)
+    assert.equal(wrote, null)
+    // The next write persists the v3 shape.
+    await store.update({ limits: { dailyMinutes: 90 } })
+    assert.equal(wrote.value.version, 3)
+    assert.equal(wrote.value.limits.dailyMinutes, 90)
+    assert.equal(wrote.value.focus, undefined)
   }
-  let wrote = null
-  const storage = {
-    readJson: async () => v1File,
-    writeJson: async (path, value) => { wrote = { path, value } },
-  }
-  const store = createSettingsStore({ storage })
-  await store.load()
-  const settings = store.get()
-  assert.equal(settings.version, 2)
-  // Every v1 value is dropped, not carried over into v2.
-  assert.deepEqual(settings.limits, DEFAULT_SETTINGS.limits)
-  assert.equal(settings.limits.dailyActiveMinutes, 0)
-  assert.equal(settings.focus.workMinutes, 25)
-  assert.equal(settings.focus.autoStartBreak, true)
-  assert.equal(settings.alerts.taskDone, true)
-  assert.equal(settings.usage.sampleSeconds, 5)
-  assert.equal(settings.usage.retentionDays, 30)
-  assert.equal(settings.usage.trackApps, true)
-  assert.equal(settings.security, undefined)
-  assert.equal(settings.lock, undefined)
-  assert.equal(wrote, null)
-
-  // The next write persists the v2 shape.
-  await store.update({ focus: { workMinutes: 30 } })
-  assert.ok(wrote !== null)
-  assert.equal(wrote.path, 'settings.json')
-  assert.equal(wrote.value.version, 2)
-  assert.equal(wrote.value.focus.workMinutes, 30)
-  assert.equal(wrote.value.security, undefined)
 })
 
-test('a settings file without a version is treated as v1', async () => {
-  const storage = {
-    readJson: async () => ({ focus: { workMinutes: 50 }, limits: { dailyActiveMinutes: 480 } }),
-    writeJson: async () => {},
-  }
-  const store = createSettingsStore({ storage })
+test('a settings file without a version is treated as pre-v3', async () => {
+  const store = createSettingsStore({
+    storage: {
+      readJson: async () => ({ limits: { dailyMinutes: 480 }, usage: { trackApps: false } }),
+      writeJson: async () => {},
+    },
+  })
   await store.load()
-  assert.equal(store.get().version, 2)
-  assert.equal(store.get().focus.workMinutes, 25)
-  assert.equal(store.get().limits.dailyActiveMinutes, 0)
+  assert.equal(store.get().version, 3)
+  assert.equal(store.get().limits.dailyMinutes, 180)
+  assert.equal(store.get().usage.trackApps, true)
 })

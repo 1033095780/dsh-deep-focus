@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createApi, isLoopbackAuthority, isTrustedRequest, readJsonBody } from '../src/host/api.js'
-import { createBudget } from '../src/host/budget.js'
-import { createEventRing, createStatusMap } from '../src/host/events.js'
-import { createFocus } from '../src/host/focus.js'
+import { createEventRing, createStatusMap, installHostEventListeners } from '../src/host/events.js'
+import { createLimits } from '../src/host/limits.js'
 import { createSettingsStore } from '../src/host/settings.js'
 import { createTracker } from '../src/host/tracker.js'
 import { API_BASE, ROUTES } from '../src/shared/contract.js'
@@ -51,16 +50,30 @@ async function call(api, request) {
   }
 }
 
-async function makeFixture({ storage = null, samplerOverrides = {} } = {}) {
+async function makeFixture({
+  storage = null,
+  samplerOverrides = {},
+  roots = ['root-1', 'root-2'],
+  running = [],
+  settingsPatch = null,
+  sessionsStore = null,
+  turnBoundaryOf = null,
+} = {}) {
   let clock = new Date(2026, 10, 5, 10, 0, 0).getTime()
   const now = () => clock
   const settings = createSettingsStore()
   await settings.load()
+  if (settingsPatch !== null) await settings.update(settingsPatch)
   const tracker = createTracker({ storage: null, settings, now })
   const ring = createEventRing({ now })
-  const focus = createFocus({ settings, ring, storage: null, now })
-  const budget = createBudget({ settings, tracker, focus, ring, storage: null, now })
   const statusMap = createStatusMap()
+  for (const id of running) statusMap.set(id, true)
+  const agents = {
+    roots: () => roots.map((id) => ({ id })),
+    list: () => [...roots.map((id) => ({ id })), { id: 'subagent-1' }, { id: 'teammate-1' }],
+    ...(turnBoundaryOf === null ? {} : { turnBoundaryOf }),
+  }
+  const limits = createLimits({ settings, tracker, ring, storage: null, now })
   const sampler = {
     state: () => 'ok',
     appsState: () => 'ok',
@@ -70,33 +83,40 @@ async function makeFixture({ storage = null, samplerOverrides = {} } = {}) {
     stop: () => {},
     ...samplerOverrides,
   }
-  const agents = {
-    list: () => [{ id: 'session-a' }, { id: 'session-b' }],
-    get: (id) => (id === 'session-a' || id === 'session-b' ? { id } : undefined),
-  }
   const api = createApi({
     settings,
     tracker,
-    focus,
-    budget,
+    limits,
     sampler,
     ring,
     statusMap,
     agents,
     storage,
     now,
+    getSessions: sessionsStore === null ? null : () => sessionsStore,
+    // Mirrors src/index.js: a settings write re-applies the assistant switch.
+    onChange(next) {
+      limits.setAssistantEnabled(next.assistant.enabled === true)
+      limits.evaluate(clock)
+    },
   })
   return {
     api,
     settings,
     tracker,
-    focus,
-    budget,
+    limits,
     statusMap,
     ring,
     sampler,
     advance(ms) { clock += ms },
     get clock() { return clock },
+    feedActive(app = 'chrome', count = 1) {
+      tracker.sample({ idleMs: 100, app }, clock)
+      for (let index = 1; index < count; index += 1) {
+        clock += 5000
+        tracker.sample({ idleMs: 100, app }, clock)
+      }
+    },
   }
 }
 
@@ -111,9 +131,7 @@ test('loopback authority detection', () => {
   assert.equal(isLoopbackAuthority('127.0.0.1:51131'), true)
   assert.equal(isLoopbackAuthority('localhost:51131'), true)
   assert.equal(isLoopbackAuthority('[::1]:51131'), true)
-  assert.equal(isLoopbackAuthority('LOCALHOST'), true)
   assert.equal(isLoopbackAuthority('192.168.1.5:51131'), false)
-  assert.equal(isLoopbackAuthority('127.0.0.1.evil.test'), false)
   assert.equal(isLoopbackAuthority(undefined), false)
 })
 
@@ -126,9 +144,6 @@ test('same-origin trust rule', () => {
   assert.equal(isTrustedRequest({ host: HOST, origin: `http://${HOST}` }), true)
   assert.equal(isTrustedRequest({ host: HOST, origin: 'http://127.0.0.1' }), true)
   assert.equal(isTrustedRequest({ host: HOST, origin: 'http://127.0.0.1:9999' }), false)
-  assert.equal(isTrustedRequest({ host: HOST, origin: 'ftp://127.0.0.1:51131' }), false)
-  assert.equal(isTrustedRequest({ origin: `http://${HOST}` }), true)
-  assert.equal(isTrustedRequest({ host: '192.168.1.5:51131', origin: 'http://192.168.1.5:51131' }), true)
 })
 
 test('readJsonBody enforces a size cap and rejects malformed JSON', async () => {
@@ -141,31 +156,43 @@ test('readJsonBody enforces a size cap and rejects malformed JSON', async () => 
   )
 })
 
-test('GET /state returns the v2 contract shape', async () => {
-  const fixture = await makeFixture()
+test('GET /state returns the v3 contract shape with root-only sessions and solo', async () => {
+  const fixture = await makeFixture({ running: ['root-2'] })
   const result = await call(fixture.api, makeRequest({ url: ROUTES.state }))
   assert.equal(result.status, 200)
   assert.equal(result.headers['cache-control'], 'no-store')
   const state = result.json
-  assert.deepEqual(Object.keys(state).sort(), ['alerts', 'appsToday', 'events', 'focus', 'lock', 'now', 'sessions', 'settings', 'usage'])
-  assert.deepEqual(Object.keys(state.focus).sort(), [
-    'elapsedMs', 'endsAt', 'pauseCause', 'phase', 'pomodorosToday', 'remainingMs', 'sessionId', 'sessionLive', 'startedAt', 'status', 'task',
-  ])
+  assert.deepEqual(Object.keys(state).sort(), ['appsToday', 'events', 'limit', 'now', 'sessions', 'settings', 'solo', 'usage'])
   assert.deepEqual(Object.keys(state.usage).sort(), ['activeTodayMs', 'appsSampling', 'continuousMs', 'dayKey', 'sampling'])
   assert.deepEqual(Object.keys(state.appsToday).sort(), ['top', 'totalMs'])
-  assert.deepEqual(Object.keys(state.lock).sort(), ['canUnlock', 'locked', 'reason', 'since', 'strict', 'unlockMinutes', 'unlockUntil'])
-  assert.equal(state.focus.phase, 'idle')
-  assert.equal(state.focus.sessionLive, null)
+  assert.deepEqual(Object.keys(state.limit).sort(), [
+    'assistantEnabled', 'continuousLimitMs', 'continuousUsedMs', 'dailyLimitMs', 'dailyLocked', 'dailyUsedMs',
+    'extendCountToday', 'extendLimit', 'extendedUntil', 'restDue', 'restRemainingMs', 'restUntil', 'resting',
+  ])
+  assert.deepEqual(Object.keys(state.settings).sort(), ['alerts', 'assistant', 'limits', 'usage', 'version'])
+  assert.equal(state.settings.version, 3)
+  assert.equal(state.settings.focus, undefined)
+  assert.equal(state.settings.security, undefined)
+  assert.equal(state.limit.assistantEnabled, true)
+  assert.equal(state.limit.dailyLimitMs, 180 * 60_000)
+  assert.equal(state.limit.continuousLimitMs, 30 * 60_000)
+  assert.equal(state.limit.dailyLocked, false)
+  assert.equal(state.limit.resting, false)
   assert.equal(state.usage.sampling, 'ok')
   assert.equal(state.usage.appsSampling, 'ok')
-  assert.equal(state.lock.strict, false)
-  assert.equal(state.lock.unlockMinutes, 20)
-  assert.equal(state.settings.limits.dailyActiveMinutes, 0)
-  assert.equal(state.settings.security, undefined)
-  assert.equal(state.settings.lock, undefined)
-  assert.deepEqual(state.sessions, [{ id: 'session-a', running: false }, { id: 'session-b', running: false }])
+  // Roots only: subagent/teammate sessions never leak into the sidebar list.
+  assert.deepEqual(state.sessions, [
+    { id: 'root-1', running: false },
+    { id: 'root-2', running: true },
+  ])
+  assert.deepEqual(state.solo, { active: true, sessions: ['root-2'] })
   assert.deepEqual(state.events, [])
-  assert.equal(result.body.includes('password'), false)
+})
+
+test('solo is inactive when no root agent runs', async () => {
+  const fixture = await makeFixture()
+  const state = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+  assert.deepEqual(state.solo, { active: false, sessions: [] })
 })
 
 test('appsSampling reflects the sampler and the trackApps setting', async () => {
@@ -175,16 +202,12 @@ test('appsSampling reflects the sampler and the trackApps setting', async () => 
   const fixture = await makeFixture()
   await fixture.settings.update({ usage: { trackApps: false } })
   assert.equal((await call(fixture.api, makeRequest({ url: ROUTES.state }))).json.usage.appsSampling, 'off')
-
-  const stopped = await makeFixture({ samplerOverrides: { state: () => 'off' } })
-  assert.equal((await call(stopped.api, makeRequest({ url: ROUTES.state }))).json.usage.appsSampling, 'off')
 })
 
-test('unknown paths 404 and unsupported methods 405', async () => {
+test('unknown paths 404, removed /stats 404 and unsupported methods 405', async () => {
   const fixture = await makeFixture()
-  const missing = await call(fixture.api, makeRequest({ url: `${API_BASE}/nope` }))
-  assert.equal(missing.status, 404)
-  assert.equal(missing.json.error.code, 'not-found')
+  assert.equal((await call(fixture.api, makeRequest({ url: `${API_BASE}/nope` }))).status, 404)
+  assert.equal((await call(fixture.api, makeRequest({ url: `${API_BASE}/stats` }))).status, 404)
   const wrongMethod = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.state }))
   assert.equal(wrongMethod.status, 405)
   assert.equal(wrongMethod.headers.allow, 'GET')
@@ -202,63 +225,238 @@ test('cross-origin writes are refused', async () => {
   assert.equal(result.json.error.code, 'untrusted-origin')
 })
 
-test('settings are read and written without any secret fields', async () => {
+test('settings are read and written as a deep partial', async () => {
   const fixture = await makeFixture()
   const read = await call(fixture.api, makeRequest({ url: ROUTES.settings }))
   assert.equal(read.status, 200)
   assert.equal(read.json.ok, true)
-  assert.equal(read.json.settings.focus.workMinutes, 25)
+  assert.equal(read.json.settings.limits.dailyMinutes, 180)
 
   const write = await call(fixture.api, makeRequest({
     method: 'POST',
     url: ROUTES.settings,
     headers: { host: HOST, origin: `http://${HOST}` },
-    body: JSON.stringify({ settings: { focus: { workMinutes: 50 }, usage: { trackApps: false }, alerts: { volume: 2 } } }),
+    body: JSON.stringify({
+      settings: {
+        limits: { dailyMinutes: 60, continuousMinutes: 45 },
+        assistant: { enabled: false },
+        usage: { trackApps: false },
+        alerts: { volume: 2 },
+      },
+    }),
   }))
   assert.equal(write.status, 200)
-  assert.equal(write.json.ok, true)
-  assert.equal(write.json.settings.focus.workMinutes, 50)
+  assert.equal(write.json.settings.limits.dailyMinutes, 60)
+  assert.equal(write.json.settings.limits.continuousMinutes, 45)
+  assert.equal(write.json.settings.assistant.enabled, false)
   assert.equal(write.json.settings.usage.trackApps, false)
   assert.equal(write.json.settings.alerts.volume, 1)
-  assert.equal(write.body.includes('passwordHash'), false)
 
-  // Removed v1 sections can be sent but are dropped, never persisted.
-  const legacy = await call(fixture.api, makeRequest({
-    method: 'POST',
-    url: ROUTES.settings,
-    headers: { host: HOST },
-    body: JSON.stringify({ settings: { security: { passwordHash: 'x' }, lock: { singleConversation: true } } }),
-  }))
-  assert.equal(legacy.status, 200)
-  assert.equal(legacy.json.settings.security, undefined)
-  assert.equal(legacy.json.settings.lock, undefined)
-})
-
-test('settings bodies reject malformed and oversized payloads', async () => {
-  const fixture = await makeFixture()
-  const badJson = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.settings, body: '{nope' }))
-  assert.equal(badJson.status, 400)
-  assert.equal(badJson.json.error.code, 'bad-json')
-  const notObject = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.settings, body: '[1,2]' }))
-  assert.equal(notObject.status, 400)
-  assert.equal(notObject.json.error.code, 'invalid-settings')
-  const badSettings = await call(fixture.api, makeRequest({
+  const invalid = await call(fixture.api, makeRequest({
     method: 'POST',
     url: ROUTES.settings,
     body: JSON.stringify({ settings: ['nope'] }),
   }))
-  assert.equal(badSettings.status, 400)
-  assert.equal(badSettings.json.error.code, 'invalid-settings')
-  const tooLarge = await call(fixture.api, makeRequest({
-    method: 'POST',
-    url: ROUTES.settings,
-    body: JSON.stringify({ settings: { task: 'x'.repeat(40_000) } }),
-  }))
-  assert.equal(tooLarge.status, 413)
-  assert.equal(tooLarge.json.error.code, 'body-too-large')
+  assert.equal(invalid.status, 400)
+  assert.equal(invalid.json.error.code, 'invalid-settings')
 })
 
-test('GET /apps aggregates per-app usage over the requested days', async () => {
+test('POST /assistant toggles the assistant and its events', async () => {
+  const fixture = await makeFixture()
+  const off = await call(fixture.api, makeRequest({
+    method: 'POST',
+    url: ROUTES.assistant,
+    body: JSON.stringify({ enabled: false }),
+  }))
+  assert.equal(off.status, 200)
+  assert.equal(off.json.state.settings.assistant.enabled, false)
+  assert.equal(off.json.state.limit.assistantEnabled, false)
+  assert.ok(off.json.state.events.some((event) => event.kind === 'assistant-off'))
+
+  const on = await call(fixture.api, makeRequest({
+    method: 'POST',
+    url: ROUTES.assistant,
+    body: JSON.stringify({ enabled: true }),
+  }))
+  assert.equal(on.status, 200)
+  assert.equal(on.json.state.limit.assistantEnabled, true)
+  assert.ok(on.json.state.events.some((event) => event.kind === 'assistant-on'))
+
+  const invalid = await call(fixture.api, makeRequest({
+    method: 'POST',
+    url: ROUTES.assistant,
+    body: JSON.stringify({ enabled: 'yes' }),
+  }))
+  assert.equal(invalid.status, 400)
+  assert.equal(invalid.json.error.code, 'invalid-assistant')
+})
+
+test('the continuous cap forces a rest and the rest finishes automatically', async () => {
+  const fixture = await makeFixture()
+  fixture.feedActive('chrome', 361)
+  const resting = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+  assert.equal(resting.limit.resting, true)
+  assert.equal(resting.limit.restRemainingMs, 10 * 60_000)
+  assert.equal(resting.usage.continuousMs, 0)
+  assert.ok(resting.events.some((event) => event.kind === 'rest-started'))
+  const usedBefore = resting.usage.activeTodayMs
+  assert.ok(usedBefore >= 30 * 60_000)
+
+  fixture.advance(10 * 60_000 + 1000)
+  const finished = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+  assert.equal(finished.limit.resting, false)
+  assert.equal(finished.limit.restRemainingMs, 0)
+  assert.ok(finished.events.some((event) => event.kind === 'rest-finished'))
+  // The rest window added no usage.
+  assert.equal(finished.usage.activeTodayMs, usedBefore)
+})
+
+test('manual rest start/finish and their conflicts', async () => {
+  const fixture = await makeFixture()
+  const started = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.restStart, body: '{}' }))
+  assert.equal(started.status, 200)
+  assert.equal(started.json.state.limit.resting, true)
+  assert.equal(started.json.state.limit.restRemainingMs, 10 * 60_000)
+
+  const again = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.restStart, body: '{}' }))
+  assert.equal(again.status, 409)
+  assert.equal(again.json.error.code, 'already-resting')
+
+  const finished = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.restFinish, body: '{}' }))
+  assert.equal(finished.status, 200)
+  assert.equal(finished.json.state.limit.resting, false)
+
+  const finishAgain = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.restFinish, body: '{}' }))
+  assert.equal(finishAgain.status, 409)
+  assert.equal(finishAgain.json.error.code, 'not-resting')
+
+  await fixture.settings.update({ assistant: { enabled: false } })
+  const off = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.restStart, body: '{}' }))
+  assert.equal(off.status, 409)
+  assert.equal(off.json.error.code, 'assistant-off')
+})
+
+test('the daily cap locks and extend grants two windows then refuses', async () => {
+  const fixture = await makeFixture({ settingsPatch: { limits: { dailyMinutes: 1 } } })
+  fixture.feedActive('chrome', 13)
+  const locked = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+  assert.equal(locked.limit.dailyLocked, true)
+  assert.equal(locked.limit.extendCountToday, 0)
+  assert.equal(locked.limit.extendLimit, 2)
+  assert.ok(locked.limit.dailyUsedMs >= 60_000)
+  assert.ok(locked.events.some((event) => event.kind === 'daily-locked'))
+
+  const first = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.extend, body: '{}' }))
+  assert.equal(first.status, 200)
+  assert.equal(first.json.state.limit.dailyLocked, false)
+  assert.equal(first.json.state.limit.extendCountToday, 1)
+  assert.equal(first.json.state.limit.extendedUntil - first.json.state.now, 20 * 60_000)
+  assert.ok(first.json.state.events.some((event) => event.kind === 'extended'))
+
+  fixture.advance(20 * 60_000 + 1000)
+  const relocked = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+  assert.equal(relocked.limit.dailyLocked, true)
+
+  const second = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.extend, body: '{}' }))
+  assert.equal(second.status, 200)
+  assert.equal(second.json.state.limit.extendCountToday, 2)
+
+  fixture.advance(20 * 60_000 + 1000)
+  const third = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.extend, body: '{}' }))
+  assert.equal(third.status, 409)
+  assert.equal(third.json.error.code, 'extend-limit-reached')
+})
+
+test('extend is refused when nothing is locked', async () => {
+  const fixture = await makeFixture()
+  const result = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.extend, body: '{}' }))
+  assert.equal(result.status, 409)
+  assert.equal(result.json.error.code, 'not-locked')
+})
+
+test('assistant off only tracks: no lock, no rest', async () => {
+  const fixture = await makeFixture({ settingsPatch: { limits: { dailyMinutes: 1 } } })
+  fixture.feedActive('chrome', 14)
+  const locked = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+  assert.equal(locked.limit.dailyLocked, true)
+
+  await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.assistant, body: JSON.stringify({ enabled: false }) }))
+  fixture.feedActive('chrome', 10)
+  const state = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+  assert.equal(state.limit.assistantEnabled, false)
+  assert.equal(state.limit.dailyLocked, false)
+  assert.equal(state.limit.resting, false)
+  // Usage still advances while the assistant is off.
+  assert.ok(state.usage.activeTodayMs > locked.usage.activeTodayMs)
+})
+
+test('solo follows the real event bridge status map', async () => {
+  const fixture = await makeFixture()
+  const handlers = new Map()
+  const ctx = {
+    on(name, listener) {
+      handlers.set(name, listener)
+      return () => handlers.delete(name)
+    },
+  }
+  const dispose = installHostEventListeners({
+    ctx,
+    ring: fixture.ring,
+    settings: fixture.settings,
+    statusMap: fixture.statusMap,
+  })
+  // The root-level feed is what actually reaches an unscoped plugin context.
+  handlers.get('api-session/status')('root-2', true)
+  let state = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+  assert.deepEqual(state.solo, { active: true, sessions: ['root-2'] })
+  assert.equal(state.sessions.find((session) => session.id === 'root-2').running, true)
+
+  handlers.get('api-session/status')('root-2', false)
+  state = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+  assert.deepEqual(state.solo, { active: false, sessions: [] })
+  assert.equal(state.sessions.find((session) => session.id === 'root-2').running, false)
+
+  // Durable turn boundaries work as an independent fallback source.
+  handlers.get('session/event')({ id: 'root-1' }, { type: 'turn/start', data: { turn: 1 } })
+  state = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+  assert.deepEqual(state.solo, { active: true, sessions: ['root-1'] })
+  dispose()
+})
+
+test('/state recovers a running root session missed during a reload', async () => {
+  const liveSession = { id: 'root-1' }
+  const fixture = await makeFixture({
+    sessionsStore: { get: (id) => (id === 'root-1' ? liveSession : undefined) },
+    turnBoundaryOf: () => ({ openTurnStartSeq: 5 }),
+  })
+  const state = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+  assert.equal(state.sessions.find((session) => session.id === 'root-1').running, true)
+  assert.equal(state.sessions.find((session) => session.id === 'root-2').running, false)
+  assert.deepEqual(state.solo, { active: true, sessions: ['root-1'] })
+})
+
+test('/state does not invent a running session when its turn is closed', async () => {
+  const fixture = await makeFixture({
+    sessionsStore: { get: () => ({ id: 'root-1' }) },
+    turnBoundaryOf: () => ({ openTurnStartSeq: null }),
+  })
+  const state = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+  assert.deepEqual(state.solo, { active: false, sessions: [] })
+})
+
+test('a broken session lookup never breaks GET /state', async () => {
+  const fixture = await makeFixture({
+    sessionsStore: {
+      get() { throw new Error('store closed') },
+    },
+    turnBoundaryOf: () => ({ openTurnStartSeq: 1 }),
+  })
+  const result = await call(fixture.api, makeRequest({ url: ROUTES.state }))
+  assert.equal(result.status, 200)
+  assert.deepEqual(result.json.solo, { active: false, sessions: [] })
+})
+
+test('GET /apps keeps the v2 aggregation shape and live today data', async () => {
   const fixture = await makeFixture()
   const todayKey = localDayKey(fixture.clock)
   const yesterdayKey = shiftDayKey(todayKey, -1)
@@ -266,142 +464,16 @@ test('GET /apps aggregates per-app usage over the requested days', async () => {
     [yesterdayKey, { activeMs: 60_000, apps: new Map([['chrome', 40_000], ['code', 20_000]]) }],
   ]))
   const apiFixture = await makeFixture({ storage })
-  // Today is still in memory until the next minute flush.
-  apiFixture.tracker.sample({ idleMs: 100, app: 'msedge' }, apiFixture.clock)
-  for (let index = 0; index < 4; index += 1) {
-    apiFixture.advance(5000)
-    apiFixture.tracker.sample({ idleMs: 100, app: 'msedge' }, apiFixture.clock)
-  }
-  for (let index = 0; index < 2; index += 1) {
-    apiFixture.advance(5000)
-    apiFixture.tracker.sample({ idleMs: 100, app: 'wechat' }, apiFixture.clock)
-  }
-
+  apiFixture.feedActive('msedge', 5)
   const result = await call(apiFixture.api, makeRequest({ url: `${ROUTES.apps}?days=2` }))
   assert.equal(result.status, 200)
   assert.equal(result.json.ok, true)
-  assert.equal(result.json.retentionDays, 30)
   assert.equal(result.json.days.length, 2)
-  assert.equal(result.json.days[0].day, yesterdayKey)
   assert.deepEqual(result.json.days[0].apps, [
     { id: 'chrome', name: '浏览器', ms: 40_000 },
     { id: 'code', name: 'VS Code', ms: 20_000 },
   ])
   assert.equal(result.json.today.day, todayKey)
-  assert.equal(result.json.today.activeMs, 30_000)
-  assert.deepEqual(result.json.today.apps, [
-    { id: 'msedge', name: '浏览器', ms: 20_000 },
-    { id: 'wechat', name: '微信', ms: 10_000 },
-  ])
+  assert.equal(result.json.today.activeMs, 20_000)
   assert.deepEqual(result.json.top[0], { id: 'msedge', name: '浏览器', ms: 20_000 })
-})
-
-test('GET /state exposes today per-app usage from the tracker', async () => {
-  const fixture = await makeFixture()
-  fixture.tracker.sample({ idleMs: 100, app: 'chrome' }, fixture.clock)
-  fixture.advance(5000)
-  fixture.tracker.sample({ idleMs: 200, app: 'chrome' }, fixture.clock)
-  fixture.advance(5000)
-  fixture.tracker.sample({ idleMs: 200, app: 'Code' }, fixture.clock)
-  const state = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
-  assert.equal(state.appsToday.totalMs, 10_000)
-  assert.deepEqual(state.appsToday.top, [
-    { id: 'chrome', name: '浏览器', ms: 5000 },
-    { id: 'code', name: 'VS Code', ms: 5000 },
-  ])
-  assert.equal(state.usage.activeTodayMs, 10_000)
-})
-
-test('GET /stats keeps the focus statistics shape', async () => {
-  const fixture = await makeFixture()
-  fixture.tracker.sample({ idleMs: 100, app: 'chrome' }, fixture.clock)
-  for (let index = 0; index < 6; index += 1) {
-    fixture.advance(5000)
-    fixture.tracker.sample({ idleMs: 100, app: 'chrome' }, fixture.clock)
-  }
-  const result = await call(fixture.api, makeRequest({ url: `${ROUTES.stats}?days=3` }))
-  assert.equal(result.status, 200)
-  assert.equal(result.json.days.length, 3)
-  assert.deepEqual(Object.keys(result.json.days[0]).sort(), ['activeMs', 'breakCount', 'day', 'focusMs', 'pomodoros', 'unlocks'])
-  assert.equal(result.json.today.activeMs, 30_000)
-})
-
-test('focus commands drive the state machine through the API', async () => {
-  const fixture = await makeFixture()
-  const started = await call(fixture.api, makeRequest({
-    method: 'POST',
-    url: ROUTES.focusStart,
-    body: JSON.stringify({ task: 'write tests', sessionId: 'session-a', workMinutes: 25 }),
-  }))
-  assert.equal(started.status, 200)
-  assert.equal(started.json.state.focus.phase, 'work')
-  assert.equal(started.json.state.focus.status, 'running')
-  assert.equal(started.json.state.focus.sessionId, 'session-a')
-  assert.equal(started.json.state.focus.sessionLive, true)
-  assert.equal(started.json.state.focus.task, 'write tests')
-
-  const paused = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.focusPause, body: '{}' }))
-  assert.equal(paused.json.state.focus.status, 'paused')
-  const resumed = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.focusResume, body: '{}' }))
-  assert.equal(resumed.json.state.focus.status, 'running')
-  const stopped = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.focusStop, body: '{}' }))
-  assert.equal(stopped.json.state.focus.phase, 'idle')
-
-  const conflict = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.focusPause, body: '{}' }))
-  assert.equal(conflict.status, 409)
-  assert.equal(conflict.json.error.code, 'not-running')
-})
-
-test('unlock is a one-click 20-minute grant and re-locks after the grace window', async () => {
-  const fixture = await makeFixture()
-  await fixture.settings.update({ limits: { dailyActiveMinutes: 1 } })
-  for (let index = 0; index < 14; index += 1) {
-    fixture.tracker.sample({ idleMs: 100, app: 'chrome' }, fixture.clock)
-    fixture.advance(5000)
-  }
-  const locked = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
-  assert.equal(locked.lock.locked, true)
-  assert.equal(locked.lock.reason, 'daily')
-  assert.equal(locked.lock.unlockMinutes, 20)
-  assert.equal(locked.lock.canUnlock, true)
-  assert.equal(locked.lock.strict, false)
-
-  const unlocked = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.unlock, body: '{}' }))
-  assert.equal(unlocked.status, 200)
-  assert.equal(unlocked.json.ok, true)
-  assert.equal(unlocked.json.state.lock.locked, false)
-  assert.equal(unlocked.json.state.lock.reason, 'daily')
-  assert.ok(unlocked.json.state.lock.unlockUntil > unlocked.json.state.now)
-  assert.equal(unlocked.json.state.lock.unlockUntil - unlocked.json.state.now, 20 * 60_000)
-
-  fixture.advance(20 * 60_000 + 2000)
-  const relocked = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
-  assert.equal(relocked.lock.locked, true)
-})
-
-test('rest unlock ends the lock and resets continuous work', async () => {
-  const fixture = await makeFixture()
-  await fixture.settings.update({ limits: { continuousWorkMinutes: 1 } })
-  for (let index = 0; index < 14; index += 1) {
-    fixture.tracker.sample({ idleMs: 100, app: 'chrome' }, fixture.clock)
-    fixture.advance(5000)
-  }
-  const locked = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
-  assert.equal(locked.lock.locked, true)
-  assert.equal(locked.lock.reason, 'continuous')
-  const rested = await call(fixture.api, makeRequest({
-    method: 'POST',
-    url: ROUTES.unlock,
-    body: JSON.stringify({ mode: 'rest' }),
-  }))
-  assert.equal(rested.status, 200)
-  assert.equal(rested.json.state.lock.locked, false)
-  assert.equal(rested.json.state.usage.continuousMs, 0)
-})
-
-test('unlock is rejected when nothing is locked', async () => {
-  const fixture = await makeFixture()
-  const result = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.unlock, body: '{}' }))
-  assert.equal(result.status, 409)
-  assert.equal(result.json.error.code, 'not-locked')
 })

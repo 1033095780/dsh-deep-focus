@@ -161,6 +161,28 @@ test('a day rollover flushes pending usage to the previous day', async () => {
   assert.equal(tracker.snapshot(Date.UTC(2026, 10, 6, 0, 0, 5)).activeTodayMs, 0)
 })
 
+test('suppressed samples keep the baseline but add no active or app time', () => {
+  const { tracker } = makeTracker()
+  tracker.sample({ idleMs: 100, app: 'chrome' }, 0)
+  tracker.sample({ idleMs: 100, app: 'chrome' }, 5000)
+  assert.equal(tracker.snapshot(5000).activeTodayMs, 5000)
+
+  // A forced rest suppresses every sample: no active/app time, continuity reset.
+  tracker.sample({ idleMs: 100, app: 'chrome' }, 10_000, { counted: false })
+  tracker.sample({ idleMs: 100, app: 'chrome' }, 15_000, { counted: false })
+  const duringRest = tracker.snapshot(15_000)
+  assert.equal(duringRest.activeTodayMs, 5000)
+  assert.equal(duringRest.continuousMs, 0)
+  assert.equal(duringRest.apps.get('chrome'), 5000)
+
+  // After the rest the next gap is measured from the suppressed baseline, so the
+  // rest window itself is never billed.
+  tracker.sample({ idleMs: 100, app: 'chrome' }, 20_000)
+  const after = tracker.snapshot(20_000)
+  assert.equal(after.activeTodayMs, 10_000)
+  assert.equal(after.apps.get('chrome'), 10_000)
+})
+
 test('tracker resets the continuous counter for a break', async () => {
   const { tracker } = makeTracker()
   tracker.sample({ idleMs: 100 }, 0)

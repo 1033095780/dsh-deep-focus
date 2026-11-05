@@ -9,7 +9,7 @@ discovery. This document is the release checklist; it is not run by CI.
 | Field | Value |
 | --- | --- |
 | npm package | `dsh-deep-focus` |
-| Version scheme | Semantic Versioning (the current series is `0.2.z`) |
+| Version scheme | Semantic Versioning (the current series is `0.3.z`) |
 | License | MIT |
 | Repository | `https://github.com/<OWNER>/dsh-deep-focus` (placeholder — replace `<OWNER>` everywhere) |
 | Workflow that publishes | `.github/workflows/publish.yml`, triggered by a published GitHub Release |
@@ -22,7 +22,7 @@ discovery. This document is the release checklist; it is not run by CI.
 
 `npm publish --provenance` requires the package manifest to declare where its
 source lives. The manifest in this workspace does not have those fields yet (the
-release kit cannot edit `package.json`), so add them as part of the `0.2.0`
+release kit cannot edit `package.json`), so add them as part of the `0.3.0`
 release commit:
 
 ```jsonc
@@ -36,8 +36,8 @@ release commit:
 }
 ```
 
-Without a matching `repository.url`, provenance generation fails after the
-package is already being uploaded; add the fields before tagging.
+Without a matching `repository.url`, provenance generation fails after the package
+is already being uploaded; add the fields before tagging.
 
 ### 2. Create the public GitHub repository
 
@@ -70,8 +70,8 @@ npm --version    # >= 11.5.1 is required by the publish workflow; it upgrades np
    ```
 
    (A bootstrap publish does not have provenance. That is fine; subsequent
-   releases from GitHub Actions will. `0.1.0` was never published, so `0.2.0` is
-   the first public version.)
+   releases from GitHub Actions will. Neither 0.1.0 nor 0.2.0 was published, so
+   `0.3.0` is the first public version.)
 
 2. Open `https://www.npmjs.com/package/dsh-deep-focus/access` →
    **Trusted Publisher** → **GitHub Actions** and fill in:
@@ -94,9 +94,9 @@ See the npm documentation for the current rules:
 ## Release procedure
 
 1. **Update the version**
-   - `package.json` → `version` (`0.2.0` for this rewrite).
+   - `package.json` → `version` (`0.3.0` for this release).
    - `CHANGELOG.md` → move the `[Unreleased]` entries to
-     `## [0.2.0] - YYYY-MM-DD`.
+     `## [0.3.0] - YYYY-MM-DD`.
    - No dependency or lockfile changes are needed (the plugin has no dependencies).
 
 2. **Run the gates locally**
@@ -112,14 +112,14 @@ See the npm documentation for the current rules:
 
    ```bash
    git add -A
-   git commit -m "release: 0.2.0"
-   git tag v0.2.0
+   git commit -m "release: 0.3.0"
+   git tag v0.3.0
    git push origin main --tags
    ```
 
-4. **Create the GitHub Release** from tag `v0.2.0`. Publishing the release (not
+4. **Create the GitHub Release** from tag `v0.3.0`. Publishing the release (not
    drafting it) triggers `publish.yml`. The workflow refuses to publish when the
-   tag (`v0.2.0` → `0.2.0`) does not match `package.json`'s version.
+   tag (`v0.3.0` → `0.3.0`) does not match `package.json`'s version.
 
 5. **Watch the run** in the Actions tab. It re-runs syntax checks, `verify.mjs`
    and `npm test`, then runs `npm publish --provenance --access public`.
@@ -145,23 +145,28 @@ Before announcing the release:
 - [ ] Install from npm into a throwaway profile:
       `dsh plugin --profile scratch add dsh-deep-focus`, then confirm the Plugins
       page lists the bundle with its icon and localized title/description.
-- [ ] In a clean profile: the composer pill appears, the panel starts a 1-minute
-      block, the completion toast and chime fire, the settings page saves, and the
-      7-day chart renders.
-- [ ] **Focus mode**: with a block running, other sidebar conversations are grayed
-      and a click shows the gentle reminder without switching; the focused
-      conversation stays usable.
-- [ ] **Usage panel**: the sidebar entry appears below the Plugins row, today's
-      per-app times list correctly, and the 7-day trend loads.
-- [ ] **Overtime**: set `limits.sessionMinutes` to 1, confirm the overlay appears,
-      click “Use 20 more minutes” and verify `limits.unlockMinutes` of grace, then
-      confirm “Take a break” clears it. Confirm no password is requested.
-- [ ] **No blocking**: during a focus block, start an agent turn in another
-      conversation and confirm it runs without any tool refusal.
+- [ ] In a clean profile: the **Focus assistant** sidebar entry appears below the
+      Plugins row, the overview shows today's usage and the 7-day trend, and the
+      settings form saves.
+- [ ] **Countdown**: the top-right chip shows the continuous countdown; it turns
+      warning-colored near the limit and disappears when the assistant is off.
+- [ ] **Forced rest**: temporarily set `limits.continuousMinutes` to 1 and confirm
+      the rest screen appears with a countdown, rest time is not added to the
+      daily total, and the screen disappears when the rest ends.
+- [ ] **Daily overlay**: temporarily set `limits.dailyMinutes` to 1 and confirm the
+      gray overlay shows today's total plus per-app rows; “Use 20 more minutes”
+      grants the configured extension and respects `limits.dailyExtendLimit`;
+      “That's it for today” hides the overlay for the day.
+- [ ] **Solo mode**: start an agent turn in one conversation and confirm the other
+      folders/conversations are hidden while it runs, they return when it ends, and
+      no tool call is blocked.
+- [ ] **Assistant off**: switch the assistant off and confirm neither the countdown
+      nor the overlays appear while statistics keep running.
+- [ ] **Disable/outage**: disable the plugin while the UI is visible; everything it
+      rendered disappears immediately, the sidebar restores, and no stale hiding
+      or swallowed clicks remain.
 - [ ] `scripts/verify.mjs` passes on a clean checkout (`git clean -xdf`-safe: it
       needs no install step).
-- [ ] Disable the plugin while a block runs: the UI disappears immediately and the
-      sidebar returns to normal.
 
 ## README screenshots
 
@@ -172,12 +177,15 @@ file paths visible.
 
 | File | Theme | Content |
 | --- | --- | --- |
-| `docs/images/pill-idle-light.png` | Light | Composer toolbar pill at rest (play glyph + "Focus"/「专注」). |
-| `docs/images/focus-mode-dark.png` | Dark | A focus block running: sidebar with the other conversations grayed out, focus panel open, owner conversation readable. |
-| `docs/images/usage-panel-light.png` | Light | The **Usage** panel from the sidebar below the Plugins row: today's total, per-app bars, 7-day trend. |
-| `docs/images/panel-running-dark.png` | Dark | Focus panel bottom-right with the progress ring, presets and today's mini stats (including the top app). |
-| `docs/images/overtime-overlay-dark.png` | Dark | The gentle overtime overlay: reason, today's usage, 「再使用 20 分钟」 / “Use 20 more minutes” and 「休息一下」 / “Take a break” — **no password field**. |
-| `docs/images/toast-completed-dark.png` (optional) | Dark | Completion toast (and break countdown if visible) at the end of a block. |
+| `docs/images/assistant-panel-light.png` | Light | The **Focus assistant** page from the sidebar below the Plugins row: today's usage, continuous timer, per-app rows, 7-day trend of the overview. |
+| `docs/images/assistant-settings-dark.png` | Dark | The same page scrolled to the settings form (limits, assistant switches, alerts, sampling), with units visible. |
+| `docs/images/countdown-chip-light.png` | Light | A close-up of the top-right countdown chip in the DSH window (continuous time; warning state if convenient). |
+| `docs/images/daily-overlay-dark.png` | Dark | The gray daily overlay: “today used X”, per-app breakdown, 「再使用 20 分钟」 / “Use 20 more minutes” and the quiet “That's it for today”. |
+| `docs/images/rest-screen-dark.png` | Dark | The forced-rest screen with the large countdown and calm copy. |
+| `docs/images/solo-mode-light.png` (optional) | Light | Sidebar while solo mode is active: other folders/conversations hidden, soft banner visible. |
+
+There are intentionally **no pomodoro/focus-timer screenshots** — that feature no
+longer exists in v0.3.
 
 Steps after capturing:
 
@@ -195,21 +203,22 @@ The DSH plugin market reads configured plugin indexes, and the
 Open a PR with one entry in the list's Markdown file:
 
 ```markdown
-- [dsh-deep-focus](https://github.com/<OWNER>/dsh-deep-focus) — Gentle focus for DeepSeek Harness: pomodoro blocks, a soft one-conversation-at-a-time sidebar reminder (never blocks tools), per-app usage statistics, and an optional one-click “use 20 more minutes” overtime nudge. Install: `dsh plugin add dsh-deep-focus`.
+- [dsh-deep-focus](https://github.com/<OWNER>/dsh-deep-focus) — Focus assistant for DeepSeek Harness: per-app usage statistics, a 3-hour daily cap, a forced 10-minute rest after 30 continuous minutes, a top-right countdown, and one-conversation-at-a-time sidebar hiding — pure plugin, never blocks tools. Install: `dsh plugin add dsh-deep-focus`.
 ```
 
 - **Category recommendation:** `Workflow & Automation` (focus/session guidance).
   `Notifications` is the fallback if the maintainers prefer a toasts/alerts
   category.
-- **Do not include** claims the plugin cannot keep: it does not block tools or
-  other agents, does not track time while DSH is closed, and the overtime overlay
-  is a nudge, not enforcement.
+- **Do not include** claims the plugin cannot keep: it does not block other
+  applications, does not count while DSH is closed, does not bring DSH to the
+  front, and never blocks tools or other agents.
 
 PR checklist (match the list's contribution rules if they are stricter):
 
 - [ ] Repository is public, license is MIT, `main` branch is green.
 - [ ] Package is published on npm with the exact name `dsh-deep-focus`.
-- [ ] README covers install, configuration, data/privacy, known limitations.
+- [ ] README covers install, configuration, data/privacy, known limitations, and
+      the pure-plugin capability boundary.
 - [ ] `package.json` declares `dsh.bundle.patch`, `dsh.client`, `engines.dsh`, and
       ships `src/locale/*.json` + `src/icon.svg`.
 - [ ] One-line entry follows the list's link format and stays on a single line.
@@ -226,5 +235,7 @@ PR checklist (match the list's contribution rules if they are stricter):
   exists.
 - `package.json` still needs the `repository` block described above before a
   provenance publish can succeed.
+- The desktop-guard boundary is documented but deliberately not implemented;
+  v0.3 is the pure-plugin version only.
 - `SECURITY.md` and issue/PR templates are not part of this release kit; add them
   before promoting the plugin widely.

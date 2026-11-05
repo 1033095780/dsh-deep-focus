@@ -1,4 +1,4 @@
-/** Host event feed: the state ring buffer the browser polls, the live agent status map, and completion alerts. */
+/** Host event feed v3: the state ring buffer, live root-agent status map and completion alerts. */
 import { EVENT } from '../shared/contract.js'
 
 export const EVENT_RING_SIZE = 50
@@ -43,11 +43,49 @@ export function createStatusMap() {
 
 /**
  * Bridge Host events into the state ring and the status map.
+ * Only completion alerts remain: v3 has no focus/pomodoro blocks.
+ *
+ * Running-state sources, most authoritative first:
+ * 1. `api-session/status` — a root-level emit, the only feed an unscoped plugin
+ *    context reliably receives.
+ * 2. `session/event` durable turn boundaries (`turn/start` / `turn/end`).
+ * 3. `agent/status` — scoped to the agent context, so it may never reach us; it
+ *    is kept as a harmless bonus source.
  * Returns one disposer; the caller owns it inside its own effect.
  */
-export function installHostEventListeners({ ctx, ring, focus, settings, statusMap }) {
+export function installHostEventListeners({ ctx, ring, settings, statusMap }) {
   const disposers = []
 
+  disposers.push(ctx.on('api-session/status', (sessionId, running) => {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) return
+    statusMap.set(sessionId, running === true)
+  }))
+
+  // A freshly visible session (or one whose agent was just created/disposed)
+  // arrives with its current running state; upsert it.
+  disposers.push(ctx.on('api-session/added', (summary) => {
+    if (typeof summary?.sessionId !== 'string' || summary.sessionId.length === 0) return
+    statusMap.set(summary.sessionId, summary.running === true)
+  }))
+
+  // Durable turn boundaries double as a status source (and carry the completion alert).
+  disposers.push(ctx.on('session/event', (session, event) => {
+    const sessionId = session?.id
+    if (typeof sessionId === 'string' && sessionId.length > 0) {
+      if (event?.type === 'turn/start') statusMap.set(sessionId, true)
+      else if (event?.type === 'turn/end') statusMap.set(sessionId, false)
+    }
+    if (event?.type !== 'turn/end') return
+    if (event.data?.reason?.kind !== 'completed') return
+    if (!settings.get().alerts.taskDone) return
+    ring.emit(EVENT.taskCompleted, {
+      source: 'turn',
+      sessionId: session?.id ?? null,
+      turn: event.data.turn,
+    })
+  }))
+
+  // Best effort: agent-scoped delivery is not guaranteed for an unscoped root context.
   disposers.push(ctx.on('agent/status', (payload) => {
     const agent = payload?.agent
     if (agent?.id === undefined) return
@@ -58,39 +96,18 @@ export function installHostEventListeners({ ctx, ring, focus, settings, statusMa
     const agent = payload?.agent
     if (agent?.id === undefined) return
     statusMap.delete(agent.id)
-    // A disposed owner must not leave a ghost lock behind: drop the bound focus
-    // block so a persisted focus.json cannot restore into a foreign session.
-    try {
-      if (focus.isBoundTo(agent.id) && focus.isActive()) focus.stop('owner-disposed')
-    } catch {
-      // Recorded focus state is best-effort while the agent is being torn down.
-    }
   }))
 
-  // Durable turn completion: `alerts.turnDone` is the opt-in "agent round finished" notice.
-  disposers.push(ctx.on('session/event', (session, event) => {
-    if (event?.type !== 'turn/end') return
-    if (event.data?.reason?.kind !== 'completed') return
-    if (!settings.get().alerts.turnDone) return
-    ring.emit(EVENT.taskCompleted, {
-      source: 'turn',
-      sessionId: session?.id ?? null,
-      turn: event.data.turn,
-    })
-  }))
-
-  // Goal completion: a bound focus session completes; otherwise it is a task-done notice.
   disposers.push(ctx.on('goal/changed', (payload) => {
     const change = payload?.change
     if (change?.operation !== 'complete') return
-    const sessionId = payload?.agent?.id
-    const task = typeof change.goal?.objective === 'string' ? change.goal.objective.slice(0, 200) : null
-    if (focus.isBoundTo(sessionId)) {
-      focus.complete('goal')
-      return
-    }
     if (!settings.get().alerts.taskDone) return
-    ring.emit(EVENT.taskCompleted, { source: 'goal', sessionId: sessionId ?? null, task })
+    const task = typeof change.goal?.objective === 'string' ? change.goal.objective.slice(0, 200) : null
+    ring.emit(EVENT.taskCompleted, {
+      source: 'goal',
+      sessionId: payload?.agent?.id ?? null,
+      task,
+    })
   }))
 
   return () => {

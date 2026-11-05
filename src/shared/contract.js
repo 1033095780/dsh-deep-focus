@@ -1,91 +1,71 @@
 /**
- * Shared wire contract (v2) between the Host half and the browser half.
+ * Shared wire contract (v3) between the Host half and the browser half.
  *
- * v2 changed the product shape after user feedback:
- * - no tool blocking anywhere (nothing may interrupt other conversations' work)
- * - focus mode only grays the sidebar and shows a gentle toast on click
- * - usage is tracked per foreground application (dsh / browsers / QQ / ...)
- * - overtime unlock is a single click for another 20 minutes (no password)
+ * v3 product shape (agreed with the user):
+ * - default "one conversation at a time": while a root conversation's agent is
+ *   running, the UI hides the other workspaces/sessions until it finishes
+ * - no pomodoro timer anymore
+ * - daily whole-machine usage cap (default 3h) and continuous-use cap
+ *   (default 30min) that forces a rest (default 10min)
+ * - overtime: DSH-only gray overlay with today's per-app breakdown and a small
+ *   "use 20 more minutes" action
+ * - a "Focus assistant" hub panel: usage stats + settings + on/off
+ * - pure plugin: it never blocks tools and only enforces inside DSH
  *
  * The browser half is one self-contained bundle (no build step), so it keeps a
- * small copy of the route/event constants — keep them in sync when changing.
+ * small copy of the route/event constants — keep them in sync.
  */
 
-/** Prefix every browser -> host call uses; registered by src/host/api.js. */
 export const API_BASE = '/plugins/dsh-deep-focus/api'
 
 export const ROUTES = {
   state: `${API_BASE}/state`,
-  stats: `${API_BASE}/stats`,
   apps: `${API_BASE}/apps`,
   settings: `${API_BASE}/settings`,
-  focusStart: `${API_BASE}/focus/start`,
-  focusPause: `${API_BASE}/focus/pause`,
-  focusResume: `${API_BASE}/focus/resume`,
-  focusStop: `${API_BASE}/focus/stop`,
-  focusComplete: `${API_BASE}/focus/complete`,
-  unlock: `${API_BASE}/unlock`,
+  assistant: `${API_BASE}/assistant`,
+  restStart: `${API_BASE}/rest/start`,
+  restFinish: `${API_BASE}/rest/finish`,
+  extend: `${API_BASE}/extend`,
 }
 
-/** Focus phases. `idle` means no focus block is running. */
-export const PHASE = {
-  idle: 'idle',
-  work: 'work',
-  break: 'break',
-}
-
-/** Toast / sound triggers the Host pushes through the state ring buffer. */
+/** Toast / state-change events the Host pushes through the state ring buffer. */
 export const EVENT = {
-  focusStarted: 'focus-started',
-  focusCompleted: 'focus-completed',
-  breakCompleted: 'break-completed',
   taskCompleted: 'task-completed',
-  focusStopped: 'focus-stopped',
-  locked: 'locked',
-  unlocked: 'unlocked',
-  limitWarning: 'limit-warning',
-}
-
-/** Why the app shows the overtime overlay. */
-export const LOCK_REASON = {
-  daily: 'daily',
-  continuous: 'continuous',
-  session: 'session',
-  manual: 'manual',
+  restDue: 'rest-due',
+  restStarted: 'rest-started',
+  restFinished: 'rest-finished',
+  dailyLocked: 'daily-locked',
+  extended: 'extended',
+  assistantOff: 'assistant-off',
+  assistantOn: 'assistant-on',
 }
 
 /**
- * Settings shape, also the deep-merge target. All limits default to `0` (off):
- * the plugin must never lock the user out of the box.
- *
+ * Settings shape (also the deep-merge target). Every limit has a working,
+ * non-zero default: the user asked for 3h/day, 30min continuous, 10min rest.
  * Times are minutes unless the field name says otherwise.
  */
 export const DEFAULT_SETTINGS = {
-  version: 2,
-  focus: {
-    workMinutes: 25,
-    breakMinutes: 5,
-    longBreakMinutes: 15,
-    longBreakEvery: 4,
-    autoStartBreak: true,
-    autoStartNext: false,
-    idlePauseSeconds: 120,
-    autoResumeOnReturn: true,
-    grayOutOtherSessions: true,
-  },
+  version: 3,
   limits: {
-    dailyActiveMinutes: 0,
-    continuousWorkMinutes: 0,
-    sessionMinutes: 0,
-    unlockMinutes: 20,
+    dailyMinutes: 180,
+    continuousMinutes: 30,
+    restMinutes: 10,
+    extendMinutes: 20,
+    dailyExtendLimit: 2,
+  },
+  assistant: {
+    enabled: true,
+    soloSession: true,
+    hideOtherSessions: true,
+    showCountdown: true,
   },
   alerts: {
-    taskDone: true,
-    turnDone: false,
     sound: true,
     volume: 0.6,
     quietHoursStart: null,
     quietHoursEnd: null,
+    taskDone: true,
   },
   usage: {
     sampleSeconds: 5,
@@ -102,15 +82,14 @@ export function clampNumber(value, min, max, fallback) {
   return Math.min(max, Math.max(min, Math.round(n)))
 }
 
-/** Copy only plain objects one level deep; used by both halves' settings merge. */
+/** Whether a plain object; used by both halves' settings merge. */
 export function isPlainObject(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /**
  * Deep-merge a stored/partial settings object over `DEFAULT_SETTINGS`.
- * Unknown keys are dropped, so a stale or hand-edited file can never leak
- * extra fields into the running plugin.
+ * Unknown keys are dropped; a stale v1/v2 file can never leak extra fields.
  */
 export function mergeSettings(base, patch) {
   const out = {}

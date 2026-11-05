@@ -1,7 +1,7 @@
 {
   "name": "dsh-deep-focus",
-  "version": "0.2.0",
-  "description": "Deep focus for DeepSeek Harness: pomodoro blocks, a gentle one-conversation focus mode, and per-application usage statistics (DSH, browsers, chat apps, editors). Limits are off by default; when enabled, overtime unlocks with one click for another 20 minutes.",
+  "version": "0.3.0",
+  "description": "Focus assistant for DeepSeek Harness: per-application usage statistics, a 3-hour daily cap, a 30-minute continuous-use cap with a forced 10-minute rest, and a gentle one-conversation-at-a-time sidebar. Pure plugin: never blocks tools and only enforces inside DSH.",
   "type": "module",
   "license": "MIT",
   "repository": {

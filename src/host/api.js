@@ -1,13 +1,13 @@
 /**
- * Same-origin HTTP JSON API v2: state, stats, per-app usage, settings, focus
- * commands and one-click unlock. Handlers never throw to the webServer.
+ * Same-origin HTTP JSON API v3: state, per-app usage, settings, assistant switch,
+ * forced rest controls and the daily extend action. Handlers never throw to the
+ * webServer; every failure becomes a JSON error response.
  */
 import { API_BASE, ROUTES, isPlainObject } from '../shared/contract.js'
 import { appsToRows, appsTotal } from './apps.js'
-import { localDayKey, shiftDayKey } from './storage.js'
+import { shiftDayKey } from './storage.js'
 
 export const BODY_LIMIT_BYTES = 32 * 1024
-export const MAX_STATS_DAYS = 90
 export const MAX_APPS_DAYS = 31
 export const TOP_APPS_LIMIT = 8
 
@@ -87,23 +87,33 @@ function sendJson(response, status, payload) {
   response.end(`${JSON.stringify(payload)}\n`)
 }
 
-const ERROR_STATUS = { 'body-too-large': 413, 'bad-json': 400, 'invalid-settings': 400, internal: 500 }
+const ERROR_STATUS = { 'body-too-large': 413, 'bad-json': 400, 'invalid-settings': 400, 'invalid-assistant': 400, internal: 500 }
 
 function errorPayload(error) {
   const code = typeof error?.code === 'string' && ERROR_STATUS[error.code] !== undefined ? error.code : 'internal'
   return { ok: false, error: { code, message: error instanceof Error ? error.message : String(error) } }
 }
 
+const CONFLICT_STATUS = {
+  'already-resting': 409,
+  'assistant-off': 409,
+  'not-resting': 409,
+  'not-locked': 409,
+  'extend-limit-reached': 409,
+}
+
 function errorMessage(code) {
   const messages = {
-    'already-running': 'A focus session is already running.',
-    'not-running': 'No focus session is running.',
-    'not-paused': 'The focus session is not paused.',
-    'not-locked': 'The app is not locked.',
     'untrusted-origin': 'This request came from an untrusted origin and was refused.',
     'body-too-large': 'The request body is too large.',
     'bad-json': 'The request body is not valid JSON.',
     'invalid-settings': 'The settings payload must be a JSON object.',
+    'invalid-assistant': 'The assistant payload must be {enabled: boolean}.',
+    'already-resting': 'A rest is already running.',
+    'assistant-off': 'The focus assistant is off.',
+    'not-resting': 'No rest is running.',
+    'not-locked': 'The daily usage cap is not reached.',
+    'extend-limit-reached': "Today's extend limit is used up.",
     'not-found': 'Unknown deep-focus API path.',
   }
   return messages[code] ?? code
@@ -116,8 +126,7 @@ function errorMessage(code) {
 export function createApi({
   settings,
   tracker,
-  focus,
-  budget,
+  limits,
   sampler,
   ring,
   statusMap,
@@ -125,23 +134,60 @@ export function createApi({
   storage = null,
   now = Date.now,
   onChange = noop,
+  getSessions = null,
 }) {
-  function listSessions() {
+  function appsSampling(current) {
+    if (current.usage.trackApps !== true) return 'off'
+    if (sampler.state() === 'off') return 'off'
+    return sampler.appsState() === 'ok' ? 'ok' : 'off'
+  }
+
+  /**
+   * Recover a running flag missed while the plugin was reloading mid-turn.
+   * The durable session log is authoritative for "turn open"; only upgrades are
+   * applied here so a live status event is never downgraded by a stale read.
+   */
+  function reconcileRunning(sessions) {
+    if (typeof getSessions !== 'function') return
+    let store = null
     try {
-      const list = agents.list()
-      if (!Array.isArray(list)) return []
-      return list
+      store = getSessions()
+    } catch {
+      return
+    }
+    if (store === null || store === undefined || typeof store.get !== 'function') return
+    if (typeof agents.turnBoundaryOf !== 'function') return
+    for (const session of sessions) {
+      if (session.running) continue
+      let live
+      try {
+        live = store.get(session.id)
+      } catch {
+        continue
+      }
+      if (live === undefined || live === null) continue
+      try {
+        const boundary = agents.turnBoundaryOf(live)
+        if (boundary !== null && boundary !== undefined && boundary.openTurnStartSeq !== null) {
+          statusMap.set(session.id, true)
+          session.running = true
+        }
+      } catch {
+        // A session without a readable log boundary keeps the event-derived value.
+      }
+    }
+  }
+
+  function listRootSessions() {
+    try {
+      const roots = agents.roots()
+      if (!Array.isArray(roots)) return []
+      return roots
         .filter((agent) => typeof agent?.id === 'string')
         .map((agent) => ({ id: agent.id, running: statusMap.isRunning(agent.id) }))
     } catch {
       return []
     }
-  }
-
-  function appsSampling(current) {
-    if (current.usage.trackApps !== true) return 'off'
-    if (sampler.state() === 'off') return 'off'
-    return sampler.appsState() === 'ok' ? 'ok' : 'off'
   }
 
   /** Today lives in memory until the next minute flush; read it from the tracker so pages are immediate. */
@@ -150,32 +196,22 @@ export function createApi({
       const snapshot = tracker.snapshot(at)
       return { dayKey: snapshot.dayKey, activeTodayMs: snapshot.activeTodayMs, apps: snapshot.apps }
     } catch {
-      return { dayKey: localDayKey(at), activeTodayMs: 0, apps: new Map() }
+      return { dayKey: '', activeTodayMs: 0, apps: new Map() }
     }
   }
 
   function buildState() {
     const at = now()
-    // Keep the lock fresh even if a poll arrives between budget timer ticks.
-    budget.evaluate(at)
+    // Finish an elapsed rest and re-check the caps before publishing state.
+    limits.evaluate(at)
     const current = settings.get()
-    const focusView = focus.getView(at)
     const usage = tracker.snapshot(at)
-    const lock = budget.getView(at)
-    // Optional hint for the browser: a bound session with no live agent cannot
-    // hold the UI focus mode, so the sidebar must not stay grayed out.
-    let sessionLive = null
-    if (typeof focusView.sessionId === 'string' && focusView.sessionId.length > 0) {
-      try {
-        sessionLive = agents.get(focusView.sessionId) !== undefined
-      } catch {
-        sessionLive = null
-      }
-    }
+    const sessions = listRootSessions()
+    reconcileRunning(sessions)
+    const running = sessions.filter((session) => session.running).map((session) => session.id)
     const appRows = appsToRows(usage.apps)
     return {
       now: at,
-      focus: { ...focusView, sessionLive },
       usage: {
         activeTodayMs: usage.activeTodayMs,
         continuousMs: usage.continuousMs,
@@ -187,52 +223,11 @@ export function createApi({
         totalMs: Math.round(appsTotal(usage.apps)),
         top: appRows.slice(0, TOP_APPS_LIMIT),
       },
-      lock,
-      alerts: {
-        sound: current.alerts.sound,
-        volume: current.alerts.volume,
-        quietHoursStart: current.alerts.quietHoursStart,
-        quietHoursEnd: current.alerts.quietHoursEnd,
-      },
+      limit: limits.getView(at),
       settings: settings.getPublic(),
-      sessions: listSessions(),
+      sessions,
+      solo: { active: running.length > 0, sessions: running },
       events: ring.list(),
-    }
-  }
-
-  async function buildStats(requestedDays) {
-    const parsed = Number(requestedDays)
-    const days = Number.isFinite(parsed) ? Math.min(MAX_STATS_DAYS, Math.max(1, Math.round(parsed))) : 7
-    const at = now()
-    const live = liveUsage(at)
-    const todayKey = live.dayKey
-    const rows = []
-    for (let offset = days - 1; offset >= 0; offset -= 1) {
-      const day = shiftDayKey(todayKey, -offset)
-      const usage = day === todayKey
-        ? { activeMs: live.activeTodayMs }
-        : storage === null ? { activeMs: 0 } : await storage.readUsageDay(day)
-      const records = storage === null ? [] : await storage.readJsonl(`stats/${day}.jsonl`)
-      let focusMs = 0
-      let breakCount = 0
-      let pomodoros = 0
-      let unlocks = 0
-      for (const record of records) {
-        if (record === null || typeof record !== 'object') continue
-        if (record.kind === 'focus' && Number.isFinite(record.ms)) focusMs += Math.max(0, record.ms)
-        else if (record.kind === 'break') breakCount += 1
-        else if (record.kind === 'pomodoro') pomodoros += 1
-        else if (record.kind === 'unlock') unlocks += 1
-      }
-      rows.push({ day, activeMs: Math.round(usage.activeMs), focusMs, breakCount, pomodoros, unlocks })
-    }
-    return {
-      ok: true,
-      retentionDays: settings.get().usage.retentionDays,
-      days: rows,
-      today: rows[rows.length - 1],
-      totalActiveMs: rows.reduce((sum, row) => sum + row.activeMs, 0),
-      totalFocusMs: rows.reduce((sum, row) => sum + row.focusMs, 0),
     }
   }
 
@@ -260,7 +255,7 @@ export function createApi({
     }
   }
 
-  async function handleStateCommand(request, response, action) {
+  async function handleCommand(request, response, statusOk, codeOnFailure) {
     let body
     try {
       body = await readJsonBody(request)
@@ -272,28 +267,15 @@ export function createApi({
       sendJson(response, 400, { ok: false, error: { code: 'bad-json', message: errorMessage('bad-json') } })
       return
     }
-    let result
-    if (action === 'start') {
-      result = focus.start({
-        sessionId: typeof body.sessionId === 'string' ? body.sessionId : null,
-        task: typeof body.task === 'string' ? body.task : null,
-        workMinutes: typeof body.workMinutes === 'number' ? body.workMinutes : undefined,
-      })
-    } else if (action === 'pause') {
-      result = focus.pause()
-    } else if (action === 'resume') {
-      result = focus.resume()
-    } else if (action === 'stop') {
-      result = focus.stop(typeof body.reason === 'string' ? body.reason : 'user')
-    } else {
-      result = focus.complete('user')
-    }
+    const result = statusOk(body)
     if (!result.ok) {
-      sendJson(response, 409, { ok: false, error: { code: result.code, message: errorMessage(result.code) } })
+      sendJson(response, CONFLICT_STATUS[result.code] ?? codeOnFailure, {
+        ok: false,
+        error: { code: result.code, message: errorMessage(result.code) },
+      })
       return
     }
-    if (action === 'stop' || action === 'complete') tracker.resetContinuous()
-    budget.evaluate(now())
+    limits.evaluate(now())
     sendJson(response, 200, { ok: true, state: buildState() })
   }
 
@@ -314,7 +296,7 @@ export function createApi({
     sendJson(response, 200, { ok: true, settings: settings.getPublic() })
   }
 
-  async function handleUnlock(request, response) {
+  async function handleAssistant(request, response) {
     let body
     try {
       body = await readJsonBody(request)
@@ -322,16 +304,12 @@ export function createApi({
       sendJson(response, ERROR_STATUS[error.code] ?? 400, errorPayload(error))
       return
     }
-    if (!isPlainObject(body)) {
-      sendJson(response, 400, { ok: false, error: { code: 'bad-json', message: errorMessage('bad-json') } })
+    if (!isPlainObject(body) || typeof body.enabled !== 'boolean') {
+      sendJson(response, 400, { ok: false, error: { code: 'invalid-assistant', message: errorMessage('invalid-assistant') } })
       return
     }
-    const result = budget.unlock({ mode: body.mode === 'rest' ? 'rest' : 'click' })
-    if (!result.ok) {
-      sendJson(response, 409, { ok: false, error: { code: result.code, message: errorMessage(result.code) } })
-      return
-    }
-    budget.evaluate(now())
+    await settings.update({ assistant: { enabled: body.enabled } })
+    onChange(settings.get())
     sendJson(response, 200, { ok: true, state: buildState() })
   }
 
@@ -340,11 +318,6 @@ export function createApi({
       method: 'GET',
       path: ROUTES.state,
       handler: (request, response) => sendJson(response, 200, buildState()),
-    },
-    {
-      method: 'GET',
-      path: ROUTES.stats,
-      handler: async (request, response, url) => sendJson(response, 200, await buildStats(url.searchParams.get('days'))),
     },
     {
       method: 'GET',
@@ -357,12 +330,22 @@ export function createApi({
       handler: (request, response) => sendJson(response, 200, { ok: true, settings: settings.getPublic() }),
     },
     { method: 'POST', path: ROUTES.settings, handler: handleSettingsWrite },
-    { method: 'POST', path: ROUTES.focusStart, handler: (request, response) => handleStateCommand(request, response, 'start') },
-    { method: 'POST', path: ROUTES.focusPause, handler: (request, response) => handleStateCommand(request, response, 'pause') },
-    { method: 'POST', path: ROUTES.focusResume, handler: (request, response) => handleStateCommand(request, response, 'resume') },
-    { method: 'POST', path: ROUTES.focusStop, handler: (request, response) => handleStateCommand(request, response, 'stop') },
-    { method: 'POST', path: ROUTES.focusComplete, handler: (request, response) => handleStateCommand(request, response, 'complete') },
-    { method: 'POST', path: ROUTES.unlock, handler: handleUnlock },
+    { method: 'POST', path: ROUTES.assistant, handler: handleAssistant },
+    {
+      method: 'POST',
+      path: ROUTES.restStart,
+      handler: (request, response) => handleCommand(request, response, () => limits.startRest(), 409),
+    },
+    {
+      method: 'POST',
+      path: ROUTES.restFinish,
+      handler: (request, response) => handleCommand(request, response, () => limits.finishRest(), 409),
+    },
+    {
+      method: 'POST',
+      path: ROUTES.extend,
+      handler: (request, response) => handleCommand(request, response, () => limits.extend(), 409),
+    },
   ]
 
   async function handle(request, response) {
@@ -394,7 +377,7 @@ export function createApi({
     }
   }
 
-  return { buildState, buildStats, buildApps, handle }
+  return { buildState, buildApps, handle }
 }
 
 /** Register the API route on the Host web server; returns the disposer. */

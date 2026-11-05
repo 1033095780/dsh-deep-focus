@@ -1,21 +1,19 @@
 /**
- * dsh-deep-focus Host entry (v2): foreground-app usage sampler, tracker, focus
- * machine, budget lock and HTTP API. It never intercepts tool calls or agents.
+ * dsh-deep-focus Host entry (v3): foreground-app usage sampler, tracker, limits/rest
+ * state machine and HTTP API. No pomodoro blocks and no tool interception anywhere.
  */
 import { createStorage, localDayKey, pluginDataDir } from './host/storage.js'
 import { createSettingsStore } from './host/settings.js'
 import { createSampler } from './host/sampler.js'
 import { createTracker } from './host/tracker.js'
-import { createFocus } from './host/focus.js'
-import { createBudget } from './host/budget.js'
+import { createLimits } from './host/limits.js'
 import { createEventRing, createStatusMap, installHostEventListeners } from './host/events.js'
 import { createApi, registerApi } from './host/api.js'
 
 export const name = 'dsh-deep-focus'
 export const inject = ['agents', 'webServer']
 
-const TICK_INTERVAL_MS = 1000
-const BUDGET_INTERVAL_MS = 2000
+const LIMITS_INTERVAL_MS = 1000
 const FLUSH_INTERVAL_MS = 10_000
 
 export function apply(ctx) {
@@ -44,19 +42,16 @@ function createRuntime(ctx) {
   const settings = createSettingsStore({ storage })
   const ring = createEventRing({ now })
   const statusMap = createStatusMap()
-
-  function recordStat(record) {
-    void storage.appendJsonl(`stats/${localDayKey(now())}.jsonl`, { t: now(), ...record }).catch(() => {})
-  }
-
   const tracker = createTracker({ storage, settings, now })
-  const focus = createFocus({ storage, settings, ring, now, onStat: recordStat })
-  const budget = createBudget({ storage, settings, tracker, focus, ring, now, onStat: recordStat })
+  const limits = createLimits({ storage, settings, tracker, ring, now })
 
   function onSample(sample, sampledAt) {
-    const result = tracker.sample(sample, sampledAt)
-    focus.applyActivity({ active: result.active, idleMs: result.idleMs }, sampledAt)
-    budget.evaluate(sampledAt)
+    // Finish an elapsed rest first, so this sample is skipped while resting.
+    limits.evaluate(sampledAt)
+    const resting = limits.isResting(sampledAt)
+    tracker.sample(sample, sampledAt, { counted: !resting })
+    // The sample may have reached the continuous cap; enforce immediately.
+    limits.evaluate(sampledAt)
   }
 
   let degradedLogged = false
@@ -91,18 +86,20 @@ function createRuntime(ctx) {
       const api = createApi({
         settings,
         tracker,
-        focus,
-        budget,
+        limits,
         sampler,
         ring,
         statusMap,
         agents: ctx.agents,
         storage,
         now,
+        // Optional: lets /state recover a running session missed during a reload.
+        getSessions: () => ctx.get('sessions'),
         onChange(next) {
           try {
             sampler.setSampleSeconds(next.usage.sampleSeconds)
-            budget.evaluate(now())
+            limits.setAssistantEnabled(next.assistant.enabled === true)
+            limits.evaluate(now())
           } catch (error) {
             warn(ctx, 'settings change could not be applied live', error)
           }
@@ -110,7 +107,7 @@ function createRuntime(ctx) {
       })
 
       try {
-        disposers.push(installHostEventListeners({ ctx, ring, focus, settings, statusMap }))
+        disposers.push(installHostEventListeners({ ctx, ring, settings, statusMap }))
       } catch (error) {
         warn(ctx, 'event listeners could not be installed', error)
       }
@@ -121,20 +118,15 @@ function createRuntime(ctx) {
         warn(ctx, 'HTTP API could not be registered', error)
       }
 
+      // One-second enforcement tick: a rest window must end promptly even if the
+      // sampler stalls, and the daily cap should react without waiting for a sample.
       timers.push(setInterval(() => {
         try {
-          focus.tick()
+          limits.evaluate()
         } catch {
           // A single bad tick must not stop the timer loop.
         }
-      }, TICK_INTERVAL_MS))
-      timers.push(setInterval(() => {
-        try {
-          budget.evaluate()
-        } catch {
-          // Counters are best-effort; the next tick retries.
-        }
-      }, BUDGET_INTERVAL_MS))
+      }, LIMITS_INTERVAL_MS))
       timers.push(setInterval(() => {
         void tracker.flushIfDue()
       }, FLUSH_INTERVAL_MS))
@@ -144,8 +136,7 @@ function createRuntime(ctx) {
         try {
           await settings.load()
           await tracker.load()
-          await focus.load()
-          await budget.load()
+          await limits.load()
           if (stopped) return
           await storage.prune({
             retentionDays: settings.get().usage.retentionDays,
@@ -153,8 +144,7 @@ function createRuntime(ctx) {
           }).catch(() => {})
           sampler.setSampleSeconds(settings.get().usage.sampleSeconds)
           sampler.start()
-          budget.evaluate(now())
-          focus.tick(now())
+          limits.evaluate(now())
         } catch (error) {
           warn(ctx, 'initialisation failed; running with defaults', error)
         }
@@ -176,9 +166,8 @@ function createRuntime(ctx) {
             warn(ctx, 'cleanup step failed', error)
           }
         }
-        focus.dispose()
         try {
-          await Promise.all([focus.flush(), tracker.flush(), budget.flush()])
+          await Promise.all([tracker.flush(), limits.flush()])
           await storage.flush()
         } catch {
           // Losing a final flush is better than failing unload.

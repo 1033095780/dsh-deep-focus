@@ -1,32 +1,27 @@
-/** Runtime settings v2: deep merge + clamping against the shared contract (no secrets). */
+/** Runtime settings v3: deep merge + clamping against the shared contract; no secrets, no focus section. */
 import { DEFAULT_SETTINGS, isPlainObject, mergeSettings } from '../shared/contract.js'
 
 export const SETTINGS_FILE = 'settings.json'
 
 /** Inclusive integer ranges; anything outside is clamped, non-numbers fall back to the default. */
 const NUMBER_RULES = {
-  'focus.workMinutes': [1, 180],
-  'focus.breakMinutes': [1, 60],
-  'focus.longBreakMinutes': [1, 60],
-  'focus.longBreakEvery': [0, 12],
-  'focus.idlePauseSeconds': [0, 3_600],
-  'limits.dailyActiveMinutes': [0, 1_440],
-  'limits.continuousWorkMinutes': [0, 1_440],
-  'limits.sessionMinutes': [0, 1_440],
-  'limits.unlockMinutes': [1, 120],
+  'limits.dailyMinutes': [0, 1_440],
+  'limits.continuousMinutes': [0, 600],
+  'limits.restMinutes': [1, 60],
+  'limits.extendMinutes': [1, 120],
+  'limits.dailyExtendLimit': [0, 20],
   'usage.sampleSeconds': [3, 30],
   'usage.idleThresholdSeconds': [0, 3_600],
   'usage.retentionDays': [1, 365],
 }
 
 const BOOLEAN_FIELDS = [
-  'focus.autoStartBreak',
-  'focus.autoStartNext',
-  'focus.autoResumeOnReturn',
-  'focus.grayOutOtherSessions',
-  'alerts.taskDone',
-  'alerts.turnDone',
+  'assistant.enabled',
+  'assistant.soloSession',
+  'assistant.hideOtherSessions',
+  'assistant.showCountdown',
   'alerts.sound',
+  'alerts.taskDone',
   'usage.trackApps',
 ]
 
@@ -96,7 +91,7 @@ export function normalizeSettings(raw) {
   return out
 }
 
-/** Settings as they travel over the wire (v2 has nothing to redact, so this is a copy). */
+/** Settings as they travel over the wire (v3 has nothing to redact, so this is a copy). */
 export function publicSettings(settings) {
   const out = {}
   for (const [section, value] of Object.entries(settings)) {
@@ -120,12 +115,11 @@ export function createSettingsStore({ storage = null } = {}) {
     isLoaded: () => loaded,
     async load() {
       const raw = await storage?.readJson(SETTINGS_FILE, null)
-      // v2 is a breaking settings shape: never inherit values written for v1.
-      // A v1 daily limit of 480 would silently keep a lock the user never asked
-      // for in v2 (where every limit defaults to off), so a version mismatch
-      // falls back to the v2 defaults; the next write persists the v2 shape.
-      const isV2 = raw !== null && raw !== undefined && raw.version === DEFAULT_SETTINGS.version
-      current = normalizeSettings(isV2 ? raw : undefined)
+      // v3 is a breaking settings shape (v1/v2 carried focus/pomodoro fields):
+      // a file written by any earlier version is discarded, never migrated, so a
+      // stale 480-minute daily cap cannot re-enable a rule the user never chose.
+      const isV3 = raw !== null && raw !== undefined && raw.version === DEFAULT_SETTINGS.version
+      current = normalizeSettings(isV3 ? raw : undefined)
       loaded = true
       return current
     },

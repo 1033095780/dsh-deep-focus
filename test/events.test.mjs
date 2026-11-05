@@ -7,15 +7,15 @@ import { EVENT } from '../src/shared/contract.js'
 test('the event ring increments, copies and caps', () => {
   let clock = 100
   const ring = createEventRing({ size: 3, now: () => clock })
-  const first = ring.emit(EVENT.focusStarted, { task: 'a' })
+  const first = ring.emit(EVENT.restStarted, { minutes: 10 })
   clock += 10
-  ring.emit(EVENT.focusCompleted, {})
-  ring.emit(EVENT.breakCompleted, {})
-  ring.emit(EVENT.taskCompleted, {})
+  ring.emit(EVENT.restFinished, {})
+  ring.emit(EVENT.dailyLocked, {})
+  ring.emit(EVENT.extended, {})
   const list = ring.list()
   assert.equal(list.length, 3)
-  assert.equal(list[0].kind, EVENT.focusCompleted)
-  assert.equal(list[2].kind, EVENT.taskCompleted)
+  assert.equal(list[0].kind, EVENT.restFinished)
+  assert.equal(list[2].kind, EVENT.extended)
   assert.ok(first.seq < list[2].seq)
   assert.equal(ring.lastSeq(), list[2].seq)
   list[0].meta.injected = true
@@ -24,10 +24,9 @@ test('the event ring increments, copies and caps', () => {
 
 test('the ring sequence survives a "restart" without repeating numbers', () => {
   const first = createEventRing({ now: () => 1000 })
-  first.emit(EVENT.focusStarted)
+  first.emit(EVENT.restStarted)
   const second = createEventRing({ now: () => 2000 })
-  const event = second.emit(EVENT.focusStarted)
-  assert.ok(event.seq > first.lastSeq())
+  assert.ok(second.emit(EVENT.restStarted).seq > first.lastSeq())
 })
 
 test('the status map tracks running agents', () => {
@@ -52,24 +51,14 @@ function makeHarness() {
       return () => handlers.delete(name)
     },
   }
-  let settingsValue = normalizeSettings({ alerts: { taskDone: true, turnDone: false } })
+  let settingsValue = normalizeSettings({ alerts: { taskDone: true } })
   const settings = { get: () => settingsValue }
-  const completed = []
-  const stops = []
-  const focus = {
-    isBoundTo: (id) => id === 'focus-session',
-    isActive: () => true,
-    complete: (cause) => completed.push(cause),
-    stop: (reason) => stops.push(reason),
-  }
   let clock = 0
   const ring = createEventRing({ now: () => clock })
   const statusMap = createStatusMap()
-  const dispose = installHostEventListeners({ ctx, ring, focus, settings, statusMap })
+  const dispose = installHostEventListeners({ ctx, ring, settings, statusMap })
   return {
     handlers,
-    completed,
-    stops,
     ring,
     statusMap,
     dispose,
@@ -78,47 +67,70 @@ function makeHarness() {
   }
 }
 
-test('goal completion completes a bound focus session', () => {
+test('turn completion becomes a task-completed alert when enabled', () => {
   const harness = makeHarness()
-  harness.handlers.get('goal/changed')({
-    agent: { id: 'focus-session' },
-    change: { operation: 'complete', goal: { objective: 'ship it' } },
-  })
-  assert.deepEqual(harness.completed, ['goal'])
-  assert.equal(harness.ring.list().length, 0)
+  const session = { id: 'session-x' }
+  harness.handlers.get('session/event')(session, { type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } })
+  const event = harness.lastEvent()
+  assert.equal(event.kind, EVENT.taskCompleted)
+  assert.deepEqual(event.meta, { source: 'turn', sessionId: 'session-x', turn: 2 })
+
+  harness.handlers.get('session/event')(session, { type: 'turn/end', data: { turn: 3, reason: { kind: 'aborted' } } })
+  assert.equal(harness.ring.list().length, 1)
+  harness.setSettings({ alerts: { taskDone: false } })
+  harness.handlers.get('session/event')(session, { type: 'turn/end', data: { turn: 4, reason: { kind: 'completed' } } })
+  assert.equal(harness.ring.list().length, 1)
 })
 
-test('goal completion elsewhere becomes a task-completed event when enabled', () => {
+test('goal completion becomes a task-completed alert when enabled', () => {
   const harness = makeHarness()
   harness.handlers.get('goal/changed')({
-    agent: { id: 'other-session' },
+    agent: { id: 'session-y' },
     change: { operation: 'complete', goal: { objective: 'ship it' } },
   })
   const event = harness.lastEvent()
   assert.equal(event.kind, EVENT.taskCompleted)
-  assert.equal(event.meta.source, 'goal')
-  assert.equal(event.meta.sessionId, 'other-session')
-  assert.equal(event.meta.task, 'ship it')
+  assert.deepEqual(event.meta, { source: 'goal', sessionId: 'session-y', task: 'ship it' })
+
   harness.setSettings({ alerts: { taskDone: false } })
   harness.handlers.get('goal/changed')({
-    agent: { id: 'third-session' },
+    agent: { id: 'session-z' },
     change: { operation: 'complete', goal: { objective: 'nope' } },
   })
   assert.equal(harness.ring.list().length, 1)
 })
 
-test('turn completion alerts follow the turnDone setting', () => {
+test('api-session/status is the primary running-state source', () => {
   const harness = makeHarness()
-  const payload = { id: 'session-x' }
-  const event = { type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } }
-  harness.handlers.get('session/event')(payload, event)
-  assert.equal(harness.ring.list().length, 0)
-  harness.setSettings({ alerts: { turnDone: true } })
-  harness.handlers.get('session/event')(payload, event)
+  harness.handlers.get('api-session/status')('session-a', true)
+  assert.equal(harness.statusMap.isRunning('session-a'), true)
+  harness.handlers.get('api-session/status')('session-a', false)
+  assert.equal(harness.statusMap.isRunning('session-a'), false)
+  harness.handlers.get('api-session/status')('', true)
+  assert.deepEqual(harness.statusMap.runningIds(), [])
+})
+
+test('api-session/added upserts the current running state', () => {
+  const harness = makeHarness()
+  harness.handlers.get('api-session/added')({ sessionId: 'session-a', running: true })
+  assert.equal(harness.statusMap.isRunning('session-a'), true)
+  harness.handlers.get('api-session/added')({ sessionId: 'session-a', running: false })
+  assert.equal(harness.statusMap.isRunning('session-a'), false)
+  harness.handlers.get('api-session/added')({ sessionId: '', running: true })
+  assert.deepEqual(harness.statusMap.runningIds(), [])
+})
+
+test('durable turn boundaries update the running state independently', () => {
+  const harness = makeHarness()
+  harness.handlers.get('session/event')({ id: 'session-b' }, { type: 'turn/start', data: { turn: 1 } })
+  assert.equal(harness.statusMap.isRunning('session-b'), true)
+  harness.handlers.get('session/event')({ id: 'session-b' }, { type: 'turn/end', data: { turn: 1, reason: { kind: 'blocked' } } })
+  assert.equal(harness.statusMap.isRunning('session-b'), false)
+  // A completed turn both clears the status and emits the task alert.
+  harness.handlers.get('session/event')({ id: 'session-b' }, { type: 'turn/start', data: { turn: 2 } })
+  harness.handlers.get('session/event')({ id: 'session-b' }, { type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } })
+  assert.equal(harness.statusMap.isRunning('session-b'), false)
   assert.equal(harness.lastEvent().kind, EVENT.taskCompleted)
-  assert.equal(harness.lastEvent().meta.source, 'turn')
-  harness.handlers.get('session/event')(payload, { type: 'turn/end', data: { turn: 3, reason: { kind: 'aborted' } } })
-  assert.equal(harness.ring.list().length, 1)
 })
 
 test('agent status and disposal update the status map', () => {
@@ -128,21 +140,6 @@ test('agent status and disposal update the status map', () => {
   assert.deepEqual(harness.statusMap.runningIds(), ['a'])
   harness.handlers.get('agent/disposed')({ agent: { id: 'a' } })
   assert.deepEqual(harness.statusMap.runningIds(), [])
-})
-
-test('disposing the focused owner stops the focus block', () => {
-  const harness = makeHarness()
-  harness.handlers.get('agent/disposed')({ agent: { id: 'focus-session' } })
-  assert.deepEqual(harness.stops, ['owner-disposed'])
-  harness.handlers.get('agent/disposed')({ agent: { id: 'other-session' } })
-  assert.deepEqual(harness.stops, ['owner-disposed'])
-})
-
-test('the agent/disposed listener is removed on unload', () => {
-  const harness = makeHarness()
-  assert.equal(harness.handlers.has('agent/disposed'), true)
-  harness.dispose()
-  assert.equal(harness.handlers.has('agent/disposed'), false)
 })
 
 test('the disposer removes every listener', () => {

@@ -4,10 +4,11 @@
 DeepSeek Harness Host process, stores a small amount of JSON under your DSH home
 directory, and **never makes a network request**.
 
-v0.2 changed what is collected: instead of only measuring whole-machine idle time,
-the sampler also records **which foreground application was in use** (application
-name and duration). It still never reads window titles, keystrokes, clipboard
-contents, or the contents of any application.
+v0.3 keeps the v0.2 data collection (idle time + the foreground application's
+process name) and adds limits/rest state. It still never reads window titles,
+keystrokes, clipboard contents, or the contents of any application. It also never
+enforces anything outside DSH: no other application is blocked, and nothing is
+counted while DSH is closed.
 
 ## Summary
 
@@ -18,10 +19,11 @@ contents, or the contents of any application.
 | What does the sampler read? | Idle time (seconds since last keyboard/mouse input) and the **foreground process name**. |
 | What is stored about apps? | A stable app key (lowercase executable name), a friendly display name, and milliseconds. |
 | Are window titles or keys stored? | No. Never. |
+| Does it block other applications? | No. Only DSH renders overlays; the OS is not touched. |
 | Where is data stored? | `$DSH_HOME/plugin-data/dsh-deep-focus/` — local disk only. |
 | Can I turn app tracking off? | Yes: set `usage.trackApps` to off; only total active time is kept. |
 | Can I delete it? | Yes: delete that directory (or uninstall the plugin). |
-| Is there a password? | No. v0.2 removed the unlock password entirely. |
+| Is there a password? | No. There is nothing to unlock with one. |
 
 ## What is stored
 
@@ -29,28 +31,30 @@ Everything lives in one directory:
 
 ```text
 $DSH_HOME/plugin-data/dsh-deep-focus/
-├── settings.json            # runtime settings (mode 0600)
-├── focus.json               # the current focus block, used to recover after a restart
-├── budget.json              # overtime-lock state (reason, grace deadline)
-├── usage/
-│   └── YYYY-MM-DD.jsonl     # ~one aggregate line per minute: { t, activeMs, apps }
-└── stats/
-    └── YYYY-MM-DD.jsonl     # per-day focus/break aggregates for the 7-day chart
+├── settings.json            # v3 runtime settings (mode 0600)
+├── limits.json              # today's daily lock, extension window/count, rest state
+└── usage/
+    └── YYYY-MM-DD.jsonl     # ~one aggregate line per minute: { t, activeMs, apps }
 ```
 
 - `$DSH_HOME` is the usual DSH home directory. When it is not set, the plugin falls
   back to `~/.dsh`.
 - `settings.json` is written with owner-only permissions (`0600`) on POSIX. It
-  holds only the v0.2 settings (`focus`, `limits`, `alerts`, `usage`). There is no
-  password hash: v0.2 ignores and drops legacy `security`/`lock` sections the next
-  time settings are saved.
+  holds the v3 settings (`limits`, `assistant`, `alerts`, `usage`). There are no
+  secrets in it.
+- **Migration:** a settings file written by v1/v2 is not migrated — it is replaced
+  with the v3 defaults the first time the plugin loads, because older schemas had
+  different limits that the user did not choose under v0.3.
 - `usage/*.jsonl` lines look like
   `{ "t": 1762345678901, "activeMs": 61234, "apps": { "chrome": 32100, "code": 29134 } }`.
   They contain **no window titles, no URLs, no keystrokes, no file paths, no
-  screen content** — only application identifiers, display names (resolved in
-  the browser from the local mapping) and durations.
-- The browser half keeps no persistent browser storage. The last state snapshot
-  lives in memory only and is re-fetched from the Host.
+  screen content** — only application identifiers and durations.
+- **Rest time is excluded:** while the forced rest is running, samples are not
+  added to the daily total, the continuous counter, or the per-app buckets.
+- The browser half stores **one** small item in `localStorage`: a per-day
+  acknowledgment flag written by the daily overlay's “That's it for today” button
+  (`dsh-deep-focus.ack.YYYY-MM-DD = "1"`). It contains no usage data. Everything
+  else lives in memory and is re-fetched from the Host.
 
 ## What the foreground sampler reads
 
@@ -64,7 +68,9 @@ operating-system state:
 | Linux | `xprintidle`; `xdotool getactivewindow getwindowpid` + `/proc/<pid>/comm` (best effort) | Idle milliseconds; active window's process name |
 
 The commands are fixed strings; no user data is interpolated into a shell. The
-sampler process is owned by the plugin and is killed when the plugin unloads.
+sampler process is owned by the plugin and is killed when the plugin unloads. macOS
+and Linux foreground detection is best effort: when it fails, total idle-based
+activity keeps counting and app sampling reports off.
 
 A sample is counted as *active* only when the idle time is below
 `usage.idleThresholdSeconds`. Nothing about *what you did inside* an application is
@@ -73,15 +79,14 @@ recorded — only that it was the foreground process at that moment.
 ## App names
 
 `src/host/apps.js` maps process names to friendly labels (browser, QQ, WeChat,
-VS Code, DeepSeek Harness, terminal, …). The mapping is a local constant; nothing
-is looked up online. Unknown executables are stored under their own base name.
+VS Code, DeepSeek Harness, terminal, …). The mapping is a local constant; nothing is
+looked up online. Unknown executables are stored under their own base name.
 
 ## Retention
 
-- Per-day usage and stats files are pruned after `usage.retentionDays` days
-  (default 30).
-- `settings.json`, `focus.json` and `budget.json` are small and stay until you
-  delete them.
+- Per-day usage files are pruned after `usage.retentionDays` days (default 30);
+  legacy `stats/` files from older versions are pruned too.
+- `settings.json` and `limits.json` are small and stay until you delete them.
 - No data is ever copied outside the data directory.
 
 ## Network
@@ -99,23 +104,23 @@ idle/foreground probes listed above.
 ## Removing your data
 
 1. Disable or uninstall the plugin in DSH. Every UI element it renders disappears
-   immediately and the sidebar returns to normal (all inline styles are restored).
+   immediately, the solo-mode hiding is removed, and the sidebar returns to normal.
 2. Delete `$DSH_HOME/plugin-data/dsh-deep-focus/` (on Windows, the same path under
    your DSH home, e.g. `%USERPROFILE%\.dsh\plugin-data\dsh-deep-focus`).
 
-That removes settings, focus state, overtime state, and all usage history. There is
-nothing to revoke on a server because nothing is uploaded.
+That removes settings, limits/rest state, and all usage history. There is nothing
+to revoke on a server because nothing is uploaded.
 
 ## Security notes
 
-v0.2 has no enforcement mechanism to attack or bypass:
+The assistant is a self-discipline aid, not a security boundary:
 
-- There is **no tool guard**, no Host-side conversation lock, and no password.
-- Focus mode only dims sidebar entries and shows a reminder; it never prevents an
-  agent from working or a conversation from receiving messages.
-- The overtime overlay is a nudge: limits are off by default, and “Use 20 more
-  minutes” always works with a single click. Restarting DSH or disabling the plugin
-  always gets you out.
+- It **never blocks tool calls** and never interrupts another conversation's agent.
+- It cannot bring DSH to the front, cannot block other applications, and cannot
+  count or enforce anything while DSH is closed. Those would require a separate
+  desktop guard, which v0.3 does not include.
+- Its overlays and countdown exist only inside the DSH window; switching to another
+  application is always possible. **Rest time is not enforced outside DSH.**
 - The data is readable by your user account; treat it as personal activity
   metadata (it reveals which apps you used and for how long), not as sensitive
   content.

@@ -33,7 +33,8 @@ export function applySample(state, sample, config) {
   const gap = next.lastTickAt === null ? 0 : sample.now - next.lastTickAt
   const gapValid = Number.isFinite(gap) && gap >= 0 && gap <= config.maxGapMs
   const idleValid = Number.isFinite(sample.idleMs) && sample.idleMs >= 0
-  const active = idleValid && (config.idleThresholdMs <= 0 || sample.idleMs < config.idleThresholdMs)
+  const counted = sample.counted !== false
+  const active = counted && idleValid && (config.idleThresholdMs <= 0 || sample.idleMs < config.idleThresholdMs)
   if (!gapValid) {
     resetContinuous = next.continuousMs > 0
     next.continuousMs = 0
@@ -121,12 +122,17 @@ export function createTracker({ storage = null, settings = null, now = Date.now 
       return state
     },
 
-    /** Consume one `{idleMs, app}` sample; flushes automatically once a minute. */
-    sample(sample, at = now()) {
+    /**
+     * Consume one `{idleMs, app}` sample; flushes automatically once a minute.
+     * `options.counted=false` keeps the baseline (so the next gap is not
+     * inflated) while adding no active/app time — used during a forced rest.
+     */
+    sample(sample, at = now(), options = {}) {
       rollDay(at)
       const cfg = config()
       const idleMs = sample?.idleMs
-      const result = applySample(state, { now: at, idleMs }, cfg)
+      const counted = options.counted !== false
+      const result = applySample(state, { now: at, idleMs, counted }, cfg)
       state = result.state
       lastActive = result.active
       if (result.deltaMs > 0) {

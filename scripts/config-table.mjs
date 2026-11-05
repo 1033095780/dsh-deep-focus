@@ -27,105 +27,84 @@ const README_FILES = { en: 'README.md', zh: 'README.zh.md' }
  */
 const FIELDS = [
   {
-    key: 'focus.workMinutes',
-    unit: 'min',
-    note: { en: 'Length of one focus block.', zh: '单个专注时段的长度。' },
-  },
-  {
-    key: 'focus.breakMinutes',
-    unit: 'min',
-    note: { en: 'Short break after each focus block.', zh: '每个专注时段后的短休息。' },
-  },
-  {
-    key: 'focus.longBreakMinutes',
+    key: 'limits.dailyMinutes',
     unit: 'min',
     note: {
-      en: 'Long break taken every `focus.longBreakEvery` focus blocks.',
-      zh: '每 `focus.longBreakEvery` 轮专注后的长休息。',
+      en: 'Daily whole-machine active-time cap while DSH runs; 0 = no daily cap.',
+      zh: 'DSH 运行期间整机活跃时长的每日上限；0 = 不限制。',
     },
   },
   {
-    key: 'focus.longBreakEvery',
-    unit: 'blocks',
-    note: { en: 'Focus blocks between long breaks; 0 disables long breaks.', zh: '长休息之间的专注轮数；0 = 关闭长休息。' },
-  },
-  {
-    key: 'focus.autoStartBreak',
-    unit: '',
-    note: { en: 'Start the break automatically when a focus block completes.', zh: '专注时段结束后自动开始休息。' },
-  },
-  {
-    key: 'focus.autoStartNext',
-    unit: '',
-    note: { en: 'Start the next focus block automatically when a break ends.', zh: '休息结束后自动开始下一轮专注。' },
-  },
-  {
-    key: 'focus.idlePauseSeconds',
-    unit: 's',
-    note: {
-      en: 'Pause the timer after this much inactivity; 0 disables auto-pause.',
-      zh: '无操作达到此时长后暂停计时；0 = 关闭自动暂停。',
-    },
-  },
-  {
-    key: 'focus.autoResumeOnReturn',
-    unit: '',
-    note: { en: 'Resume a paused block when you are active again.', zh: '回到电脑后自动继续已暂停的时段。' },
-  },
-  {
-    key: 'focus.grayOutOtherSessions',
-    unit: '',
-    note: {
-      en: 'Gray out other conversations in the sidebar during a focus block; clicking one shows a gentle reminder instead of switching. Never blocks agents or tool calls.',
-      zh: '专注期间把侧栏里的其它会话置灰；点击只会显示一条温柔提示，不会切换会话。绝不拦截 agent 或工具调用。',
-    },
-  },
-  {
-    key: 'limits.dailyActiveMinutes',
+    key: 'limits.continuousMinutes',
     unit: 'min',
     note: {
-      en: 'Daily active-time cap for the overtime overlay; 0 = off (unlimited).',
-      zh: '触发超时遮罩的每日活跃时长上限；0 = 关闭（不限）。',
+      en: 'Continuous-use cap before the assistant forces a rest; 0 = no forced rest.',
+      zh: '触发强制休息的连续使用时长的上限；0 = 不强制休息。',
     },
   },
   {
-    key: 'limits.continuousWorkMinutes',
+    key: 'limits.restMinutes',
     unit: 'min',
     note: {
-      en: 'Cap on unbroken work before the overtime overlay; 0 = off (unlimited).',
-      zh: '触发超时遮罩的连续工作时长上限；0 = 关闭（不限）。',
+      en: 'Length of a forced rest. Rest time is not counted toward the daily cap.',
+      zh: '强制休息时长。休息时间不计入每日上限。',
     },
   },
   {
-    key: 'limits.sessionMinutes',
+    key: 'limits.extendMinutes',
     unit: 'min',
     note: {
-      en: 'Cap on a single focus block; 0 = off (unlimited).',
-      zh: '单个专注时段的时长上限；0 = 关闭（不限）。',
-    },
-  },
-  {
-    key: 'limits.unlockMinutes',
-    unit: 'min',
-    note: {
-      en: 'Extra time granted by one click on “Use 20 more minutes”.',
+      en: 'Extra usage granted by one click on “Use 20 more minutes”.',
       zh: '点击一次「再使用 20 分钟」增加的时长。',
     },
   },
   {
-    key: 'alerts.taskDone',
-    unit: '',
-    note: { en: 'Toast and chime when a focus block completes.', zh: '专注时段完成时显示 toast 并播放提示音。' },
+    key: 'limits.dailyExtendLimit',
+    unit: 'count',
+    note: {
+      en: 'Times per day the daily cap can be extended; 0 = no extensions.',
+      zh: '每日可延长次数；0 = 不允许延长。',
+    },
   },
   {
-    key: 'alerts.turnDone',
+    key: 'assistant.enabled',
     unit: '',
-    note: { en: 'Extra toast at the end of every agent turn.', zh: '每个 agent 回合结束时额外提示一次。' },
+    note: {
+      en: 'Track and enforce the rules; off = keep statistics only (nothing enforces).',
+      zh: '统计并执行限制；关闭后只做统计，不做任何限制。',
+    },
+  },
+  {
+    key: 'assistant.soloSession',
+    unit: '',
+    note: {
+      en: 'One conversation at a time in the UI while a root conversation is running.',
+      zh: '有根会话在运行时，UI 上一次只保留一个会话。',
+    },
+  },
+  {
+    key: 'assistant.hideOtherSessions',
+    unit: '',
+    note: {
+      en: 'Temporarily hide other folders/conversations while one is running.',
+      zh: '有会话在运行时临时隐藏其它文件夹与会话。',
+    },
+  },
+  {
+    key: 'assistant.showCountdown',
+    unit: '',
+    note: {
+      en: 'Show the countdown chip in the DSH window header.',
+      zh: '在 DSH 窗口右上角显示倒计时胶囊。',
+    },
   },
   {
     key: 'alerts.sound',
     unit: '',
-    note: { en: 'Play the synthesized completion chime.', zh: '播放合成的完成提示音。' },
+    note: {
+      en: 'Play the short chime for rest and completion alerts.',
+      zh: '休息与完成提醒时播放短提示音。',
+    },
   },
   {
     key: 'alerts.volume',
@@ -144,6 +123,14 @@ const FIELDS = [
     key: 'alerts.quietHoursEnd',
     unit: 'clock',
     note: { en: 'End of quiet hours; null = off.', zh: '静音时段的结束时间；null = 关闭。' },
+  },
+  {
+    key: 'alerts.taskDone',
+    unit: '',
+    note: {
+      en: 'Toast and chime when an agent task completes.',
+      zh: 'agent 任务完成时显示 toast 并播放提示音。',
+    },
   },
   {
     key: 'usage.sampleSeconds',
@@ -175,9 +162,9 @@ const FIELDS = [
 
 const UNIT_LABELS = {
   min: { en: 'min', zh: '分钟' },
-  blocks: { en: 'blocks', zh: '轮' },
   s: { en: 's', zh: '秒' },
   days: { en: 'days', zh: '天' },
+  count: { en: 'count', zh: '次' },
   ratio: { en: '0–1', zh: '0–1' },
   clock: { en: 'HH:MM', zh: 'HH:MM' },
   '': { en: '—', zh: '—' },
@@ -189,8 +176,8 @@ const COLUMNS = {
 }
 
 const FOOTER = {
-  en: '> Times are minutes unless the unit says otherwise. `0` disables a limit: the three overtime limits default to `0`, so a fresh install never shows the overtime overlay. The plugin never blocks tool calls or other conversations — focus mode is sidebar guidance only.',
-  zh: '> 未特别注明时时间单位为分钟。`0` 表示关闭该限制：三个超时上限默认都是 `0`，因此刚安装时不会出现超时遮罩。插件绝不拦截工具调用或其它会话——专注模式只在侧栏做视觉引导。',
+  en: '> Times are minutes unless the unit says otherwise. The defaults are the agreed product rules: a 3-hour daily cap, a forced 10-minute rest after 30 continuous minutes, and 2 × 20-minute extensions per day. The assistant never blocks tools and only enforces inside DSH (see the capability boundary below).',
+  zh: '> 未特别注明时时间单位为分钟。默认值即已确认的产品规则：每日上限 3 小时、连续使用 30 分钟后强制休息 10 分钟、每日可续期 2 次、每次 20 分钟。助手绝不拦截工具，限制只在 DSH 内生效（见下方能力边界）。',
 }
 
 function loadDefaults() {
@@ -210,7 +197,7 @@ function getPath(object, dottedKey) {
   return dottedKey.split('.').reduce((value, part) => (value === undefined || value === null ? undefined : value[part]), object)
 }
 
-/** Every leaf key of an object, e.g. `focus.workMinutes`. */
+/** Every leaf key of an object, e.g. `limits.dailyMinutes`. */
 function leafKeys(object, prefix = '') {
   const keys = []
   for (const [key, value] of Object.entries(object)) {
