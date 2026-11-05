@@ -1,0 +1,204 @@
+/** dsh-deep-focus Host entry: wires the idle sampler, tracker, focus machine, budget lock, tool guard and API. */
+import { createStorage, localDayKey, pluginDataDir } from './host/storage.js'
+import { createSettingsStore } from './host/settings.js'
+import { createSampler } from './host/sampler.js'
+import { createTracker } from './host/tracker.js'
+import { createFocus } from './host/focus.js'
+import { createBudget } from './host/budget.js'
+import { createEventRing, createStatusMap, installHostEventListeners } from './host/events.js'
+import { createGuardView, registerToolGuard } from './host/lock.js'
+import { createApi, registerApi } from './host/api.js'
+
+export const name = 'dsh-deep-focus'
+export const inject = ['tools', 'agents', 'webServer']
+
+const TICK_INTERVAL_MS = 1000
+const BUDGET_INTERVAL_MS = 2000
+const FLUSH_INTERVAL_MS = 10_000
+
+export function apply(ctx) {
+  let runtime
+  try {
+    runtime = createRuntime(ctx)
+  } catch (error) {
+    warn(ctx, 'failed to initialise; the plugin stays inactive', error)
+    return
+  }
+  ctx.effect(() => runtime.start(), 'dsh-deep-focus: host runtime')
+}
+
+function warn(ctx, message, error) {
+  try {
+    const suffix = error === undefined ? '' : `: ${error instanceof Error ? error.message : String(error)}`
+    ctx.logger?.warn?.(`[dsh-deep-focus] ${message}${suffix}`)
+  } catch {
+    // Logging must never break activation or cleanup.
+  }
+}
+
+function createRuntime(ctx) {
+  const now = () => Date.now()
+  const storage = createStorage({ dir: pluginDataDir() })
+  const settings = createSettingsStore({ storage })
+  const ring = createEventRing({ now })
+  const statusMap = createStatusMap()
+
+  function recordStat(record) {
+    void storage.appendJsonl(`stats/${localDayKey(now())}.jsonl`, { t: now(), ...record }).catch(() => {})
+  }
+
+  const tracker = createTracker({ storage, settings, now })
+  const focus = createFocus({ storage, settings, ring, now, onStat: recordStat })
+  const budget = createBudget({ storage, settings, tracker, focus, ring, now, onStat: recordStat })
+
+  function onSample(idleMs, sampledAt) {
+    const result = tracker.sample(idleMs, sampledAt)
+    focus.applyActivity({ active: result.active, idleMs: result.idleMs }, sampledAt)
+    budget.evaluate(sampledAt)
+  }
+
+  let degradedLogged = false
+  function onSamplerState(state, detail) {
+    const suffix = detail ? ` (${detail})` : ''
+    if (state === 'ok') {
+      degradedLogged = false
+      return
+    }
+    if (state === 'off') {
+      warn(ctx, `activity sampling is off; usage limits will not trigger${suffix}`)
+      return
+    }
+    if (!degradedLogged) {
+      degradedLogged = true
+      warn(ctx, `activity sampling is degraded${suffix}`)
+    }
+  }
+
+  const sampler = createSampler({
+    sampleSeconds: settings.get().usage.sampleSeconds,
+    now,
+    onSample,
+    onStateChange: onSamplerState,
+  })
+
+  return {
+    start() {
+      let stopped = false
+      const disposers = []
+      const timers = []
+
+      const api = createApi({
+        settings,
+        tracker,
+        focus,
+        budget,
+        sampler,
+        ring,
+        statusMap,
+        agents: ctx.agents,
+        storage,
+        now,
+        onChange(next) {
+          try {
+            sampler.setSampleSeconds(next.usage.sampleSeconds)
+            budget.evaluate(now())
+          } catch (error) {
+            warn(ctx, 'settings change could not be applied live', error)
+          }
+        },
+      })
+
+      try {
+        const guardView = createGuardView({
+          settings,
+          statusMap,
+          focus,
+          budget,
+          agents: ctx.agents,
+          getAgentTeams: () => ctx.get('agentTeams'),
+          now,
+        })
+        disposers.push(registerToolGuard({ ctx, getView: guardView }))
+      } catch (error) {
+        warn(ctx, 'tool guard registration failed', error)
+      }
+
+      try {
+        disposers.push(installHostEventListeners({ ctx, ring, focus, settings, statusMap }))
+      } catch (error) {
+        warn(ctx, 'event listeners could not be installed', error)
+      }
+
+      try {
+        disposers.push(registerApi({ ctx, api }))
+      } catch (error) {
+        warn(ctx, 'HTTP API could not be registered', error)
+      }
+
+      timers.push(setInterval(() => {
+        try {
+          focus.tick()
+        } catch {
+          // A single bad tick must not stop the timer loop.
+        }
+      }, TICK_INTERVAL_MS))
+      timers.push(setInterval(() => {
+        try {
+          budget.evaluate()
+        } catch {
+          // Counters are best-effort; the next tick retries.
+        }
+      }, BUDGET_INTERVAL_MS))
+      timers.push(setInterval(() => {
+        void tracker.flush()
+      }, FLUSH_INTERVAL_MS))
+      for (const timer of timers) timer.unref?.()
+
+      const boot = (async () => {
+        try {
+          await settings.load()
+          await tracker.load()
+          await focus.load()
+          await budget.load()
+          if (stopped) return
+          await storage.prune({
+            retentionDays: settings.get().usage.retentionDays,
+            dayKey: localDayKey(now()),
+          }).catch(() => {})
+          sampler.setSampleSeconds(settings.get().usage.sampleSeconds)
+          sampler.start()
+          budget.evaluate(now())
+          focus.tick(now())
+        } catch (error) {
+          warn(ctx, 'initialisation failed; running with defaults', error)
+        }
+      })()
+
+      return async () => {
+        if (stopped) return
+        stopped = true
+        for (const timer of timers) clearInterval(timer)
+        try {
+          sampler.stop()
+        } catch {
+          // The child process may already be gone.
+        }
+        for (const dispose of disposers.splice(0).reverse()) {
+          try {
+            dispose()
+          } catch (error) {
+            warn(ctx, 'cleanup step failed', error)
+          }
+        }
+        focus.dispose()
+        try {
+          await Promise.all([focus.flush(), tracker.flush(), budget.flush()])
+          await storage.flush()
+        } catch {
+          // Losing a final flush is better than failing unload.
+        }
+        await boot.catch(() => {})
+      }
+    },
+  }
+}

@@ -1,0 +1,4 @@
+# Bundle patch: inserts the Host row of this plugin into the profile composition.
+- insert:
+    - id: dsh-deep-focus
+      name: dsh-deep-focus

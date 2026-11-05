@@ -1,0 +1,58 @@
+{
+  "name": "dsh-deep-focus",
+  "version": "0.1.0",
+  "description": "Deep focus guard for DeepSeek Harness: pomodoro timer, single-conversation lock, whole-machine activity tracking, and an overtime lock with password unlock.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OWNER/dsh-deep-focus.git"
+  },
+  "homepage": "https://github.com/OWNER/dsh-deep-focus#readme",
+  "bugs": {
+    "url": "https://github.com/OWNER/dsh-deep-focus/issues"
+  },
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./client": "./src/client.js",
+    "./locale/*.json": "./src/locale/*.json",
+    "./icon": "./src/icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "docs"
+  ],
+  "engines": {
+    "node": ">=20",
+    "dsh": "^0.2.0-rc.2 || ^0.2.1-rc.2 || ^0.2.2-rc.1"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true
+    }
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "focus",
+    "pomodoro",
+    "deep-work",
+    "screen-time"
+  ],
+  "scripts": {
+    "check": "node --check src/index.js && node --check src/client.js",
+    "test": "node --test"
+  }
+}
