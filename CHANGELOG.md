@@ -15,10 +15,9 @@ Patch release. Versions 0.1.0–0.4.9 were never published.
 
 ### Fixed
 
-- **One-conversation mode could stop working.** The browser's own running-session
-  snapshot was treated as authoritative, so a briefly empty snapshot disabled the
-  graying even though the Host still reported `solo.primary`. The Host value now
-  wins; the client snapshot is only a fallback.
+- **One-conversation mode could stop working:** a briefly empty client running-set
+  snapshot overrode the Host's `solo.primary`. The Host value is authoritative now;
+  the client snapshot is only a fallback.
 
 ## [0.4.12] - 2026-11-05
 
@@ -36,11 +35,9 @@ Patch release. Versions 0.1.0–0.4.9 were never published.
 
 ### Fixed
 
-- **Invisible primary buttons in the settings footer.** The host's `brand-primary`
-  token resolves to pure white in the dark theme, so the white label on a white
-  button disappeared. Primary buttons (save settings, use-more-minutes, skip rest,
-  …) now use an explicit blue accent that stays readable in both themes; the toggle
-  switch uses the same accent.
+- **Invisible primary buttons** (the host's `brand-primary` token is pure white in
+  the dark theme). Primary buttons and toggles now use an explicit blue accent that is
+  readable in both themes.
 
 ## [0.4.9] - 2026-11-05
 
@@ -54,19 +51,27 @@ were never published.
   gray for ~1.5 s" behaviour never took effect in the real page. The cleanup now runs
   only on unmount, so the previous owner survives transient empty running sets.
 
+## [0.4.17] - 2026-11-05
+
+Patch release. Versions 0.1.0–0.4.15 were never published.
+
+### Fixed
+
+- **The continuous clock stuttered and could jump backwards.** It is now a monotonic
+  local value: it only advances, drops solely on a real reset (rest/pause start), ticks
+  every 500 ms instead of 1 s (no sawtooth against the 5 s sampler) and freezes exactly
+  on the Host value while paused/resting/locked. Today's minutes follow the same rule.
+
 ## [0.4.16] - 2026-11-05
 
 Patch release. Versions 0.1.0–0.4.14 were never published.
 
 ### Fixed
 
-- **Ring widget values escaped the rings.** The centred value overlay was absolutely
-  positioned against the wrong ancestor, so the numbers piled up at the card's
-  top-left. It is now positioned relative to its own ring column: numbers sit inside
-  the 44 px rings, the unit (分) sits under the number, and both captions
-  (今日已用 / 连续使用) share a baseline. Verified by rendering the exact CSS/markup
-  with a headless browser (see `docs/images/rings-widget.png`) including three-digit
-  today values and hour-scale continuous values.
+- **Ring widget values escaped the rings** (the centred overlay anchored to the wrong
+  ancestor). It now anchors to its own ring column; numbers sit inside the 44 px
+  rings, the unit sits under the number, captions share a baseline. Verified by
+  rendering the exact CSS/markup with a headless browser (docs/images/rings-widget.png).
 
 ## [0.4.15] - 2026-11-05
 

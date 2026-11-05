@@ -2524,18 +2524,22 @@ window.__ModuleLoader__.load({
         const alertsCfg = settings.alerts || {}
         const assistantOn = limit.assistantEnabled !== false && assistantCfg.enabled !== false
 
-        // Smooth continuous clock: the Host samples every few seconds, so advance
-        // the displayed value locally once per second while the value would really
-        // grow (live, not paused/resting/locked, user present). A new state resets
-        // the base, which keeps the display calibrated.
-        const clockActive =
-          store.isVisible() &&
-          assistantOn &&
-          assistantCfg.showRings !== false &&
-          limit.paused !== true &&
-          limit.resting !== true &&
-          limit.dailyLocked !== true &&
-          !awayTracker.isAway(alertsCfg, state || null)
+        // Monotonic smooth clock: the Host samples in ~5s chunks, so the raw value
+        // can arrive lower than the locally interpolated one. We keep a local
+        // shown value, only move it forward, and ignore backward snaps unless the
+        // state says this is a real reset (paused/resting/locked/assistant off or
+        // an abrupt >60s correction while running).
+        const frozen =
+          !store.isVisible() ||
+          !assistantOn ||
+          assistantCfg.showRings === false ||
+          limit.paused === true ||
+          limit.resting === true ||
+          limit.dailyLocked === true
+        const clockActive = !frozen && !awayTracker.isAway(alertsCfg, state || null)
+        const shownContinuousRef = React.useRef(null)
+        const shownDailyRef = React.useRef(null)
+        const shownDayKeyRef = React.useRef(null)
         const tickPair = React.useState(0)
         const tickAt = tickPair[0]
         const setTickAt = tickPair[1]
@@ -2564,9 +2568,10 @@ window.__ModuleLoader__.load({
         React.useEffect(
           function () {
             if (!clockActive) return undefined
+            // 500ms tick so the seconds flip on time even with a 5s Host sample.
             const timer = setInterval(function () {
               setTickAt(Date.now())
-            }, 1000)
+            }, 500)
             return function () {
               clearInterval(timer)
             }
@@ -2574,15 +2579,43 @@ window.__ModuleLoader__.load({
           [clockActive],
         )
 
-        if (!store.isVisible() || !assistantOn || assistantCfg.showRings === false) return null
-
         const dailyLimit = Math.max(0, numberOr(limit.dailyLimitMs, 0))
         const dailyUsed = Math.max(0, numberOr(limit.dailyUsedMs, 0))
         const continuousLimit = Math.max(0, numberOr(limit.continuousLimitMs, 0))
         const continuousBase = Math.max(0, numberOr(limit.continuousUsedMs, 0))
         const stateAt = numberOr(snapshot.stateUpdatedAt, 0)
         const elapsed = clockActive && tickAt > 0 && stateAt > 0 ? Math.max(0, tickAt - stateAt) : 0
-        const continuousUsed = continuousLimit > 0 ? Math.min(continuousLimit, continuousBase + elapsed) : continuousBase + elapsed
+        const dayKey = state && state.usage ? state.usage.dayKey : null
+        const continuousCandidate = continuousBase + elapsed
+
+        let shownContinuous = shownContinuousRef.current
+        let shownDaily = shownDailyRef.current
+        if (frozen) {
+          // Frozen screens show exactly the Host value and reset the anchors.
+          shownContinuous = continuousBase
+          shownDaily = dailyUsed
+          shownDayKeyRef.current = dayKey
+        } else {
+          if (shownContinuous === null) shownContinuous = continuousCandidate
+          else if (continuousCandidate >= shownContinuous) shownContinuous = continuousCandidate
+          else if (continuousBase < shownContinuous - 60000) shownContinuous = continuousCandidate
+
+          if (shownDaily === null || shownDayKeyRef.current !== dayKey) {
+            shownDaily = dailyUsed
+            shownDayKeyRef.current = dayKey
+          } else if (dailyUsed >= shownDaily) shownDaily = dailyUsed
+          else if (dailyUsed < shownDaily - 60000) shownDaily = dailyUsed
+        }
+        shownContinuousRef.current = shownContinuous
+        shownDailyRef.current = shownDaily
+
+        if (!store.isVisible() || !assistantOn || assistantCfg.showRings === false) return null
+
+        const continuousUsed =
+          continuousLimit > 0
+            ? Math.min(continuousLimit, Math.max(0, shownContinuous))
+            : Math.max(0, shownContinuous)
+        const dailyShown = Math.max(0, shownDaily)
         const dailyRatio = progressRatio(dailyUsed, dailyLimit)
         const continuousRatio = progressRatio(continuousUsed, continuousLimit)
         const dailyTone = dailyLimit > 0 && dailyRatio >= 1 ? 'danger' : dailyLimit > 0 && dailyRatio >= 0.9 ? 'warn' : 'normal'
@@ -2592,7 +2625,7 @@ window.__ModuleLoader__.load({
             : limit.restDue === true || (continuousLimit > 0 && continuousRatio >= 0.8)
               ? 'warn'
               : 'normal'
-        const todayMinutes = fmtRingMinutes(dailyUsed)
+        const todayMinutes = fmtRingMinutes(dailyShown)
         const continuousClock = continuousLimit > 0 ? fmtRingClock(continuousUsed) : '—'
         const summary = t('rings.summary', {
           today: fmtDuration(t, dailyUsed),
