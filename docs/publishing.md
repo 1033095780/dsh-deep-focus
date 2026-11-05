@@ -77,9 +77,15 @@ Only needed for registry-based installs (`dsh plugin add dsh-deep-focus`).
 - [ ] Plugins page shows the icon plus localized title/description.
 - [ ] Assistant panel opens; rings show today/continuous progress and are **not
       clickable**.
-- [ ] Idling for `usage.autoPauseSeconds` grays DSH; input resumes.
+- [ ] Idling for `usage.autoPauseSeconds` shows the shared today-usage card with
+      「已暂停计时」; input resumes. There is no separate gray-only pause layer.
 - [ ] Rest screen and daily overlay both show the **same today-usage card**; daily
-      overlay has only 「再使用 20 分钟」 and 「跳过」 (skip does not extend).
+      overlay has only 「再使用 20 分钟」 and 「跳过」 (skip does not extend). With DSH
+      hidden, hitting the cap tries `window.focus()` + one system notification (best
+      effort) and rings once.
+- [ ] Chime: with one conversation running, finish it while away → it rings. With two
+      running, finish only one → it stays silent; finish the second → it rings
+      (repeats until input, capped ~2 min).
 - [ ] Settings page exposes exactly the eight common controls (including the
       「专注时只允许一个对话」 switch); save/discard is right-aligned.
 - [ ] One-conversation mode jumps back to the running conversation; other rows are

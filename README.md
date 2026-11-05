@@ -9,12 +9,12 @@ English | [简体中文](README.zh.md)
 | Feature | What it does |
 | --- | --- |
 | Display-only rings | Top-right widget: today vs. daily cap, continuous vs. continuous cap. Not clickable. |
-| Automatic rest | After `usage.autoPauseSeconds` idle (default 60 s) DSH grays; keyboard/mouse resumes. |
-| Daily cap | Whole-machine active time while DSH runs; at 180 min a gray “today usage” overlay appears. |
-| Continuous cap | 30 continuous minutes → a 10-minute rest; rest time is not counted. |
+| Automatic rest | After `usage.autoPauseSeconds` idle (default 60 s) the same today-usage card appears; keyboard/mouse resumes. |
+| Daily cap | Whole-machine active time while DSH runs; at 180 min the today-usage card appears with 「再使用 20 分钟」/「跳过」. If DSH is in the background it also tries `window.focus()` + a system notification to bring you back. |
+| Continuous cap | 30 continuous minutes → a 10-minute rest on the same card; rest time is not counted. |
 | One conversation at a time | Pins the UI to exactly **one primary conversation** — the running conversation whose turn started most recently. Every other row (including **other running conversations**) is grayed and not clickable; the UI auto-jumps to the primary. Nothing is hidden. |
-| Away chime | Rings only when **your own (root) conversation's** turn finishes while you are away; background subagent/teammate turns stay silent. It repeats until you touch the keyboard/mouse, capped at ~2 minutes. |
-| Shared usage card | Rest and daily screens use the same card: title, today's total, per-app breakdown, actions. |
+| Away chime | Rings only when **all running conversations have finished** (the running set goes from non-empty to empty) while you are away. If only some conversations finish, it stays silent. Repeats until input, capped at ~2 minutes. |
+| Shared usage card | Auto-pause, forced rest and the daily-limit screen all render the **same today-usage card** (title/reason + today's total + per-app breakdown); only the title and buttons differ. |
 | Per-app statistics + assistant panel | Sidebar hub with overview, 7-day trend, short settings and an enable/pause switch. |
 
 ## Screenshots
@@ -43,11 +43,12 @@ No build step and no runtime dependencies. Disabling or uninstalling removes all
 ## How the rules work
 
 - **What counts:** whole-machine active time while DSH runs; a sample counts only when input was recent (`usage.idleThresholdSeconds`).
-- **Daily cap:** default `limits.dailyMinutes` 180. At the cap the shared “today usage” card appears; 「再使用 20 分钟」 grants `limits.extendMinutes` (20) immediately, unlimited per day by default (`limits.dailyExtendLimit` 0 = unlimited, a positive value caps it). 「跳过」 only dismisses today's reminder in this browser, it never extends.
-- **Continuous rest:** at `limits.continuousMinutes` (30) a rest of `limits.restMinutes` (10) starts; it ends only when its time elapsed **and** you are back, or via 「跳过休息」. Rest time is excluded from the daily total.
+- **Daily cap:** default `limits.dailyMinutes` 180. At the cap the shared today-usage card appears; 「再使用 20 分钟」 grants `limits.extendMinutes` (20) immediately, unlimited per day by default (`limits.dailyExtendLimit` 0 = unlimited, a positive value caps it). 「跳过」 only dismisses today's reminder in this browser, it never extends. If the window is in the background when the cap hits, the plugin tries `window.focus()` and posts one system notification (clicking it focuses DSH) plus a chime — best effort only: a pure plugin **cannot force the OS to bring DSH to the foreground**.
+- **Continuous rest:** at `limits.continuousMinutes` (30) a rest of `limits.restMinutes` (10) starts on the same today-usage card; it ends only when its time elapsed **and** you are back, or via 「跳过休息」. Rest time is excluded from the daily total.
+- **Unified screens:** idle auto-pause, manual pause, the forced rest and the daily cap all use the same today-usage card with their own title/actions — there is no separate gray-only pause layer any more.
 - **Automatic rest:** after `usage.autoPauseSeconds` (60, `0` = off) without input the assistant enters the same gray rest state; activity resumes it. The rings are display-only; the pause/resume endpoints exist for the API but are not used by the UI.
 - **One conversation at a time:** exactly one **primary conversation** is active — the running root conversation whose turn started most recently (`/state.solo.primary`). The UI auto-jumps to it; every other conversation and folder row, **including other running conversations**, is grayed and non-clickable, and a visible non-primary conversation gets the veil. Background agents keep running; no tool call is blocked, and nothing is hidden.
-- **Away chime:** it rings only when **your own (root) conversation's whole turn** finishes and you are away — the window is unfocused/hidden or the machine has been idle for `alerts.awayIdleSeconds`. Background subagent/teammate turns never ring. It repeats every `alerts.repeatIntervalMs` until you move the mouse or type, with a hard cap of ~2 minutes (`alerts.repeatUntilActive` disables the repeat).
+- **Away chime:** it rings only when **all running conversations have finished** — the root running set was non-empty and becomes empty — and you are away (window unfocused/hidden or idle past `alerts.awayIdleSeconds`). If several conversations run and only some finish, it stays silent; subagent/teammate turns never ring it either. It repeats every `alerts.repeatIntervalMs` until you move the mouse or type, with a hard cap of ~2 minutes (`alerts.repeatUntilActive` disables the repeat).
 - **Assistant off:** statistics only — no rings, rest or overlays.
 
 ## Usage panel
@@ -96,11 +97,11 @@ See [docs/privacy.md](docs/privacy.md).
 
 ## Pure-plugin boundary
 
-It cannot bring DSH to the front, cannot block other applications, and cannot count usage while DSH is closed; the rest visuals only cover the DSH window. A companion desktop guard for those cases is a possible later phase and is not included.
+It cannot bring DSH to the front, cannot block other applications, and cannot count usage while DSH is closed; at the daily cap it only *attempts* `window.focus()` + a system notification, and the OS may ignore both. The rest visuals only cover the DSH window. A companion desktop guard for those cases is a possible later phase and is not included.
 
 | Works inside DSH | Cannot do |
 | --- | --- |
-| usage counting, rings, rest/daily overlays, auto-jump sidebar | bring DSH forward, block other apps, count while DSH is closed, draw outside DSH |
+| usage counting, rings, unified pause/rest/daily cards, auto-jump sidebar | force the OS foreground (focus/notification are best effort), block other apps, count while DSH is closed, draw outside DSH |
 
 ## Compatibility
 

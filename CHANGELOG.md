@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.4.7] - 2026-11-05
+
+Patch release. Versions 0.1.0–0.4.6 were never published.
+
+### Changed
+
+- **Unified overlay card**: idle auto-pause, manual pause, the 10-minute forced rest
+  and the 3-hour daily-limit screen all render the same today-usage card
+  (title/reason + today's total + per-app breakdown) and differ only in title and
+  actions. The old separate gray-only pause layer is gone.
+- **All-done completion chime**: it rings only when **all running conversations have
+  finished** (the root running set goes from non-empty to empty) and you are away.
+  If several conversations run and only some finish, it stays silent; repeated
+  chimes still stop on input and are capped at ~2 minutes.
+
+### Added
+
+- **Background daily-limit alert**: when the daily cap is reached while DSH is hidden
+  or unfocused, the plugin tries `window.focus()` and posts one clickable system
+  notification (plus a chime) to bring you back. Best effort only — a pure plugin
+  cannot force the OS foreground window.
+
 ## [0.4.6] - 2026-11-05
 
 Patch release. Versions 0.1.0–0.4.5 were never published.

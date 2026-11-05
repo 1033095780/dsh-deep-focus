@@ -361,9 +361,15 @@ check('READMEs describe the current product', () => {
     [/0\s*=\s*unlimited/i, 'unlimited daily extensions (0 = unlimited)'],
     [/eight (?:common )?(?:settings|controls)/i, 'the eight exposed settings'],
     [/assistant\.soloSession|one conversation at a time/i, 'the solo-mode setting switch'],
-    [/root.{0,60}conversation|conversation.{0,60}root/i, 'the root-only chime rule'],
+    [/(?:all .{0,30}running|running .{0,20}set)/i, 'the all-done chime rule'],
     [/subagent|teammate/i, 'the subagent/teammate silence rule'],
+    [/(?:only some|partial)/i, 'the partial-completion silence rule'],
     [/(?:2 minutes|~2 min)/i, 'the chime hard cap'],
+    [/auto-?pause|automatic pause/i, 'the unified auto-pause screen'],
+    [/same .{0,40}card|unified .{0,20}card/i, 'the unified pause/rest/daily card'],
+    [/window\.focus\(\)/i, 'the background bring-back attempt'],
+    [/system notification|Notification API|notification/i, 'the system notification'],
+    [/cannot force the OS|cannot force .{0,40}foreground/i, 'the pure-plugin foreground limitation'],
     [/never blocks?/i, 'the no-tool-blocking guarantee'],
     [/cannot bring DSH to the front/i, 'the capability boundary'],
     [/cannot block other applications/i, 'the capability boundary'],
@@ -393,9 +399,15 @@ check('READMEs describe the current product', () => {
     [/0\s*=\s*不限/, 'unlimited daily extensions (0 = unlimited)'],
     [/(?:8|八) ?(?:个|项)/, 'the eight exposed settings'],
     [/assistant\.soloSession|专注时只允许一个对话/, 'the solo-mode setting switch'],
-    [/root/, 'the root-only chime rule'],
+    [/所有正在运行的会话|运行集合/, 'the all-done chime rule'],
     [/子代理|队友/, 'the subagent/teammate silence rule'],
+    [/只完成了一部分|部分完成/, 'the partial-completion silence rule'],
     [/(?:约 )?2 分钟/, 'the chime hard cap'],
+    [/自动暂停/, 'the unified auto-pause screen'],
+    [/同一张(?:今日用量)?卡片/, 'the unified pause/rest/daily card'],
+    [/window\.focus\(\)/, 'the background bring-back attempt'],
+    [/系统通知/, 'the system notification'],
+    [/无法强制操作系统/, 'the pure-plugin foreground limitation'],
     [/绝不(?:拦截|拒绝)/, 'the no-tool-blocking guarantee'],
     [/不能把 DSH|不能把DSH/, 'the capability boundary'],
     [/不能阻止其它应用/, 'the capability boundary'],
@@ -410,6 +422,7 @@ check('READMEs describe the current product', () => {
     /pomodoro timer/i,
     /click(?:ing)? the (?:widget|rings)[^.\n]{0,80}(?:pause|gray)/i,
     /点击[^。\n]{0,20}双环[^。\n]{0,20}(?:暂停|变灰)/,
+    /你的（root）会话整轮完成|your own \(root\) conversation's turn/i,
     /countdown chip/i,
     /seven (?:common )?(?:settings|controls)/i,
     /7 个设置/,
@@ -440,8 +453,8 @@ check('LICENSE and CHANGELOG', () => {
   if (!changelog.includes('## [Unreleased]')) fail('CHANGELOG.md has no [Unreleased] section')
   const entry = new RegExp(`^## \\[${pkg.version.replace(/\./g, '\\.')}\\] - \\d{4}-\\d{2}-\\d{2}$`, 'm')
   if (!entry.test(changelog)) fail(`CHANGELOG.md needs a dated "[${pkg.version}] - YYYY-MM-DD" entry`)
-  if (pkg.version === '0.4.6' && !changelog.includes('## [0.4.6] - 2026-11-05')) {
-    fail('CHANGELOG.md must date the 0.4.6 entry 2026-11-05')
+  if (pkg.version === '0.4.7' && !changelog.includes('## [0.4.7] - 2026-11-05')) {
+    fail('CHANGELOG.md must date the 0.4.7 entry 2026-11-05')
   }
   for (const heading of ['### Added', '### Changed', '### Fixed']) {
     if (!changelog.includes(heading)) fail(`CHANGELOG.md entry is missing "${heading}"`)

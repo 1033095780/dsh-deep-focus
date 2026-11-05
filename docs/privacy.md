@@ -50,6 +50,15 @@ A sample counts as active only when idle < `usage.idleThresholdSeconds`. **The
 automatic rest and the away-aware completion chime reuse this same signal — no new
 data is recorded** — and paused/resting time is excluded from the daily total.
 
+## Bringing you back at the daily cap
+
+If the daily cap is reached while DSH is hidden/unfocused, the client may call
+`window.focus()` and show one system notification (“今日使用已超时 · 点击回到
+DeepSeek”; clicking focuses DSH) per lock transition. The notification text contains
+no usage details, permission is requested once when available and denial is silent,
+and nothing is recorded or sent — it is best effort only, because a pure plugin
+**cannot force the operating system to bring DSH to the foreground**.
+
 ## Retention and network
 
 - Usage files are pruned after `usage.retentionDays` (default 30); legacy `stats/`

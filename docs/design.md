@@ -118,7 +118,8 @@ re-evaluates limits first; missed running flags are reconciled from the durable
 session log. `task-completed` is emitted only for a **root conversation's** turn
 end (`turn/end` completed); subagent/teammate sessions are filtered out by an
 `isRootSession` predicate, so background work never rings the chime. Goal
-completions still emit it (goals belong to root sessions). `events.js` also tracks
+completions still emit the event (it now drives a toast only; the chime is the
+all-done edge detector below). `events.js` also tracks
 each root session's **last turn start** (from `turn/start` events, with the running
 status feed as a fallback); the API uses that timestamp to pick `solo.primary` — the
 newest running root — so exactly one conversation is pinned.
@@ -130,14 +131,18 @@ newest running root — so exactly one conversation is pinned.
 | `sidebar.panellist` | `focus-assistant` | assistant entry below Plugins |
 | `main` (keyed) | `focus-assistant` | overview, 7-day trend, 8-field settings (incl. the one-conversation switch), enable/pause, right-aligned save row |
 | `shell.overlay` | `dsh-deep-focus-rings` | display-only two-ring widget (not clickable) |
-| `shell.overlay` | `dsh-deep-focus-pause-gray` | automatic-rest gray layer (`pointer-events: none`) |
+| `shell.overlay` | `dsh-deep-focus-pause-gray` | auto/manual pause: the shared today-usage card with 「已暂停计时 · 动一下鼠标或键盘继续」 (no actions) |
 | `shell.overlay` | `dsh-deep-focus-rest` | forced-rest screen using the shared today-usage card + 「跳过休息」 |
 | `shell.overlay` | `dsh-deep-focus-daily-lock` | daily overlay on the same card: 「再使用 20 分钟」/「跳过」 |
 | `shell.overlay` | `dsh-deep-focus-focus-veil` | veil over a visible non-owner conversation |
 | `shell.overlay` | `dsh-deep-focus-toasts` | completion/rest/extension toasts |
 
-One shared `TodayUsageCard` renders title/reason, today's total, per-app rows and
-the screen's buttons for both the rest and daily screens.
+One shared `TodayUsageCard` renders title/reason, today's total, per-app rows and the
+screen's buttons for **idle auto-pause, manual pause, the forced rest and the daily
+cap** — only the title and actions differ. The old separate gray-only pause layer is
+gone. When the daily cap hits while the window is hidden/unfocused, the client tries
+`window.focus()`, posts one system `Notification` (click → focus) and rings once per
+lock transition; this is best effort — a pure plugin cannot force the OS foreground.
 
 One conversation at a time is style-only and pins to **one primary conversation**:
 the host records each root session's last turn start and exposes the newest one as
@@ -154,11 +159,13 @@ and attribute are removed.
 Polling is 1 s visible / 5 s hidden with one store and an in-flight guard; after two
 failed polls (or a 404) the client hides its UI, restores sidebar styles and keeps
 retrying. Buttons use inline theme colors. The chime is synthesized Web Audio and
-**root-only**: it is ignored unless the `task-completed` event's `sessionId` is one
-of the root conversations in `state.sessions`, it only plays while away
-(unfocused/hidden or idle past `alerts.awayIdleSeconds`), repeats every
-`alerts.repeatIntervalMs` until input, and is hard-capped at ~120 repeats
-(~2 minutes). It stops on `visibilitychange`→visible, window focus, or activity;
+**all-done**: the client tracks the root running set from `state.sessions`; it rings
+only on the edge from non-empty to empty (all running conversations finished) while
+away (unfocused/hidden or idle past `alerts.awayIdleSeconds`). A partial completion
+— some conversations still running — stays silent, and `task-completed` events only
+drive a toast, never sound by themselves. It repeats every
+`alerts.repeatIntervalMs` until input and is hard-capped at ~120 repeats
+(~2 minutes); it stops on `visibilitychange`→visible, window focus, or activity;
 quiet hours/volume apply; audio fails silently.
 
 ## Data files

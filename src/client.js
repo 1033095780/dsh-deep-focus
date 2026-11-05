@@ -144,7 +144,9 @@ window.__ModuleLoader__.load({
         'settings.hintZeroUnlimited': '0 = 不限',
         'settings.loading': '正在加载…',
         'settings.appsSampling.off': '应用统计当前不可用（可能因为长时间空闲或未开启按应用统计）。',
-        'daily.title': '今天已经用了 {h} 小时 {m} 分',
+        'daily.title': '今日使用已用完',
+        'daily.reason': '达到每日使用上限了。',
+        'daily.notify': '今日使用已超时 · 点击回到 DeepSeek',
         'daily.apps': '应用明细',
         'daily.extend': '再使用 {n} 分钟',
         'daily.extendRemaining': '今日还可续期 {n} 次',
@@ -263,7 +265,9 @@ window.__ModuleLoader__.load({
         'settings.hintZeroUnlimited': '0 = unlimited',
         'settings.loading': 'Loading…',
         'settings.appsSampling.off': 'App tracking is currently unavailable (long idle or disabled).',
-        'daily.title': 'You have used {h}h {m}m today',
+        'daily.title': 'Daily usage is used up',
+        'daily.reason': 'The daily usage limit has been reached.',
+        'daily.notify': 'Daily limit reached · click to return to DeepSeek',
         'daily.apps': 'App breakdown',
         'daily.extend': 'Use {n} more minutes',
         'daily.extendRemaining': '{n} extension(s) left today',
@@ -732,10 +736,6 @@ window.__ModuleLoader__.load({
       '.df-rings-text{display:flex;flex-direction:column;gap:1px;white-space:nowrap;max-width:150px}',
       '.df-rings-text b{font-weight:600;font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis}',
       '.df-rings-text span{color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis}',
-      '.df-pause{position:absolute;inset:0;z-index:118;display:flex;align-items:center;justify-content:center;box-sizing:border-box;padding:24px;background:color-mix(in srgb, var(--dsw-alias-bg-overlay) 55%, transparent);backdrop-filter:grayscale(1) blur(1px);pointer-events:none}',
-      '.df-pause-card{box-sizing:border-box;max-width:420px;display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 20px;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:13px;text-align:center;box-shadow:0 12px 32px color-mix(in srgb, var(--dsw-alias-bg-overlay) 45%, transparent)}',
-      '.df-pause-title{font-size:15px;font-weight:600;margin:0}',
-      '.df-pause-hint{color:var(--dsw-alias-label-secondary);font-size:12px;margin:0}',
       '.df-veil-layer{position:absolute;inset:0;z-index:116;pointer-events:none}',
       '.df-veil{position:absolute;top:0;right:0;bottom:0;left:0;background:color-mix(in srgb, var(--dsw-alias-bg-overlay) 16%, transparent);backdrop-filter:grayscale(.35);pointer-events:none}',
       '.df-veil-hint{position:absolute;top:calc(var(--dsh-frame-top-clearance, 0px) + 64px);left:50%;transform:translateX(-50%);box-sizing:border-box;max-width:calc(100vw - 32px);padding:6px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:999px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:12px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;box-shadow:0 6px 18px color-mix(in srgb, var(--dsw-alias-bg-overlay) 40%, transparent)}',
@@ -936,7 +936,6 @@ window.__ModuleLoader__.load({
         let active = false
         let lastSeq = null
         let toastSeq = 0
-        let alertHandler = null
 
         function get() {
           return snapshot
@@ -1018,23 +1017,17 @@ window.__ModuleLoader__.load({
           return false
         }
 
-        function completionToast(meta, alerts) {
+        function completionToast(meta) {
           if (meta && !isRootSessionId(meta.sessionId)) return
           const task = meta && typeof meta.task === 'string' && meta.task.length > 0 ? meta.task : null
           pushToast('task-completed', task ? t('toast.taskCompletedTask', { task: task }) : t('toast.taskCompleted'))
-          if (typeof alertHandler === 'function') {
-            try {
-              alertHandler(meta || {}, alerts || null)
-            } catch (error) {
-              /* alerting is optional */
-            }
-          }
         }
 
-        function handleEvent(event, alerts) {
+        function handleEvent(event) {
           const kind = event && event.kind
           if (kind !== EVENT.taskCompleted) return
-          completionToast((event && event.meta) || {}, alerts)
+          // A completion event only informs; sound is driven by the running-set edge.
+          completionToast((event && event.meta) || {})
         }
 
         /** Show each ring-buffer event once; a recovery or first load only sets a baseline. */
@@ -1233,10 +1226,6 @@ window.__ModuleLoader__.load({
           return postAction(ROUTES.resume, {})
         }
 
-        function setAlertHandler(handler) {
-          alertHandler = typeof handler === 'function' ? handler : null
-        }
-
         async function loadAppsTrend(force) {
           if (snapshot.appsLoading) return
           if (!force && snapshot.appsTrend) return
@@ -1282,8 +1271,7 @@ window.__ModuleLoader__.load({
           startRest: startRest,
           finishRest: finishRest,
             resume: resume,
-          setAlertHandler: setAlertHandler,
-          loadAppsTrend: loadAppsTrend,
+            loadAppsTrend: loadAppsTrend,
           saveSettings: saveSettings,
           pushToast: pushToast,
         }
@@ -1472,9 +1460,10 @@ window.__ModuleLoader__.load({
           }
         }
 
-        /** Called once per task-completed event; never rings while the user watches. */
-        function trigger(meta, alerts) {
+        /** Ring only when ALL running root conversations just finished, and never while watching. */
+        function triggerAllFinished() {
           const state = store.get().state
+          const alerts = (state && state.settings && state.settings.alerts) || null
           if (!awayTracker.isAway(alerts, state)) return
           if (alerts && alerts.repeatUntilActive === false) {
             play(alerts)
@@ -1483,10 +1472,8 @@ window.__ModuleLoader__.load({
           startRepeating(alerts || {})
         }
 
-        return { trigger: trigger, stop: stop }
+        return { triggerAllFinished: triggerAllFinished, stop: stop }
       })()
-
-      store.setAlertHandler(completionChime.trigger)
 
       /* ── Solo session hiding: one style node + animated html attribute ── */
       // Client-primary running-set detection. Non-owner session rows and the other
@@ -1524,6 +1511,10 @@ window.__ModuleLoader__.load({
                 return typeof id === 'string' && id.length > 0
               })
             : []
+
+          // The client running set is authoritative: nothing running means no solo
+          // mode even if the Host state is momentarily stale.
+          if (clientRunningIds !== null && clean.length === 0) return null
 
           // v0.4.6: exactly ONE owner. The Host's solo.primary wins; otherwise a
           // single running root, then the visible conversation if it is running.
@@ -1899,7 +1890,13 @@ window.__ModuleLoader__.load({
         }
 
         function sync() {
-          if (!soloHider.isActive()) lastAttemptKey = ''
+          if (!soloHider.isActive()) {
+            lastAttemptKey = ''
+            return
+          }
+          // The primary can change on the Host side without the client session
+          // context changing, so re-evaluate the pin on every state update.
+          maybeJump()
         }
 
         function getInfo() {
@@ -2391,6 +2388,25 @@ window.__ModuleLoader__.load({
           [signature, currentSessionId],
         )
 
+        // Completion chime: fire only when the root running set goes from
+        // non-empty to empty (all conversations finished), never on a partial
+        // completion and never when the user is watching.
+        const previousRunningRef = React.useRef(null)
+        React.useEffect(
+          function () {
+            if (runningIds === null) {
+              previousRunningRef.current = null
+              return
+            }
+            const previous = previousRunningRef.current
+            previousRunningRef.current = runningIds.slice()
+            if (previous !== null && previous.length > 0 && runningIds.length === 0) {
+              completionChime.triggerAllFinished()
+            }
+          },
+          [signature],
+        )
+
         const state = snapshot.state
         const limit = (state && state.limit) || {}
         const settings = (state && state.settings) || {}
@@ -2576,7 +2592,7 @@ window.__ModuleLoader__.load({
         )
       }
 
-      /** Manual pause: grays the whole window without blocking any interaction. */
+      /** Pause screen: the same TodayUsageCard as rest/daily, with no actions. */
       function PauseOverlay() {
         useLocaleTick()
         const snapshot = useStore(true)
@@ -2624,6 +2640,8 @@ window.__ModuleLoader__.load({
         )
 
         if (!paused) return null
+        const usedMs = Math.max(0, numberOr(limit.dailyUsedMs, numberOr(state.usage && state.usage.activeTodayMs, 0)))
+        const apps = todayAppsFromState(state)
         return h(
           Fragment,
           null,
@@ -2631,19 +2649,24 @@ window.__ModuleLoader__.load({
           h(
             'div',
             {
-              className: 'df-pause',
+              className: 'df-overlay',
+              style: { pointerEvents: 'none', zIndex: 118 },
               'data-df-root': 'pause',
               'data-dsh-deep-focus-root': 'pause',
               role: 'status',
               'aria-live': 'polite',
               'aria-label': t('pause.aria'),
             },
-            h(
-              'div',
-              { className: 'df-pause-card' },
-              h('p', { className: 'df-pause-title' }, resuming ? t('rings.busy') : limit && limit.pausedReason === 'idle' ? t('pause.autoTitle') : t('pause.title')),
-              h('p', { className: 'df-pause-hint' }, t('pause.hint')),
-            ),
+            h(TodayUsageCard, {
+              t: t,
+              title: t('pause.title'),
+              reason: resuming ? t('rings.busy') : t('pause.hint'),
+              usedMs: usedMs,
+              rows: apps,
+              actions: [],
+              root: 'pause-card',
+              role: 'status',
+            }),
           ),
         )
       }
@@ -2658,8 +2681,8 @@ window.__ModuleLoader__.load({
           {
             className: 'df-card df-today-card',
             ref: props.cardRef,
-            role: 'dialog',
-            'aria-modal': 'true',
+            role: props.role || 'dialog',
+            'aria-modal': props.role ? undefined : 'true',
             'aria-label': props.title,
             tabIndex: -1,
             'data-dsh-deep-focus-root': props.root || 'today-card',
@@ -2677,6 +2700,9 @@ window.__ModuleLoader__.load({
         )
       }
 
+      /** Best-effort foreground helper: a pure plugin cannot force the OS window. */
+      let dailyNotificationPermissionAsked = false
+
       function DailyLockOverlay() {
         useLocaleTick()
         const snapshot = useStore(false)
@@ -2692,6 +2718,69 @@ window.__ModuleLoader__.load({
         const error = errorPair[0]
         const setError = errorPair[1]
         const cardRef = React.useRef(null)
+        const notifiedRef = React.useRef(false)
+
+        React.useEffect(
+          function () {
+            if (!locked || acked) {
+              notifiedRef.current = false
+              return
+            }
+            if (notifiedRef.current) return
+            notifiedRef.current = true
+            // Best effort only: a pure plugin cannot force the OS foreground
+            // window. We try window.focus(), one system notification and one ring.
+            try {
+              window.focus()
+            } catch (error) {
+              /* ignored */
+            }
+            const alerts = (state.settings && state.settings.alerts) || {}
+            if (alerts.sound !== false) {
+              try {
+                audio.chime(numberOr(alerts.volume, 0.6))
+              } catch (error) {
+                /* ignored */
+              }
+            }
+            try {
+              if (typeof Notification !== 'undefined') {
+                const show = function () {
+                  try {
+                    const notification = new Notification(t('daily.notify'))
+                    notification.onclick = function () {
+                      try {
+                        window.focus()
+                      } catch (error) {
+                        /* ignored */
+                      }
+                      try {
+                        notification.close()
+                      } catch (error) {
+                        /* ignored */
+                      }
+                    }
+                  } catch (error) {
+                    /* notifications may be unavailable */
+                  }
+                }
+                if (Notification.permission === 'granted') {
+                  show()
+                } else if (Notification.permission === 'default' && !dailyNotificationPermissionAsked) {
+                  dailyNotificationPermissionAsked = true
+                  Promise.resolve(Notification.requestPermission())
+                    .then(function (result) {
+                      if (result === 'granted') show()
+                    })
+                    .catch(function () {})
+                }
+              }
+            } catch (error) {
+              /* ignored */
+            }
+          },
+          [locked, acked],
+        )
 
         React.useEffect(
           function () {
@@ -2772,10 +2861,8 @@ window.__ModuleLoader__.load({
             { className: 'df-overlay', 'data-df-root': 'daily-lock', 'data-dsh-deep-focus-root': 'daily-lock', role: 'presentation' },
             h(TodayUsageCard, {
               t: t,
-              title: t('daily.title', {
-                h: Math.floor(usedMs / 3600000),
-                m: Math.floor((usedMs % 3600000) / 60000),
-              }),
+              title: t('daily.title'),
+              reason: t('daily.reason'),
               usedMs: usedMs,
               rows: apps,
               actions: actions,
