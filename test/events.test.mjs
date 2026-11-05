@@ -53,7 +53,13 @@ function makeHarness() {
   let clock = 0
   const ring = createEventRing({ now: () => clock })
   const statusMap = createStatusMap()
-  const dispose = installHostEventListeners({ ctx, ring, statusMap })
+  const rootIds = new Set(['root-1'])
+  const dispose = installHostEventListeners({
+    ctx,
+    ring,
+    statusMap,
+    isRootSession: (sessionId) => rootIds.has(sessionId),
+  })
   return {
     handlers,
     ring,
@@ -63,15 +69,19 @@ function makeHarness() {
   }
 }
 
-test('turn completion becomes a task-completed alert', () => {
+test('turn completion alerts only for root conversations', () => {
   const harness = makeHarness()
-  const session = { id: 'session-x' }
-  harness.handlers.get('session/event')(session, { type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } })
+  harness.handlers.get('session/event')({ id: 'root-1' }, { type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } })
   const event = harness.lastEvent()
   assert.equal(event.kind, EVENT.taskCompleted)
-  assert.deepEqual(event.meta, { source: 'turn', sessionId: 'session-x', turn: 2 })
+  assert.deepEqual(event.meta, { source: 'turn', sessionId: 'root-1', turn: 2 })
 
-  harness.handlers.get('session/event')(session, { type: 'turn/end', data: { turn: 3, reason: { kind: 'aborted' } } })
+  // A background subagent turn must not ring the user's completion chime.
+  harness.handlers.get('session/event')({ id: 'subagent-7' }, { type: 'turn/end', data: { turn: 3, reason: { kind: 'completed' } } })
+  assert.equal(harness.ring.list().length, 1)
+
+  // Root but not a completed turn: no alert.
+  harness.handlers.get('session/event')({ id: 'root-1' }, { type: 'turn/end', data: { turn: 4, reason: { kind: 'aborted' } } })
   assert.equal(harness.ring.list().length, 1)
 })
 
@@ -112,10 +122,13 @@ test('durable turn boundaries update the running state independently', () => {
   assert.equal(harness.statusMap.isRunning('session-b'), true)
   harness.handlers.get('session/event')({ id: 'session-b' }, { type: 'turn/end', data: { turn: 1, reason: { kind: 'blocked' } } })
   assert.equal(harness.statusMap.isRunning('session-b'), false)
-  // A completed turn both clears the status and emits the task alert.
-  harness.handlers.get('session/event')({ id: 'session-b' }, { type: 'turn/start', data: { turn: 2 } })
-  harness.handlers.get('session/event')({ id: 'session-b' }, { type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } })
-  assert.equal(harness.statusMap.isRunning('session-b'), false)
+  assert.equal(harness.ring.list().length, 0)
+
+  // A completed root turn clears its status and emits the completion alert.
+  harness.handlers.get('session/event')({ id: 'root-1' }, { type: 'turn/start', data: { turn: 2 } })
+  assert.equal(harness.statusMap.isRunning('root-1'), true)
+  harness.handlers.get('session/event')({ id: 'root-1' }, { type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } })
+  assert.equal(harness.statusMap.isRunning('root-1'), false)
   assert.equal(harness.lastEvent().kind, EVENT.taskCompleted)
 })
 

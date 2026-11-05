@@ -125,6 +125,8 @@ window.__ModuleLoader__.load({
         'hub.todayAppsTotal': '今日应用合计 {time}',
         'group.limits': '使用限制',
         'group.alerts': '提示与统计',
+        'group.focus': '专注与会话',
+        'field.soloSession': '专注时只允许一个对话',
         'field.dailyMinutes': '每日使用上限',
         'field.dailyMinutes.hint': '分钟，0 = 不限',
         'field.continuousMinutes': '连续使用上限',
@@ -242,6 +244,8 @@ window.__ModuleLoader__.load({
         'hub.todayAppsTotal': 'App time today {time}',
         'group.limits': 'Usage limits',
         'group.alerts': 'Alerts & tracking',
+        'group.focus': 'Focus & sessions',
+        'field.soloSession': 'Allow only one conversation in focus mode',
         'field.dailyMinutes': 'Daily usage limit',
         'field.dailyMinutes.hint': 'minutes, 0 = unlimited',
         'field.continuousMinutes': 'Continuous-use limit',
@@ -999,7 +1003,23 @@ window.__ModuleLoader__.load({
           }
         }
 
+        /** A completion event may only ring for a root conversation. */
+        function isRootSessionId(sessionId) {
+          if (typeof sessionId !== 'string' || sessionId.length === 0) return true
+          const state = store.get().state
+          const sessions = state && Array.isArray(state.sessions) ? state.sessions : []
+          for (let index = 0; index < sessions.length; index += 1) {
+            const row = sessions[index]
+            if (!row || row.id !== sessionId) continue
+            if (row.parentId) return false
+            const origin = row.origin
+            return origin !== 'subagent' && origin !== 'teammate'
+          }
+          return false
+        }
+
         function completionToast(meta, alerts) {
+          if (meta && !isRootSessionId(meta.sessionId)) return
           const task = meta && typeof meta.task === 'string' && meta.task.length > 0 ? meta.task : null
           pushToast('task-completed', task ? t('toast.taskCompletedTask', { task: task }) : t('toast.taskCompleted'))
           if (typeof alertHandler === 'function') {
@@ -1355,16 +1375,20 @@ window.__ModuleLoader__.load({
 
       const completionChime = (function createCompletionChime() {
         const INPUT_EVENTS = ['mousemove', 'keydown', 'pointerdown', 'wheel', 'touchstart', 'focus']
+        const REPEAT_LIMIT = 120
         let timer = 0
         let repeating = false
         let activeAlerts = null
         let detachInput = null
+        let plays = 0
 
         function clampInterval(value) {
           return clampNumber(value, 500, 10000, 1000)
         }
 
         function play(alerts) {
+          if (plays >= REPEAT_LIMIT) return
+          plays += 1
           if (!alerts || alerts.sound === false) return
           if (isQuietHours(alerts)) return
           audio.chime(numberOr(alerts.volume, 0.6))
@@ -1393,6 +1417,10 @@ window.__ModuleLoader__.load({
 
         function tick() {
           if (!repeating) return
+          if (plays >= REPEAT_LIMIT) {
+            stop()
+            return
+          }
           const state = store.get().state
           if (!awayTracker.isAway(activeAlerts, state)) {
             stop()
@@ -1404,6 +1432,7 @@ window.__ModuleLoader__.load({
         function startRepeating(alerts) {
           activeAlerts = alerts
           repeating = true
+          plays = 0
           play(alerts)
           if (timer) clearInterval(timer)
           timer = setInterval(tick, clampInterval(alerts && alerts.repeatIntervalMs))
@@ -1411,10 +1440,22 @@ window.__ModuleLoader__.load({
             awayTracker.markActive()
             stop()
           }
+          const onVisibility = function () {
+            if (!document.hidden) {
+              awayTracker.markActive()
+              stop()
+            }
+          }
+          const onWindowFocus = function () {
+            awayTracker.markActive()
+            stop()
+          }
           try {
             INPUT_EVENTS.forEach(function (name) {
               document.addEventListener(name, onInput, true)
             })
+            document.addEventListener('visibilitychange', onVisibility, true)
+            window.addEventListener('focus', onWindowFocus, true)
           } catch (error) {
             /* ignored */
           }
@@ -1422,6 +1463,12 @@ window.__ModuleLoader__.load({
             INPUT_EVENTS.forEach(function (name) {
               document.removeEventListener(name, onInput, true)
             })
+            try {
+              document.removeEventListener('visibilitychange', onVisibility, true)
+              window.removeEventListener('focus', onWindowFocus, true)
+            } catch (error) {
+              /* ignored */
+            }
           }
         }
 
@@ -1813,7 +1860,13 @@ window.__ModuleLoader__.load({
             return false
           }
           const owners = currentOwners()
-          if (owners.length === 0) return false
+          // Multiple agents running at once: never fight over the main view.
+          // The sidebar stays grayed; a new attempt is allowed once exactly one
+          // running root remains (lastAttemptKey is re-armed here).
+          if (owners.length !== 1) {
+            lastAttemptKey = ''
+            return false
+          }
           if (currentSessionId === null) return false
           if (owners.indexOf(currentSessionId) >= 0) return false
           const key = owners.join('|') + '|' + currentSessionId
@@ -1851,7 +1904,9 @@ window.__ModuleLoader__.load({
           return {
             currentSessionId: currentSessionId,
             owners: owners,
-            veilNeeded: Boolean(active && currentSessionId !== null && owners.indexOf(currentSessionId) < 0),
+            veilNeeded: Boolean(
+              active && owners.length === 1 && currentSessionId !== null && owners.indexOf(currentSessionId) < 0,
+            ),
             soloActive: active,
           }
         }
@@ -3303,6 +3358,23 @@ window.__ModuleLoader__.load({
                     disabled: disabled,
                     onChange: function (value) {
                       patch('usage.trackApps', value)
+                    },
+                  }),
+                ),
+              ),
+              h(
+                Section,
+                { title: t('group.focus') },
+                h(
+                  FieldRow,
+                  { label: t('field.soloSession') },
+                  h(Switch, {
+                    checked: draftAssistant.soloSession !== false,
+                    label: t('field.soloSession'),
+                    disabled: disabled,
+                    onChange: function (value) {
+                      patch('assistant.soloSession', value)
+                      patch('assistant.hideOtherSessions', value)
                     },
                   }),
                 ),

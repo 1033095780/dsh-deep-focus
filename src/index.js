@@ -109,7 +109,17 @@ function createRuntime(ctx) {
       })
 
       try {
-        disposers.push(installHostEventListeners({ ctx, ring, statusMap }))
+        // Root ids come from the live agent registry; a subagent/teammate turn must
+        // never ring the user's completion chime.
+        const isRootSession = (sessionId) => {
+          try {
+            const roots = ctx.agents.roots()
+            return Array.isArray(roots) && roots.some((agent) => agent?.id === sessionId)
+          } catch {
+            return false
+          }
+        }
+        disposers.push(installHostEventListeners({ ctx, ring, statusMap, isRootSession }))
       } catch (error) {
         warn(ctx, 'event listeners could not be installed', error)
       }

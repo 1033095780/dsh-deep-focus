@@ -53,8 +53,11 @@ export function createStatusMap() {
  *    is kept as a harmless bonus source.
  * Returns one disposer; the caller owns it inside its own effect.
  */
-export function installHostEventListeners({ ctx, ring, statusMap }) {
+export function installHostEventListeners({ ctx, ring, statusMap, isRootSession }) {
   const disposers = []
+  // Completion alerts are for the user's own conversation, never for a background
+  // subagent/teammate turn. Defaults to "root" when the predicate is absent.
+  const isRoot = typeof isRootSession === 'function' ? isRootSession : () => true
 
   disposers.push(ctx.on('api-session/status', (sessionId, running) => {
     if (typeof sessionId !== 'string' || sessionId.length === 0) return
@@ -77,6 +80,7 @@ export function installHostEventListeners({ ctx, ring, statusMap }) {
     }
     if (event?.type !== 'turn/end') return
     if (event.data?.reason?.kind !== 'completed') return
+    if (!isRoot(session?.id)) return
     ring.emit(EVENT.taskCompleted, {
       source: 'turn',
       sessionId: session?.id ?? null,

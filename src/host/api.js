@@ -147,9 +147,11 @@ export function createApi({
   }
 
   /**
-   * Recover a running flag missed while the plugin was reloading mid-turn.
-   * The durable session log is authoritative for "turn open"; only upgrades are
-   * applied here so a live status event is never downgraded by a stale read.
+   * Reconcile the event-derived running flag with the durable turn log, in both
+   * directions: repair a flag missed during a reload mid-turn, and drop a stale
+   * "running" after the turn ended (so the one-conversation mode never grays the
+   * sidebar on a finished conversation). The event source still owns upgrades
+   * between polls; this only corrects a provable mismatch and is fully guarded.
    */
   function reconcileRunning(sessions) {
     if (typeof getSessions !== 'function') return
@@ -162,7 +164,6 @@ export function createApi({
     if (store === null || store === undefined || typeof store.get !== 'function') return
     if (typeof agents.turnBoundaryOf !== 'function') return
     for (const session of sessions) {
-      if (session.running) continue
       let live
       try {
         live = store.get(session.id)
@@ -172,9 +173,13 @@ export function createApi({
       if (live === undefined || live === null) continue
       try {
         const boundary = agents.turnBoundaryOf(live)
-        if (boundary !== null && boundary !== undefined && boundary.openTurnStartSeq !== null) {
+        const openTurn = boundary !== null && boundary !== undefined && boundary.openTurnStartSeq !== null
+        if (openTurn && !session.running) {
           statusMap.set(session.id, true)
           session.running = true
+        } else if (!openTurn && session.running) {
+          statusMap.set(session.id, false)
+          session.running = false
         }
       } catch {
         // A session without a readable log boundary keeps the event-derived value.

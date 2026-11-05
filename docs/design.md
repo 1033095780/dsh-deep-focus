@@ -65,6 +65,7 @@ never accumulate. One aggregate line per minute: `{ t, activeMs, apps: { key: ms
 | `limits.dailyExtendLimit` | 0 | extensions per day; `0` = unlimited |
 | `usage.autoPauseSeconds` | 60 | idle auto-rest threshold; `0` = off |
 | `assistant.enabled` | true | false = statistics only, no enforcement |
+| `assistant.soloSession` | true | one-conversation pinning (auto-jump + gray + non-clickable); exposed as the eighth UI switch together with `hideOtherSessions` |
 
 - **Continuous cap:** reaching it starts a rest (`resting`, `restUntil`,
   `rest-started`, continuous counter reset). The rest ends only when its time
@@ -111,14 +112,17 @@ running}] (root conversations only), solo:{active, sessions}, events }`. Events:
 `task-completed, paused, resumed, rest-due, rest-started, rest-finished,
 daily-locked, extended, assistant-off, assistant-on`. Building the snapshot
 re-evaluates limits first; missed running flags are reconciled from the durable
-session log.
+session log. `task-completed` is emitted only for a **root conversation's** turn
+end (`turn/end` completed); subagent/teammate sessions are filtered out by an
+`isRootSession` predicate, so background work never rings the chime. Goal
+completions still emit it (goals belong to root sessions).
 
 ## Browser half
 
 | Slot | Id | Content |
 | --- | --- | --- |
 | `sidebar.panellist` | `focus-assistant` | assistant entry below Plugins |
-| `main` (keyed) | `focus-assistant` | overview, 7-day trend, 7-field settings, enable/pause, right-aligned save row |
+| `main` (keyed) | `focus-assistant` | overview, 7-day trend, 8-field settings (incl. the one-conversation switch), enable/pause, right-aligned save row |
 | `shell.overlay` | `dsh-deep-focus-rings` | display-only two-ring widget (not clickable) |
 | `shell.overlay` | `dsh-deep-focus-pause-gray` | automatic-rest gray layer (`pointer-events: none`) |
 | `shell.overlay` | `dsh-deep-focus-rest` | forced-rest screen using the shared today-usage card + 「跳过休息」 |
@@ -138,9 +142,13 @@ touched. On solo end/outage/cleanup the style and attribute are removed.
 
 Polling is 1 s visible / 5 s hidden with one store and an in-flight guard; after two
 failed polls (or a 404) the client hides its UI, restores sidebar styles and keeps
-retrying. Buttons use inline theme colors; the chime is synthesized Web Audio,
-away-gated and repeats per `alerts.*`; quiet hours and volume apply; audio fails
-silently.
+retrying. Buttons use inline theme colors. The chime is synthesized Web Audio and
+**root-only**: it is ignored unless the `task-completed` event's `sessionId` is one
+of the root conversations in `state.sessions`, it only plays while away
+(unfocused/hidden or idle past `alerts.awayIdleSeconds`), repeats every
+`alerts.repeatIntervalMs` until input, and is hard-capped at ~120 repeats
+(~2 minutes). It stops on `visibilitychange`→visible, window focus, or activity;
+quiet hours/volume apply; audio fails silently.
 
 ## Data files
 

@@ -356,7 +356,11 @@ check('READMEs describe the current product', () => {
     [/gray(?:s|ed)? out|dim(?:s|med)?/i, 'the grayed sidebar rows'],
     [/not clickable|non-clickable|cannot be clicked/i, 'the non-clickable sidebar rows'],
     [/0\s*=\s*unlimited/i, 'unlimited daily extensions (0 = unlimited)'],
-    [/seven (?:common )?(?:settings|controls)|7 (?:common )?(?:settings|controls)/i, 'the seven exposed settings'],
+    [/eight (?:common )?(?:settings|controls)/i, 'the eight exposed settings'],
+    [/assistant\.soloSession|one conversation at a time/i, 'the solo-mode setting switch'],
+    [/root.{0,60}conversation|conversation.{0,60}root/i, 'the root-only chime rule'],
+    [/subagent|teammate/i, 'the subagent/teammate silence rule'],
+    [/(?:2 minutes|~2 min)/i, 'the chime hard cap'],
     [/never blocks?/i, 'the no-tool-blocking guarantee'],
     [/cannot bring DSH to the front/i, 'the capability boundary'],
     [/cannot block other applications/i, 'the capability boundary'],
@@ -381,7 +385,11 @@ check('READMEs describe the current product', () => {
     [/置灰|变灰/, 'the grayed sidebar rows'],
     [/不可点|无法点击|不可点击/, 'the non-clickable sidebar rows'],
     [/0\s*=\s*不限/, 'unlimited daily extensions (0 = unlimited)'],
-    [/(?:7|七) ?(?:个|项)/, 'the seven exposed settings'],
+    [/(?:8|八) ?(?:个|项)/, 'the eight exposed settings'],
+    [/assistant\.soloSession|专注时只允许一个对话/, 'the solo-mode setting switch'],
+    [/root/, 'the root-only chime rule'],
+    [/子代理|队友/, 'the subagent/teammate silence rule'],
+    [/(?:约 )?2 分钟/, 'the chime hard cap'],
     [/绝不(?:拦截|拒绝)/, 'the no-tool-blocking guarantee'],
     [/不能把 DSH|不能把DSH/, 'the capability boundary'],
     [/不能阻止其它应用/, 'the capability boundary'],
@@ -397,6 +405,8 @@ check('READMEs describe the current product', () => {
     /click(?:ing)? the (?:widget|rings)[^.\n]{0,80}(?:pause|gray)/i,
     /点击[^。\n]{0,20}双环[^。\n]{0,20}(?:暂停|变灰)/,
     /countdown chip/i,
+    /seven (?:common )?(?:settings|controls)/i,
+    /7 个设置/,
     /sidebar hiding|hide other conversations/i,
     /enter (?:your |the )?password/i,
     /tool calls are refused/i,
@@ -424,8 +434,8 @@ check('LICENSE and CHANGELOG', () => {
   if (!changelog.includes('## [Unreleased]')) fail('CHANGELOG.md has no [Unreleased] section')
   const entry = new RegExp(`^## \\[${pkg.version.replace(/\./g, '\\.')}\\] - \\d{4}-\\d{2}-\\d{2}$`, 'm')
   if (!entry.test(changelog)) fail(`CHANGELOG.md needs a dated "[${pkg.version}] - YYYY-MM-DD" entry`)
-  if (pkg.version === '0.4.4' && !changelog.includes('## [0.4.4] - 2026-11-05')) {
-    fail('CHANGELOG.md must date the 0.4.4 entry 2026-11-05')
+  if (pkg.version === '0.4.5' && !changelog.includes('## [0.4.5] - 2026-11-05')) {
+    fail('CHANGELOG.md must date the 0.4.5 entry 2026-11-05')
   }
   for (const heading of ['### Added', '### Changed', '### Fixed']) {
     if (!changelog.includes(heading)) fail(`CHANGELOG.md entry is missing "${heading}"`)

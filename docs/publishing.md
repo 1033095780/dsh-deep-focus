@@ -80,10 +80,14 @@ Only needed for registry-based installs (`dsh plugin add dsh-deep-focus`).
 - [ ] Idling for `usage.autoPauseSeconds` grays DSH; input resumes.
 - [ ] Rest screen and daily overlay both show the **same today-usage card**; daily
       overlay has only 「再使用 20 分钟」 and 「跳过」 (skip does not extend).
-- [ ] Settings page exposes exactly the seven common controls; save/discard is
-      right-aligned.
+- [ ] Settings page exposes exactly the eight common controls (including the
+      「专注时只允许一个对话」 switch); save/discard is right-aligned.
 - [ ] One-conversation mode jumps back to the running conversation; other rows are
-      grayed and not clickable; nothing is hidden.
+      grayed and not clickable; nothing is hidden; the switch turns the behavior
+      off and on again.
+- [ ] Away chime: finish a task in your own conversation while unfocused/idle past
+      `alerts.awayIdleSeconds` — it repeats until input, capped at ~2 minutes.
+      Turn the same check on a subagent/teammate turn: it must stay silent.
 - [ ] Disabling the plugin removes all UI immediately and restores the sidebar.
 - [ ] `git clean -xdf`-safe: `node scripts/verify.mjs` passes without installs.
 
@@ -98,7 +102,7 @@ Not committed yet; the READMEs carry a marked placeholder. Capture on DSH
 | `docs/images/rest-gray-dark.png` | automatic-rest gray state |
 | `docs/images/rest-card-dark.png` | rest screen with the shared today-usage card + 「跳过休息」 |
 | `docs/images/daily-overlay-dark.png` | daily overlay on the same card (「再使用 20 分钟」/「跳过」) |
-| `docs/images/assistant-panel-light.png` | assistant panel, 7-field settings and right-aligned save row |
+| `docs/images/assistant-panel-light.png` | assistant panel, 8-field settings (incl. the one-conversation switch) and right-aligned save row |
 
 Save under `docs/images/`, link them from both READMEs, delete the
 `<!-- screenshots:pending -->` marker, and run `node scripts/verify.mjs` (it checks

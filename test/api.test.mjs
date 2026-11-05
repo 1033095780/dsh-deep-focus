@@ -575,6 +575,21 @@ test('/state recovers a running root session missed during a reload', async () =
   assert.deepEqual(state.solo, { active: true, sessions: ['root-1'] })
 })
 
+test('/state downgrades a stale running flag when the durable turn is closed', async () => {
+  const fixture = await makeFixture({
+    running: ['root-2'],
+    sessionsStore: { get: (id) => ({ id }) },
+    turnBoundaryOf: () => ({ openTurnStartSeq: null }),
+  })
+  const state = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+  assert.equal(state.sessions.find((session) => session.id === 'root-2').running, false)
+  assert.deepEqual(state.solo, { active: false, sessions: [] })
+  // The corrected flag is written back so later polls agree as well.
+  assert.equal(fixture.statusMap.isRunning('root-2'), false)
+  const again = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+  assert.deepEqual(again.solo, { active: false, sessions: [] })
+})
+
 test('/state does not invent a running session when its turn is closed', async () => {
   const fixture = await makeFixture({
     sessionsStore: { get: () => ({ id: 'root-1' }) },

@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.4.5] - 2026-11-05
+
+Patch release before the first public GitHub release. Versions 0.1.0–0.4.4 were
+never published.
+
+### Added
+
+- Eighth settings control: **「专注时只允许一个对话」** (`assistant.soloSession`),
+  which turns the one-conversation pinning (auto-jump + grayed, non-clickable
+  sidebar) on or off.
+
+### Fixed
+
+- **Completion chime is root-only**: it now rings only when **your own conversation's**
+  whole turn completes while you are away. Background subagent/teammate turns no
+  longer trigger it. It repeats until keyboard/mouse input and is hard-capped at
+  ~2 minutes, and it stops as soon as the window becomes visible/focused.
+
 ## [0.4.4] - 2026-11-05
 
 First public release. Versions 0.1.0–0.4.3 were never published; 0.4.4 is the

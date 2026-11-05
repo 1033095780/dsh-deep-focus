@@ -13,7 +13,7 @@ English | [简体中文](README.zh.md)
 | Daily cap | Whole-machine active time while DSH runs; at 180 min a gray “today usage” overlay appears. |
 | Continuous cap | 30 continuous minutes → a 10-minute rest; rest time is not counted. |
 | One conversation at a time | The UI jumps back to the running conversation; other session/folder rows are grayed and not clickable (veil fallback), nothing is hidden. |
-| Away chime | Completion chime only while you are away; repeats until you return. |
+| Away chime | Rings only when **your own (root) conversation's** turn finishes while you are away; background subagent/teammate turns stay silent. It repeats until you touch the keyboard/mouse, capped at ~2 minutes. |
 | Shared usage card | Rest and daily screens use the same card: title, today's total, per-app breakdown, actions. |
 | Per-app statistics + assistant panel | Sidebar hub with overview, 7-day trend, short settings and an enable/pause switch. |
 
@@ -47,7 +47,7 @@ No build step and no runtime dependencies. Disabling or uninstalling removes all
 - **Continuous rest:** at `limits.continuousMinutes` (30) a rest of `limits.restMinutes` (10) starts; it ends only when its time elapsed **and** you are back, or via 「跳过休息」. Rest time is excluded from the daily total.
 - **Automatic rest:** after `usage.autoPauseSeconds` (60, `0` = off) without input the assistant enters the same gray rest state; activity resumes it. The rings are display-only; the pause/resume endpoints exist for the API but are not used by the UI.
 - **One conversation at a time:** while a root conversation's agent runs, the UI jumps back to it; other conversation/folder rows are grayed and non-clickable, a visible non-owner conversation is veiled and sending is discouraged. Background agents keep running; no tool call is blocked.
-- **Away chime:** a completion chime plays only when the window is unfocused/hidden or the machine has been idle for `alerts.awayIdleSeconds`; it repeats every `alerts.repeatIntervalMs` until input returns (`alerts.repeatUntilActive`).
+- **Away chime:** it rings only when **your own (root) conversation's whole turn** finishes and you are away — the window is unfocused/hidden or the machine has been idle for `alerts.awayIdleSeconds`. Background subagent/teammate turns never ring. It repeats every `alerts.repeatIntervalMs` until you move the mouse or type, with a hard cap of ~2 minutes (`alerts.repeatUntilActive` disables the repeat).
 - **Assistant off:** statistics only — no rings, rest or overlays.
 
 ## Usage panel
@@ -56,7 +56,7 @@ Sidebar → `专注助手` / “Focus assistant”: today vs. daily cap, continu
 
 ## Configuration
 
-The assistant page exposes exactly seven controls: daily limit, continuous limit, rest length, extension length, auto-rest idle seconds, sound, app tracking. Everything else (extension cap, quiet hours, away/repeat chime, sampling intervals, retention, solo/ring toggles) stays in the settings JSON and plugin API but is **not shown in the UI**.
+The assistant page exposes exactly eight settings: daily limit, continuous limit, rest length, extension length, auto-rest idle seconds, sound, app tracking, and 「专注时只允许一个对话」/“One conversation at a time” (`assistant.soloSession`, which toggles the auto-jump + gray + non-clickable pinning). Everything else (extension cap, quiet hours, away/repeat chime, sampling intervals, retention, ring toggle) stays in the settings JSON and plugin API but is **not shown in the UI**.
 
 <!-- config-table:start -->
 | Setting | Default | Unit | Notes |
