@@ -1,7 +1,7 @@
 /**
- * v4 limits state machine: daily cap, continuous-use forced rest, and a manual
- * pause mode. Both pause and forced rest stop all counting; they end on real
- * activity (idle below the usage threshold), not on a button or a timer alone.
+ * Limits state machine: daily cap, continuous-use forced rest, and a manual pause.
+ * Pause and forced rest both stop all counting; a forced rest ends when the user
+ * comes back, while a manual pause ends only through an explicit resume.
  */
 import { EVENT } from '../shared/contract.js'
 import { localDayKey } from './storage.js'
@@ -9,8 +9,6 @@ import { localDayKey } from './storage.js'
 export const LIMITS_FILE = 'limits.json'
 /** `rest-due` fires when continuous usage reaches this share of the limit. */
 const REST_DUE_RATIO = 0.8
-/** Activity before this grace window belongs to the click that started a pause. */
-export const PAUSE_ACTIVITY_GRACE_MS = 1500
 /** A rest whose time elapsed still finishes eventually if the user never returns. */
 export const REST_ACTIVITY_WAIT_CAP_MS = 30 * 60_000
 /** After a resume, ignore idle samples long enough for the sampler to produce a fresh one. */
@@ -216,13 +214,10 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
     }
   }
 
-  /** Consume one sampler sample: real activity ends a pause or an elapsed rest. */
+  /** Consume one sampler sample: activity ends an elapsed rest, never a pause. */
   function applySample(sample, at = now()) {
     const active = sampleIsActive(sample)
     if (active) lastActivityAt = at
-    if (state.paused && state.pausedAt !== null && at >= state.pausedAt + PAUSE_ACTIVITY_GRACE_MS && active) {
-      resumeInternal(at, 'activity')
-    }
     if (state.resting && state.restUntil !== null && at >= state.restUntil && active) {
       endRest(false, 'elapsed-and-active')
     }

@@ -54,6 +54,26 @@ were never published.
   gray for ~1.5 s" behaviour never took effect in the real page. The cleanup now runs
   only on unmount, so the previous owner survives transient empty running sets.
 
+## [0.4.14] - 2026-11-05
+
+Patch release. Versions 0.1.0–0.4.13 were never published.
+
+### Changed
+
+- **Pause is now a real, blocking lock.** While paused (manual click on the rings or
+  the automatic sustained-idle pause) the DSH content is not interactive: the overlay
+  captures hover/click/focus, so nothing expands or reacts underneath. Resume only via
+  the 「继续计时」 button on the card (or Enter/Space/Escape on it); moving the mouse
+  alone no longer resumes. Clicks on the card background do nothing and the forced
+  rest / daily screens keep the same consistent card behaviour.
+
+### Fixed
+
+- **Ring widget alignment**: the two rings are now equal-width columns with centered
+  values and captions (今日已用 / 连续使用), the continuous mm:ss is clearly readable
+  inside the ring, and the card padding/baseline are balanced. The glass card,
+  top-right position, click-to-pause button and smooth 1 s clock are unchanged.
+
 ## [0.4.10] - 2026-11-05
 
 Patch release. Versions 0.1.0–0.4.9 were never published.

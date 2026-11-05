@@ -81,8 +81,8 @@ window.__ModuleLoader__.load({
         'veil.hint': '专注中：已切回正在运行的会话',
         'veil.aria': '专注模式：当前视图不是正在运行的会话',
         'veil.blocked': '先完成正在运行的任务再发送吧',
-        'pause.hint': '动一下鼠标或键盘继续',
-        'pause.aria': '计时已暂停，动一下鼠标或键盘继续',
+        'pause.resume': '继续计时',
+        'pause.blockedHint': '当前计时已暂停。点击「继续计时」，或按 Enter / 空格 / Esc 继续。',
         'rest.skip': '跳过休息',
         'rest.thenRestart': '已跳过休息，连续计时重新开始',
         'rest.doneWaiting': '休息完成 · 动一下鼠标键盘继续',
@@ -205,8 +205,8 @@ window.__ModuleLoader__.load({
         'veil.hint': 'Focus mode: switched back to the running conversation',
         'veil.aria': 'Focus mode: the current view is not the running conversation',
         'veil.blocked': 'Finish the running task before sending',
-        'pause.hint': 'Move the mouse or press a key to continue',
-        'pause.aria': 'Tracking is paused. Move the mouse or press a key to continue.',
+        'pause.resume': 'Resume timer',
+        'pause.blockedHint': 'Tracking is paused. Click “Resume timer”, or press Enter / Space / Esc to continue.',
         'rest.skip': 'Skip rest',
         'rest.thenRestart': 'Rest skipped — the continuous timer starts over',
         'rest.doneWaiting': 'Rest done · move the mouse or press a key to continue',
@@ -727,24 +727,25 @@ window.__ModuleLoader__.load({
       '.df-rest-body{color:var(--dsw-alias-label-secondary);font-size:14px;margin:0}',
       '.df-rings-layer{position:absolute;top:min(calc(var(--dsh-frame-top-clearance, 0px) + 96px), calc(100% - 150px));right:16px;z-index:75;display:flex;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none}',
       '@media (max-height: 540px){.df-rings-layer{top:calc(var(--dsh-frame-top-clearance, 0px) + 56px)}}',
-      '.df-rings{position:static;display:flex;align-items:center;gap:10px;box-sizing:border-box;padding:9px 11px;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent);backdrop-filter:blur(8px);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:11px;line-height:1.2;cursor:pointer;pointer-events:auto;box-shadow:0 8px 24px color-mix(in srgb, var(--dsw-alias-bg-overlay) 40%, transparent);transition:border-color .16s ease,transform .12s ease,opacity .16s ease}',
+      '.df-rings{position:static;display:flex;align-items:stretch;gap:10px;box-sizing:border-box;min-width:180px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent);backdrop-filter:blur(8px);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:11px;line-height:1.2;cursor:pointer;pointer-events:auto;box-shadow:0 8px 24px color-mix(in srgb, var(--dsw-alias-bg-overlay) 40%, transparent);transition:border-color .16s ease,transform .12s ease,opacity .16s ease}',
       '.df-rings:hover{border-color:var(--dsw-alias-border-l2)}',
       '.df-rings:active{transform:scale(.97)}',
       '.df-rings:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}',
       '.df-rings[data-busy="true"]{opacity:.72;cursor:default}',
-      '.df-ring{position:relative;width:34px;height:34px;flex:0 0 auto}',
-      '.df-ring svg{display:block;width:34px;height:34px;transform:rotate(-90deg)}',
+      '.df-ring-box{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;gap:4px}',
+      '.df-ring{position:relative;width:44px;height:44px;flex:0 0 auto}',
+      '.df-ring svg{display:block;width:44px;height:44px;transform:rotate(-90deg)}',
       '.df-ring-track{stroke:var(--dsw-alias-border-l1);fill:none}',
       '.df-ring-value{fill:none;stroke-linecap:round;transition:stroke-dashoffset .3s ease}',
       '.df-ring[data-kind="daily"] .df-ring-value{stroke:var(--dsw-alias-brand-primary)}',
       '.df-ring[data-kind="continuous"] .df-ring-value{stroke:var(--dsw-alias-state-success-primary)}',
       '.df-ring[data-tone="warn"] .df-ring-value{stroke:var(--dsw-alias-state-warn-primary)}',
       '.df-ring[data-tone="danger"] .df-ring-value{stroke:var(--dsw-alias-state-error-primary)}',
-      '.df-ring-box{position:relative;display:flex;flex-direction:column;align-items:center;gap:2px}',
-      '.df-ring-center{position:absolute;top:0;left:0;width:34px;height:34px;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;line-height:1}',
+      '.df-ring-center{position:absolute;top:0;left:0;width:44px;height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;line-height:1}',
       '.df-ring-number{font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.2px}',
+      '[data-kind="daily"] .df-ring-number{font-size:13px}',
       '.df-ring-unit{font-size:8px;line-height:1;margin-top:1px;color:var(--dsw-alias-label-secondary)}',
-      '.df-ring-caption{font-size:10px;line-height:1.15;color:var(--dsw-alias-label-secondary);white-space:nowrap;letter-spacing:.1px}',
+      '.df-ring-caption{font-size:11px;line-height:1;color:var(--dsw-alias-label-secondary);white-space:nowrap;text-align:center;overflow:hidden;text-overflow:ellipsis;max-width:100%}',
       '.df-veil-layer{position:absolute;inset:0;z-index:116;pointer-events:none}',
       '.df-veil{position:absolute;top:0;right:0;bottom:0;left:0;background:color-mix(in srgb, var(--dsw-alias-bg-overlay) 16%, transparent);backdrop-filter:grayscale(.35);pointer-events:none}',
       '.df-veil-hint{position:absolute;top:calc(var(--dsh-frame-top-clearance, 0px) + 64px);left:50%;transform:translateX(-50%);box-sizing:border-box;max-width:calc(100vw - 32px);padding:6px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:999px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:12px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;box-shadow:0 6px 18px color-mix(in srgb, var(--dsw-alias-bg-overlay) 40%, transparent)}',
@@ -2398,7 +2399,7 @@ window.__ModuleLoader__.load({
       }
 
       function Ring(props) {
-        const radius = 14
+        const radius = 18
         const circumference = 2 * Math.PI * radius
         const ratio = props.limit > 0 ? Math.min(1, Math.max(0, numberOr(props.used, 0) / props.limit)) : 0
         return h(
@@ -2411,12 +2412,12 @@ window.__ModuleLoader__.load({
           },
           h(
             'svg',
-            { viewBox: '0 0 34 34' },
-            h('circle', { className: 'df-ring-track', cx: 17, cy: 17, r: radius, strokeWidth: 3 }),
+            { viewBox: '0 0 44 44' },
+            h('circle', { className: 'df-ring-track', cx: 22, cy: 22, r: radius, strokeWidth: 3 }),
             h('circle', {
               className: 'df-ring-value',
-              cx: 17,
-              cy: 17,
+              cx: 22,
+              cy: 22,
               r: radius,
               strokeWidth: 3,
               strokeDasharray: circumference.toFixed(2),
@@ -2633,7 +2634,7 @@ window.__ModuleLoader__.load({
               },
               h(
                 'span',
-                { className: 'df-ring-box' },
+                { className: 'df-ring-box', 'data-kind': 'daily' },
                 h(Ring, { kind: 'daily', used: dailyUsed, limit: dailyLimit, tone: dailyTone }),
                 h(
                   'span',
@@ -2645,7 +2646,7 @@ window.__ModuleLoader__.load({
               ),
               h(
                 'span',
-                { className: 'df-ring-box' },
+                { className: 'df-ring-box', 'data-kind': 'continuous' },
                 h(Ring, { kind: 'continuous', used: continuousUsed, limit: continuousLimit, tone: continuousTone }),
                 h(
                   'span',
@@ -2780,7 +2781,7 @@ window.__ModuleLoader__.load({
         )
       }
 
-      /** Pause screen: the same TodayUsageCard as rest/daily, with no actions. */
+      /** Blocking pause screen: shared usage card + explicit resume button. */
       function PauseOverlay() {
         useLocaleTick()
         const snapshot = useStore(true)
@@ -2791,9 +2792,12 @@ window.__ModuleLoader__.load({
         const pausedVisible = visiblePair[0]
         const setPausedVisible = visiblePair[1]
         const paused = pausedRaw && pausedVisible
-        const resumingPair = React.useState(false)
-        const resuming = resumingPair[0]
-        const setResuming = resumingPair[1]
+        const busyPair = React.useState(false)
+        const busy = busyPair[0]
+        const setBusy = busyPair[1]
+        const busyRef = React.useRef(false)
+        const cardRef = React.useRef(null)
+        const resumeRef = React.useRef(null)
 
         // Belt and braces: only show the pause card after paused stays true for
         // ~600ms (the Host debounces too); hide immediately when it turns false.
@@ -2813,56 +2817,53 @@ window.__ModuleLoader__.load({
           [pausedRaw],
         )
 
+        // Blocking pause: focus the card and keep focus inside it so the host UI
+        // neither hovers nor receives keyboard focus while paused.
         React.useEffect(
           function () {
             if (!paused) return undefined
-            const pausedAt = toTimestamp(limit && limit.pausedAt)
-            const graceUntil =
-              pausedAt === null ? Date.now() + 1500 : pausedAt + 1500 - numberOr(snapshot.clockOffset, 0)
-            let used = false
-            const isOwnRingTarget = function (target) {
-              let element = target
-              for (let depth = 0; element && depth < 12; depth += 1, element = element.parentElement) {
-                if (
-                  element &&
-                  typeof element.getAttribute === 'function' &&
-                  element.getAttribute('data-dsh-deep-focus-root') === 'rings'
-                ) {
-                  return true
-                }
-              }
-              return false
-            }
-            const onActivity = function (event) {
-              // The ring button itself toggles pause/resume; let that click through.
-              if (event && event.type === 'pointerdown' && isOwnRingTarget(event.target)) return
-              if (used || Date.now() < graceUntil) return
-              used = true
-              setResuming(true)
-              Promise.resolve(store.resume()).catch(function () {}).then(function () {
-                setResuming(false)
-              })
-            }
-            const events = ['mousemove', 'keydown', 'pointerdown']
-            try {
-              events.forEach(function (name) {
-                document.addEventListener(name, onActivity, true)
-              })
-            } catch (error) {
-              /* ignored */
-            }
-            return function () {
+            const card = cardRef.current
+            if (card && typeof card.focus === 'function') {
               try {
-                events.forEach(function (name) {
-                  document.removeEventListener(name, onActivity, true)
-                })
+                card.focus({ preventScroll: true })
               } catch (error) {
                 /* ignored */
               }
             }
+            return undefined
           },
-          [paused, limit && limit.pausedAt],
+          [paused],
         )
+
+        async function resume() {
+          if (busyRef.current) return
+          busyRef.current = true
+          setBusy(true)
+          try {
+            await store.resume()
+          } catch (error) {
+            /* the next poll reconciles */
+          } finally {
+            busyRef.current = false
+            setBusy(false)
+          }
+        }
+
+        function onKeyDown(event) {
+          const key = event && event.key
+          if (!key) return
+          if (key === 'Tab') {
+            event.preventDefault()
+            const target = resumeRef.current
+            if (target && typeof target.focus === 'function') target.focus()
+            return
+          }
+          if (key === 'Escape' || ((key === 'Enter' || key === ' ' || key === 'Spacebar') && event.target !== resumeRef.current)) {
+            event.preventDefault()
+            event.stopPropagation()
+            resume()
+          }
+        }
 
         if (!paused) return null
         const usedMs = Math.max(0, numberOr(limit.dailyUsedMs, numberOr(state.usage && state.usage.activeTodayMs, 0)))
@@ -2875,22 +2876,36 @@ window.__ModuleLoader__.load({
             'div',
             {
               className: 'df-overlay',
-              style: { pointerEvents: 'none', zIndex: 118 },
+              style: { zIndex: 118 },
               'data-df-root': 'pause',
               'data-dsh-deep-focus-root': 'pause',
-              role: 'status',
-              'aria-live': 'polite',
-              'aria-label': t('pause.aria'),
+              role: 'presentation',
+              onKeyDown: onKeyDown,
             },
             h(TodayUsageCard, {
               t: t,
               title: t('pause.title'),
-              reason: resuming ? t('rings.busy') : t('pause.hint'),
+              reason: busy ? t('rings.busy') : t('pause.blockedHint'),
               usedMs: usedMs,
               rows: apps,
-              actions: [],
+              cardRef: cardRef,
               root: 'pause-card',
-              role: 'status',
+              actions: [
+                h(
+                  'button',
+                  {
+                    key: 'resume',
+                    type: 'button',
+                    className: 'df-btn df-btn-primary',
+                    style: primaryButtonStyle(),
+                    disabled: busy,
+                    onClick: resume,
+                    ref: resumeRef,
+                    'data-df-autofocus': '',
+                  },
+                  t('pause.resume'),
+                ),
+              ],
             }),
           ),
         )

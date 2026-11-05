@@ -36,12 +36,12 @@ const REQUIRED_FILES = [
 ]
 const DELETED_FILES = ['PLAN.md', 'PLAN-v0.3.md', 'Agents.md']
 const DOC_SIZE_BUDGET = {
-  'README.md': [4_000, 13_000],
-  'README.zh.md': [4_000, 13_000],
+  'README.md': [4_000, 14_000],
+  'README.zh.md': [4_000, 14_000],
   'docs/design.md': [4_000, 16_000],
   'docs/privacy.md': [2_000, 9_000],
   'docs/publishing.md': [3_000, 10_000],
-  'CHANGELOG.md': [600, 8_000],
+  'CHANGELOG.md': [600, 10_000],
 }
 
 const checks = []
@@ -351,7 +351,12 @@ check('READMEs describe the current product', () => {
     [/(?:value inside|values? inside each ring|number in the middle)/i, 'the in-ring values'],
     [/(?:once per second|every second)/i, 'the smooth continuous clock'],
     [/click(?:ing)? the (?:rings|widget|card)/i, 'click-to-pause on the rings'],
-    [/(?:click again|click it again|second click)/i, 'click-again-to-resume'],
+    [/(?:continue|继续计时)/i, 'the explicit Continue action'],
+    [/Enter\/Space\/Escape|Enter, Space|Enter \/ Space \/ Escape/i, 'the keyboard resume shortcuts'],
+    [/while paused[^.]{0,140}(?:not interactive|no hover|blocking|blocks?)/i, 'the blocking pause lock'],
+    [/moving the mouse alone no longer resumes|mouse movement[^.]{0,60}(?:no longer|does not)/i, 'mouse no longer auto-resumes'],
+    [/two equal columns|equal columns|equal-width columns/i, 'the equal-column ring layout'],
+    [/centered|center(?:ed)? captions/i, 'the centered ring captions'],
     [/sustained idle|two consecutive/i, 'the sustained-idle auto-pause rule'],
     [/held ~1\.5 s|~1\.5 s/i, 'the sidebar gray hysteresis'],
     [/auto(?:matic)?[- ]?(?:rest|pause)|pauses? only after sustained/i, 'the automatic idle rest'],
@@ -394,7 +399,12 @@ check('READMEs describe the current product', () => {
     [/(?:中间显示数值|数值)/, 'the in-ring values'],
     [/(?:每秒平滑走动|每秒走)/, 'the smooth continuous clock'],
     [/点击(?:卡片|双环|小组件)/, 'click-to-pause on the rings'],
-    [/(?:再点一次|再点击|点击.*继续)/, 'click-again-to-resume'],
+    [/继续计时/, 'the explicit Continue action'],
+    [/Enter\/Space\/Escape|Enter、Space、Escape/, 'the keyboard resume shortcuts'],
+    [/不可交互|阻断式/, 'the blocking pause lock'],
+    [/只移动鼠标不再恢复|移动鼠标不再/, 'mouse no longer auto-resumes'],
+    [/两等宽列|等宽.*列/, 'the equal-column ring layout'],
+    [/居中/, 'the centered ring captions'],
     [/持续空闲|连续两个新鲜采样/, 'the sustained-idle auto-pause rule'],
     [/(?:约 )?1\.5 秒/, 'the sidebar gray hysteresis'],
     [/自动休息|自动暂停/, 'the automatic idle rest'],
@@ -464,8 +474,8 @@ check('LICENSE and CHANGELOG', () => {
   if (!changelog.includes('## [Unreleased]')) fail('CHANGELOG.md has no [Unreleased] section')
   const entry = new RegExp(`^## \\[${pkg.version.replace(/\./g, '\\.')}\\] - \\d{4}-\\d{2}-\\d{2}$`, 'm')
   if (!entry.test(changelog)) fail(`CHANGELOG.md needs a dated "[${pkg.version}] - YYYY-MM-DD" entry`)
-  if (pkg.version === '0.4.10' && !changelog.includes('## [0.4.10] - 2026-11-05')) {
-    fail('CHANGELOG.md must date the 0.4.10 entry 2026-11-05')
+  if (pkg.version === '0.4.14' && !changelog.includes('## [0.4.14] - 2026-11-05')) {
+    fail('CHANGELOG.md must date the 0.4.14 entry 2026-11-05')
   }
   for (const heading of ['### Added', '### Changed', '### Fixed']) {
     if (!changelog.includes(heading)) fail(`CHANGELOG.md entry is missing "${heading}"`)
