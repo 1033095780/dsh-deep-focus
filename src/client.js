@@ -1353,20 +1353,13 @@ window.__ModuleLoader__.load({
         }
 
         function isAway(alerts, state) {
+          // Electron's document.hasFocus() is unreliable (often false while the
+          // user is typing in the page), so being "unfocused" is NOT away.
           try {
             if (typeof document !== 'undefined' && document.hidden) return true
-            if (
-              typeof document !== 'undefined' &&
-              typeof document.hasFocus === 'function' &&
-              document.hasFocus() === false
-            ) {
-              return true
-            }
           } catch (error) {
             /* ignored */
           }
-          const limit = state && state.limit ? state.limit : null
-          if (limit && limit.pausedNeedsActivity === true) return true
           const usage = state && state.usage ? state.usage : null
           if (usage && usage.away === true) return true
           const awaySeconds = clampNumber(alerts && alerts.awayIdleSeconds, 10, 3600, 30)
@@ -1477,6 +1470,72 @@ window.__ModuleLoader__.load({
           }
         }
 
+        let idleStreak = 0
+        let firstIdleAt = 0
+        let lastRunningSeen = false
+        let confirmedForIdle = false
+
+        function resetIdleMonitor() {
+          idleStreak = 0
+          firstIdleAt = 0
+          lastRunningSeen = false
+          confirmedForIdle = false
+        }
+
+        /** Root conversations currently running, from the polled Host state only. */
+        function hostRunningCount(state) {
+          if (!state || !Array.isArray(state.sessions)) return null
+          let count = 0
+          for (let index = 0; index < state.sessions.length; index += 1) {
+            const row = state.sessions[index]
+            if (!row || row.running !== true) continue
+            if (row.parentId !== undefined && row.parentId !== null) continue
+            const origin = row.origin
+            if (origin === 'subagent' || origin === 'teammate') continue
+            count += 1
+          }
+          return count
+        }
+
+        /**
+         * Host-authoritative all-done edge: requires TWO consecutive polls (>=1s
+         * apart) reporting no running root conversation after at least one poll
+         * that reported running. A single transient empty poll never rings.
+         */
+        function observeHostState(state, sampledAt) {
+          const at = numberOr(sampledAt, 0)
+          if (at <= 0) return
+          const soloActive = Boolean(state && state.solo && state.solo.active === true)
+          const runningCount = hostRunningCount(state)
+          if (runningCount === null && !state) {
+            resetIdleMonitor()
+            return
+          }
+          const allIdle = runningCount === null ? !soloActive : runningCount === 0 && !soloActive
+          if (!allIdle) {
+            resetIdleMonitor()
+            lastRunningSeen = true
+            return
+          }
+          if (!lastRunningSeen) {
+            // We never saw the Host report a running conversation (e.g. plugin
+            // loaded while idle) -> nothing finished, so never ring.
+            idleStreak = 0
+            firstIdleAt = 0
+            return
+          }
+          if (firstIdleAt === 0) {
+            firstIdleAt = at
+            idleStreak = 1
+            return
+          }
+          idleStreak += 1
+          if (idleStreak >= 2 && at - firstIdleAt >= 900 && !confirmedForIdle) {
+            confirmedForIdle = true
+            triggerAllFinished()
+          }
+        }
+
         /** Ring only when ALL running root conversations just finished, and never while watching. */
         function triggerAllFinished() {
           const state = store.get().state
@@ -1489,7 +1548,12 @@ window.__ModuleLoader__.load({
           startRepeating(alerts || {})
         }
 
-        return { triggerAllFinished: triggerAllFinished, stop: stop }
+        return {
+          triggerAllFinished: triggerAllFinished,
+          observeHostState: observeHostState,
+          resetIdleMonitor: resetIdleMonitor,
+          stop: stop,
+        }
       })()
 
       /* ── Solo session hiding: one style node + animated html attribute ── */
@@ -2003,9 +2067,19 @@ window.__ModuleLoader__.load({
         const stopStore = store.start()
         const stopAway = awayTracker.start()
         soloHider.start()
+        let lastObservedStateAt = 0
         const unsubscribe = store.subscribe(function () {
           soloHider.sync()
           focusGuard.sync()
+          const snap = store.get()
+          if (snap.status !== 'live' || !snap.state) {
+            completionChime.resetIdleMonitor()
+            return
+          }
+          const sampledAt = numberOr(snap.stateUpdatedAt, 0)
+          if (sampledAt <= 0 || sampledAt === lastObservedStateAt) return
+          lastObservedStateAt = sampledAt
+          completionChime.observeHostState(snap.state, sampledAt)
         })
         const unlockAudio = function () {
           audio.unlock()
@@ -2496,25 +2570,6 @@ window.__ModuleLoader__.load({
             }
           },
           [signature, currentSessionId],
-        )
-
-        // Completion chime: fire only when the root running set goes from
-        // non-empty to empty (all conversations finished), never on a partial
-        // completion and never when the user is watching.
-        const previousRunningRef = React.useRef(null)
-        React.useEffect(
-          function () {
-            if (runningIds === null) {
-              previousRunningRef.current = null
-              return
-            }
-            const previous = previousRunningRef.current
-            previousRunningRef.current = runningIds.slice()
-            if (previous !== null && previous.length > 0 && runningIds.length === 0) {
-              completionChime.triggerAllFinished()
-            }
-          },
-          [signature],
         )
 
         const state = snapshot.state

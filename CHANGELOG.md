@@ -21,7 +21,6 @@ Patch release. Versions 0.1.0–0.4.9 were never published.
 
 ## [0.4.12] - 2026-11-05
 
-Patch release. Versions 0.1.0–0.4.9 were never published.
 
 ### Changed
 
@@ -31,7 +30,6 @@ Patch release. Versions 0.1.0–0.4.9 were never published.
 
 ## [0.4.11] - 2026-11-05
 
-Patch release. Versions 0.1.0–0.4.9 were never published.
 
 ### Fixed
 
@@ -51,6 +49,16 @@ were never published.
   gray for ~1.5 s" behaviour never took effect in the real page. The cleanup now runs
   only on unmount, so the previous owner survives transient empty running sets.
 
+## [0.4.19] - 2026-11-05
+
+
+### Fixed
+
+- **The completion chime could ring before every conversation finished, even while you
+  were at the computer.** "All done" now comes from the Host state only (never from
+  client session hooks) and requires two consecutive polls with no running root
+  conversation; the away check no longer uses document.hasFocus() (unreliable in the
+  Electron shell), so being present never rings.
 ## [0.4.18] - 2026-11-05
 
 ### Fixed
@@ -61,7 +69,6 @@ were never published.
 
 ## [0.4.17] - 2026-11-05
 
-Patch release. Versions 0.1.0–0.4.15 were never published.
 
 ### Fixed
 
@@ -72,7 +79,6 @@ Patch release. Versions 0.1.0–0.4.15 were never published.
 
 ## [0.4.16] - 2026-11-05
 
-Patch release. Versions 0.1.0–0.4.14 were never published.
 
 ### Fixed
 
@@ -95,7 +101,6 @@ at all).
 
 ## [0.4.14] - 2026-11-05
 
-Patch release. Versions 0.1.0–0.4.13 were never published.
 
 ### Changed
 
@@ -112,7 +117,6 @@ Patch release. Versions 0.1.0–0.4.13 were never published.
 
 ## [0.4.10] - 2026-11-05
 
-Patch release. Versions 0.1.0–0.4.9 were never published.
 
 ### Added
 
@@ -125,7 +129,6 @@ Patch release. Versions 0.1.0–0.4.9 were never published.
 
 ## [0.4.8] - 2026-11-05
 
-Patch release. Versions 0.1.0–0.4.7 were never published.
 
 ### Changed
 
@@ -145,7 +148,6 @@ Patch release. Versions 0.1.0–0.4.7 were never published.
 
 ## [0.4.7] - 2026-11-05
 
-Patch release. Versions 0.1.0–0.4.6 were never published.
 
 ### Changed
 
@@ -167,7 +169,6 @@ Patch release. Versions 0.1.0–0.4.6 were never published.
 
 ## [0.4.6] - 2026-11-05
 
-Patch release. Versions 0.1.0–0.4.5 were never published.
 
 ### Fixed
 
