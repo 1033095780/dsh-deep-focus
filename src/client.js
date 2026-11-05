@@ -2451,13 +2451,19 @@ window.__ModuleLoader__.load({
         const signature = runningIds === null ? ' ' : runningIds.join('|')
         React.useEffect(
           function () {
+            // No cleanup reset here: the solo controller must be able to remember
+            // the previous owner for its graying hysteresis when this effect
+            // re-runs with an empty running set. Unload teardown calls stop().
             soloHider.setClientRunning(runningIds, currentSessionId)
-            return function () {
-              soloHider.setClientRunning(null, null)
-            }
           },
           [signature, currentSessionId],
         )
+        // Unmount-only reset (dependency changes must keep the hysteresis memory).
+        React.useEffect(function () {
+          return function () {
+            soloHider.setClientRunning(null, null)
+          }
+        }, [])
         React.useEffect(
           function () {
             focusGuard.setContext(currentSessionId, runningIds)

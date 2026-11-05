@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.4.9] - 2026-11-05
+
+Follow-up to 0.4.8 (which was published moments earlier). Versions 0.1.0–0.4.7
+were never published.
+
+### Fixed
+
+- **Sidebar graying could still flicker**: the solo controller's hysteresis memory
+  was cleared by a React effect cleanup on every dependency change, so the "hold the
+  gray for ~1.5 s" behaviour never took effect in the real page. The cleanup now runs
+  only on unmount, so the previous owner survives transient empty running sets.
+
 ## [0.4.8] - 2026-11-05
 
 Patch release. Versions 0.1.0–0.4.7 were never published.
