@@ -32,7 +32,6 @@ const REQUIRED_FILES = [
   'docs/privacy.md',
   'docs/publishing.md',
   '.github/workflows/ci.yml',
-  '.github/workflows/publish.yml',
 ]
 const DELETED_FILES = ['PLAN.md', 'PLAN-v0.3.md', 'Agents.md']
 const DOC_SIZE_BUDGET = {
@@ -385,6 +384,8 @@ check('READMEs describe the current product', () => {
     [/cannot block other applications/i, 'the capability boundary'],
     [/DSH is closed/i, 'the capability boundary'],
     [/e2e\.mjs/, 'the e2e smoke script'],
+    [/not published to npm/i, 'the GitHub-only distribution note'],
+    [/dsh plugin[^\n]*add/i, 'source install instructions'],
     [/node --test/i, 'the test command'],
     [/scripts\/verify\.mjs/, 'the verify command'],
   ]
@@ -433,6 +434,8 @@ check('READMEs describe the current product', () => {
     [/不能阻止其它应用/, 'the capability boundary'],
     [/DSH 关闭时|DSH关闭时/, 'the capability boundary'],
     [/e2e\.mjs/, 'the e2e smoke script'],
+    [/不发布到 npm/, 'the GitHub-only distribution note'],
+    [/dsh plugin[^\n]*add/, 'source install instructions'],
   ]
   for (const [pattern, label] of requiredZh) {
     if (!pattern.test(zh)) fail(`README.zh.md no longer documents ${label}`)
@@ -474,8 +477,8 @@ check('LICENSE and CHANGELOG', () => {
   if (!changelog.includes('## [Unreleased]')) fail('CHANGELOG.md has no [Unreleased] section')
   const entry = new RegExp(`^## \\[${pkg.version.replace(/\./g, '\\.')}\\] - \\d{4}-\\d{2}-\\d{2}$`, 'm')
   if (!entry.test(changelog)) fail(`CHANGELOG.md needs a dated "[${pkg.version}] - YYYY-MM-DD" entry`)
-  if (pkg.version === '0.4.14' && !changelog.includes('## [0.4.14] - 2026-11-05')) {
-    fail('CHANGELOG.md must date the 0.4.14 entry 2026-11-05')
+  if (pkg.version === '0.4.15' && !changelog.includes('## [0.4.15] - 2026-11-05')) {
+    fail('CHANGELOG.md must date the 0.4.15 entry 2026-11-05')
   }
   for (const heading of ['### Added', '### Changed', '### Fixed']) {
     if (!changelog.includes(heading)) fail(`CHANGELOG.md entry is missing "${heading}"`)
@@ -554,17 +557,29 @@ check('markdown links and screenshot placeholder', () => {
   return `${markdown.length} markdown files`
 })
 
-check('workflows use OIDC and Node 20/22', () => {
-  const publish = readText('.github/workflows/publish.yml')
+check('GitHub-only release workflows', () => {
+  const workflowDirectory = abs('.github/workflows')
+  const workflowFiles = readdirSync(workflowDirectory).filter((name) => name.endsWith('.yml') || name.endsWith('.yaml'))
+  if (existsSync(abs('.github/workflows/publish.yml'))) {
+    fail('.github/workflows/publish.yml must not exist (npm publishing was removed)')
+  }
+  for (const file of workflowFiles) {
+    if (/\bnpm\s+publish\b/i.test(readText(`.github/workflows/${file}`))) {
+      fail(`.github/workflows/${file} still runs npm publish`)
+    }
+  }
   const ci = readText('.github/workflows/ci.yml')
-  if (!/^\s+id-token:\s*write\b.*$/m.test(publish)) fail('publish.yml must request id-token: write')
-  if (/NODE_AUTH_TOKEN|NPM_TOKEN|secrets\./i.test(publish)) fail('publish.yml must not use tokens or repository secrets')
-  if (!publish.includes('npm publish')) fail('publish.yml does not run npm publish')
   if (!/node-version:\s*\[\s*20\s*,\s*22\s*\]/.test(ci)) fail('ci.yml must run on Node 20 and 22')
   for (const step of ['node scripts/verify.mjs', 'npm test', '--check']) {
     if (!ci.includes(step)) fail(`ci.yml does not run "${step}"`)
   }
-  return 'OIDC publish, CI 20/22'
+  const publishing = readText('docs/publishing.md')
+  for (const forbidden of [/npm\s+publish/i, /trusted publishing/i, /\bprovenance\b/i, /\bOIDC\b/i]) {
+    if (forbidden.test(publishing)) fail(`docs/publishing.md still describes a removed npm publishing flow (${forbidden})`)
+  }
+  if (!/not published to npm|不发布到 npm/i.test(publishing)) fail('docs/publishing.md must state the project is not published to npm')
+  if (!/dsh plugin[^\n]*add/i.test(publishing)) fail('docs/publishing.md must document installing with dsh plugin add <repo or path>')
+  return `CI on Node 20/22, no npm publishing (${workflowFiles.length} workflow file)`
 })
 
 check('privacy docs match the data collection', () => {

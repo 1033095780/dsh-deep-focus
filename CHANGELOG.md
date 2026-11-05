@@ -54,6 +54,18 @@ were never published.
   gray for ~1.5 s" behaviour never took effect in the real page. The cleanup now runs
   only on unmount, so the previous owner survives transient empty running sets.
 
+## [0.4.15] - 2026-11-05
+
+Patch release. Versions 0.1.0–0.4.14 were never published (there is no npm package
+at all).
+
+### Removed
+
+- **npm publishing**: the Trusted Publishing / provenance workflow
+  (`.github/workflows/publish.yml`) is deleted, so releasing a tag no longer
+  triggers any npm step. Distribution is now GitHub Releases + source only; install
+  with `dsh plugin add <repository URL or local path>`.
+
 ## [0.4.14] - 2026-11-05
 
 Patch release. Versions 0.1.0–0.4.13 were never published.

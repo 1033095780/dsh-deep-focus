@@ -25,10 +25,11 @@
 
 ## 安装
 
-需要 DeepSeek Harness `0.2.2-rc.1`（同时接受 `0.2.0-rc.2` / `0.2.1-rc.2`）与桌面版 DSH。
+需要 DeepSeek Harness `0.2.2-rc.1`（同时接受 `0.2.0-rc.2` / `0.2.1-rc.2`）与桌面版 DSH。本项目**不发布到 npm**——请从仓库或本地目录安装。
 
-1. 打开 **插件** 页，搜索 `dsh-deep-focus`，安装并启用。
-2. 或执行：`dsh plugin --profile desktop add dsh-deep-focus`。
+1. 在插件页添加仓库作为安装源（或使用下面的命令），然后启用该组合包。
+2. `dsh plugin --profile desktop add https://github.com/1033095780/dsh-deep-focus`
+3. 本地目录：`dsh plugin --profile desktop add /absolute/path/to/dsh-deep-focus`。
 
 没有构建步骤，也没有运行时依赖。禁用或卸载会立刻移除所有界面并停止统计。
 
@@ -125,7 +126,7 @@ node scripts/e2e.mjs http://127.0.0.1:<port>/plugins/dsh-deep-focus/api  # 在�
 
 ## 发布
 
-仓库地址：**https://github.com/1033095780/dsh-deep-focus**（[releases](https://github.com/1033095780/dsh-deep-focus/releases)、[issues](https://github.com/1033095780/dsh-deep-focus/issues)）。打 tag → 创建 **GitHub Release** → 附上源码包。npm 发布是可选项——完整清单与 npm Trusted Publishing 配置见 [docs/publishing.md](docs/publishing.md)。
+仓库地址：**https://github.com/1033095780/dsh-deep-focus**（[releases](https://github.com/1033095780/dsh-deep-focus/releases)、[issues](https://github.com/1033095780/dsh-deep-focus/issues)）。分发方式**只有 GitHub**：本项目不发布到 npm。打 tag → 创建 **GitHub Release**（把 CHANGELOG 作为 release notes），用户从仓库或 tag 安装。完整清单与源码安装说明见 [docs/publishing.md](docs/publishing.md)。
 
 ## 许可证
 

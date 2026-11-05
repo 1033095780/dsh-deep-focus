@@ -25,10 +25,11 @@ English | [简体中文](README.zh.md)
 
 ## Install
 
-Requires DeepSeek Harness `0.2.2-rc.1` (also accepts `0.2.0-rc.2` / `0.2.1-rc.2`) and a desktop DSH install.
+Requires DeepSeek Harness `0.2.2-rc.1` (also accepts `0.2.0-rc.2` / `0.2.1-rc.2`) and a desktop DSH install. This project is **not published to npm** — install it from the repository or a local checkout.
 
-1. Open **Plugins**, search `dsh-deep-focus`, install and enable.
-2. Or: `dsh plugin --profile desktop add dsh-deep-focus`.
+1. From the Plugins page, add the repository as a source (or use the CLI below) and enable the bundle.
+2. `dsh plugin --profile desktop add https://github.com/1033095780/dsh-deep-focus`
+3. Local checkout: `dsh plugin --profile desktop add /absolute/path/to/dsh-deep-focus`.
 
 No build step and no runtime dependencies. Disabling or uninstalling removes all UI immediately and stops tracking.
 
@@ -125,7 +126,7 @@ node scripts/e2e.mjs http://127.0.0.1:<port>/plugins/dsh-deep-focus/api  # live 
 
 ## Publishing
 
-Repository: **https://github.com/1033095780/dsh-deep-focus** (releases: [releases](https://github.com/1033095780/dsh-deep-focus/releases), issues: [issues](https://github.com/1033095780/dsh-deep-focus/issues)). Push a tag, create a **GitHub Release**, and attach the source archive. npm publishing is optional — see [docs/publishing.md](docs/publishing.md) for the checklist and npm Trusted Publishing setup.
+Repository: **https://github.com/1033095780/dsh-deep-focus** (releases: [releases](https://github.com/1033095780/dsh-deep-focus/releases), issues: [issues](https://github.com/1033095780/dsh-deep-focus/issues)). Distribution is **GitHub-only**: this project is not published to npm. Push a tag, create a **GitHub Release** with the changelog as release notes, and users install from the repository or tag. See [docs/publishing.md](docs/publishing.md) for the release checklist and source-install instructions.
 
 ## License
 
