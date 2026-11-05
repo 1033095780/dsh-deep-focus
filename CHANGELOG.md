@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.4.11] - 2026-11-05
+
+Patch release. Versions 0.1.0–0.4.9 were never published.
+
+### Fixed
+
+- **Invisible primary buttons in the settings footer.** The host's `brand-primary`
+  token resolves to pure white in the dark theme, so the white label on a white
+  button disappeared. Primary buttons (save settings, use-more-minutes, skip rest,
+  …) now use an explicit blue accent that stays readable in both themes; the toggle
+  switch uses the same accent.
+
 ## [0.4.9] - 2026-11-05
 
 Follow-up to 0.4.8 (which was published moments earlier). Versions 0.1.0–0.4.7

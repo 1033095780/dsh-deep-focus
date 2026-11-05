@@ -714,7 +714,7 @@ window.__ModuleLoader__.load({
       '[data-df-root] .df-btn:hover:not([disabled]){opacity:.85}',
       '[data-df-root] .df-btn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}',
       '[data-df-root] .df-btn[disabled]{opacity:.5;cursor:default}',
-      '[data-df-root] .df-btn-primary{background:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary);font-weight:600}',
+      '[data-df-root] .df-btn-primary{background:#3b82f6;border-color:#3b82f6;color:#ffffff;font-weight:600}',
       '[data-df-root] .df-btn-ghost{background:transparent;border-color:transparent;color:var(--dsw-alias-label-secondary)}',
       '[data-df-root] .df-btn-ghost:hover:not([disabled]){background:var(--dsw-alias-bg-layer-2);opacity:1}',
       '[data-df-root] .df-btn-sm{height:28px;padding:0 10px;font-size:12px}',
@@ -2073,8 +2073,11 @@ window.__ModuleLoader__.load({
 
       function primaryButtonStyle(extra) {
         return Object.assign({}, BUTTON_BASE_STYLE, {
-          background: 'var(--dsw-alias-brand-primary)',
-          borderColor: 'var(--dsw-alias-brand-primary)',
+          // The host brand token can be pure white in the dark theme, which made
+          // white text on a white button invisible. Use an explicit accent that
+          // stays readable in both themes.
+          background: '#3b82f6',
+          borderColor: '#3b82f6',
           color: '#ffffff',
           fontWeight: 600,
         }, extra || {})
@@ -2098,7 +2101,7 @@ window.__ModuleLoader__.load({
           height: '22px',
           padding: 0,
           borderRadius: '999px',
-          background: checked ? 'var(--dsw-alias-brand-primary)' : 'var(--dsw-alias-bg-layer-2)',
+          background: checked ? '#3b82f6' : 'var(--dsw-alias-bg-layer-2)',
           borderColor: checked ? 'var(--dsw-alias-brand-primary)' : 'var(--dsw-alias-border-l1)',
           color: 'var(--dsw-alias-label-primary)',
         })
