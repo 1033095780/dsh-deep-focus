@@ -54,6 +54,20 @@ were never published.
   gray for ~1.5 s" behaviour never took effect in the real page. The cleanup now runs
   only on unmount, so the previous owner survives transient empty running sets.
 
+## [0.4.16] - 2026-11-05
+
+Patch release. Versions 0.1.0–0.4.14 were never published.
+
+### Fixed
+
+- **Ring widget values escaped the rings.** The centred value overlay was absolutely
+  positioned against the wrong ancestor, so the numbers piled up at the card's
+  top-left. It is now positioned relative to its own ring column: numbers sit inside
+  the 44 px rings, the unit (分) sits under the number, and both captions
+  (今日已用 / 连续使用) share a baseline. Verified by rendering the exact CSS/markup
+  with a headless browser (see `docs/images/rings-widget.png`) including three-digit
+  today values and hour-scale continuous values.
+
 ## [0.4.15] - 2026-11-05
 
 Patch release. Versions 0.1.0–0.4.14 were never published (there is no npm package
