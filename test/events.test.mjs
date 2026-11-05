@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createEventRing, createStatusMap, installHostEventListeners } from '../src/host/events.js'
-import { normalizeSettings } from '../src/host/settings.js'
 import { EVENT } from '../src/shared/contract.js'
 
 test('the event ring increments, copies and caps', () => {
@@ -51,23 +50,20 @@ function makeHarness() {
       return () => handlers.delete(name)
     },
   }
-  let settingsValue = normalizeSettings({ alerts: { taskDone: true } })
-  const settings = { get: () => settingsValue }
   let clock = 0
   const ring = createEventRing({ now: () => clock })
   const statusMap = createStatusMap()
-  const dispose = installHostEventListeners({ ctx, ring, settings, statusMap })
+  const dispose = installHostEventListeners({ ctx, ring, statusMap })
   return {
     handlers,
     ring,
     statusMap,
     dispose,
-    setSettings(patch) { settingsValue = normalizeSettings(patch) },
     lastEvent: () => ring.list().at(-1),
   }
 }
 
-test('turn completion becomes a task-completed alert when enabled', () => {
+test('turn completion becomes a task-completed alert', () => {
   const harness = makeHarness()
   const session = { id: 'session-x' }
   harness.handlers.get('session/event')(session, { type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } })
@@ -77,12 +73,9 @@ test('turn completion becomes a task-completed alert when enabled', () => {
 
   harness.handlers.get('session/event')(session, { type: 'turn/end', data: { turn: 3, reason: { kind: 'aborted' } } })
   assert.equal(harness.ring.list().length, 1)
-  harness.setSettings({ alerts: { taskDone: false } })
-  harness.handlers.get('session/event')(session, { type: 'turn/end', data: { turn: 4, reason: { kind: 'completed' } } })
-  assert.equal(harness.ring.list().length, 1)
 })
 
-test('goal completion becomes a task-completed alert when enabled', () => {
+test('goal completion becomes a task-completed alert', () => {
   const harness = makeHarness()
   harness.handlers.get('goal/changed')({
     agent: { id: 'session-y' },
@@ -91,13 +84,6 @@ test('goal completion becomes a task-completed alert when enabled', () => {
   const event = harness.lastEvent()
   assert.equal(event.kind, EVENT.taskCompleted)
   assert.deepEqual(event.meta, { source: 'goal', sessionId: 'session-y', task: 'ship it' })
-
-  harness.setSettings({ alerts: { taskDone: false } })
-  harness.handlers.get('goal/changed')({
-    agent: { id: 'session-z' },
-    change: { operation: 'complete', goal: { objective: 'nope' } },
-  })
-  assert.equal(harness.ring.list().length, 1)
 })
 
 test('api-session/status is the primary running-state source', () => {

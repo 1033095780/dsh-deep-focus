@@ -1,36 +1,40 @@
 # Design
 
-Architecture of `dsh-deep-focus` v0.3 for DeepSeek Harness. This document
+Architecture of `dsh-deep-focus` v0.4 for DeepSeek Harness. This document
 describes the code in this repository; when behavior and prose disagree, the code
 wins.
 
 ## Scope
 
-v0.3 turns the plugin into a **focus assistant** for DSH. It does four things:
+v0.4 is a UX pass over the v0.3 focus assistant. The product rules are the same —
+daily cap, continuous cap with a forced rest, per-app statistics, one conversation
+at a time, pure plugin — with these additions:
 
-1. **Daily usage cap** — whole-machine active time while DSH runs, capped at
-   `limits.dailyMinutes` (default 180 = 3 hours). When reached, DSH shows a gray
-   overlay with today's total, per-app breakdown and a “Use 20 more minutes”
-   extension action.
-2. **Continuous-use cap → forced rest** — after `limits.continuousMinutes`
-   (default 30) of continuous activity the assistant immediately starts a rest of
-   `limits.restMinutes` (default 10); rest time is excluded from every counter.
-3. **Focus assistant hub** — a sidebar panel below the Plugins row with the usage
-   overview (today, per-app, 7-day trend), the settings form, and the
-   enable/pause switch; a countdown chip sits in the DSH window's top-right.
-4. **One conversation at a time (UI only, default on)** — while any root
-   conversation's agent is running, the sidebar temporarily hides the other
-   folders/conversations and restores them when it finishes.
+1. **Floating two-ring widget** in the top-right of the DSH window (today's usage,
+   continuous use), replacing the old header countdown chip.
+2. **Pause mode** — clicking the rings stops counting and grays the DSH window; the
+   pause ends only on real keyboard/mouse activity (with a short grace period so the
+   initiating click does not count).
+3. **Activity-gated rest** — a forced rest finishes only when its timer elapsed
+   **and** the user is back; while away it keeps waiting (capped at 30 extra
+   minutes), and 「跳过休息」 skips it.
+4. **Daily overlay skip** — the gray overlay keeps 「再使用 20 分钟」 and adds
+   「跳过」.
+5. **Away-only repeating completion chime** — silent while you are actively
+   watching; when away it repeats at `alerts.repeatIntervalMs` until input returns.
+6. **Smooth solo hiding** — one-conversation mode now hides conversations **and**
+   workspace folders with a fade animation, and the old banner text is gone.
 
 **Pure-plugin boundary (by design, not a bug):** the plugin runs inside DSH and
 only enforces inside DSH. It cannot bring DSH to the front, cannot block other
 applications, cannot count usage while DSH is closed, and cannot draw outside the
 DSH window. A companion desktop guard is a possible later phase and is not part of
-v0.3.
+v0.4.
 
 Explicitly removed from earlier versions: the pomodoro timer (work/break blocks,
-focus pill, 25/5 presets, focus routes/events, `src/host/focus.js`), tool blocking,
-passwords, and the separate “Usage” sidebar entry.
+focus pill, presets, focus routes/events, `src/host/focus.js`), tool blocking,
+passwords, the separate “Usage” sidebar entry, the header countdown chip and the
+solo banner.
 
 ## Repository layout
 
@@ -38,21 +42,21 @@ passwords, and the separate “Usage” sidebar entry.
 | --- | --- |
 | `src/index.js` | Host plugin entry: wiring, timers, startup recovery, cleanup. |
 | `src/host/storage.js` | Data directory, atomic JSON writes, append-only JSONL, per-file serialization, retention pruning. |
-| `src/host/settings.js` | v3 settings merge/clamp; discards pre-v3 settings files. |
+| `src/host/settings.js` | v4 settings merge/clamp; discards pre-v4 settings files. |
 | `src/host/sampler.js` | Platform sampler: idle time **and** the foreground application. |
 | `src/host/win32-idle.ps1` | Windows long-lived probe: idle ms + foreground pid/process name (ASCII only). |
 | `src/host/apps.js` | Raw executable name → stable key + friendly display name. |
-| `src/host/tracker.js` | Folds samples into total active time and per-app milliseconds; suppresses accumulation while resting. |
-| `src/host/limits.js` | Daily cap, continuous cap, forced rest, extension windows, daily rollover. |
-| `src/host/events.js` | Event ring buffer, agent status map, root-session tracking, completion alerts. |
+| `src/host/tracker.js` | Folds samples into total active time and per-app milliseconds; suppresses accumulation while paused or resting. |
+| `src/host/limits.js` | Daily cap, continuous cap, forced rest (activity-gated), pause mode, extension windows, daily rollover. |
+| `src/host/events.js` | Event ring buffer, agent status map, completion alerts. |
 | `src/host/api.js` | Same-origin JSON HTTP API under `/plugins/dsh-deep-focus/api`. |
-| `src/client.js` | Self-contained browser half: assistant panel, countdown chip, overlays, solo hiding, settings, toasts. |
-| `src/shared/contract.js` | Wire contract: routes, events, `DEFAULT_SETTINGS` (version 3). |
+| `src/client.js` | Self-contained browser half: assistant panel, floating rings, pause/rest/daily overlays, animated solo hiding, toasts. |
+| `src/shared/contract.js` | Wire contract: routes, events, `DEFAULT_SETTINGS` (version 4). |
 | `src/locale/{en,zh}.json` | Plugin metadata (`meta.title`, `meta.description`). |
 | `src/icon.svg` | Plugin list icon. |
 | `cordis.patch.yml` | Bundle patch that inserts the `dsh-deep-focus` Host row. |
 
-There is no focus/pomodoro module in v0.3, and no tool-guard module.
+There is no focus/pomodoro module, no tool-guard module, and no solo banner.
 
 No build step: the Host half is plain ESM and the browser half is a single
 CommonJS-style factory file loaded by `window.__ModuleLoader__`.
@@ -61,23 +65,26 @@ CommonJS-style factory file loaded by `window.__ModuleLoader__`.
 
 ### Lifecycle
 
-`src/index.js` exports `name`, `inject` (only the services it uses — `agents` and
-`webServer`), and `apply(ctx)`. `apply` creates the pieces in dependency order,
-registers listeners/timers/routes inside the plugin effect, and returns cleanups so
-a disable/HMR unload leaves nothing running:
+`src/index.js` exports `name`, `inject` (only `agents` and `webServer`), and
+`apply(ctx)`. `apply` creates the pieces in dependency order, registers
+listeners/timers/routes inside the plugin effect, and returns cleanups so a
+disable/HMR unload leaves nothing running:
 
 1. `createStorage()` → data directory (`$DSH_HOME/plugin-data/dsh-deep-focus`).
-2. `createSettingsStore({ storage }).load()` → v3 settings.
+2. `createSettingsStore({ storage }).load()` → v4 settings.
 3. `createSampler(...)` → idle + foreground-app samples.
 4. `createTracker({ storage, settings })` → active totals and per-app buckets.
-5. `createLimits({ settings, tracker, ring })` → daily/continuous/rest state.
+5. `createLimits({ settings, tracker, ring })` → daily/continuous/rest/pause state.
 6. `createEventRing()`, `createStatusMap()`, event listeners.
 7. `registerApi({ ctx, api })` → web routes (no tool guard registration).
-8. Timers: a 1 s limits/enforcement tick (finishes an elapsed rest and re-checks
-   the caps even when the sampler stalls), a usage-flush check every 10 s (the
-   tracker writes an aggregate at most once a minute), and daily retention
-   pruning.
+8. Timers: a 1 s limits tick and a 10 s usage-flush check (the tracker writes an
+   aggregate at most once a minute), plus daily retention pruning.
 9. Startup recovery: load `limits.json`, prune old usage, resume sampling.
+
+The sampler callback resolves state first: `limits.evaluate()` → `limits.applySample()`
+(which can end a pause or an elapsed rest) → `tracker.sample(sample, at, { counted })`
+→ `limits.evaluate()` again, so a sample that reaches the continuous cap starts the
+rest immediately and paused/resting periods never add active or app time.
 
 If an optional service is missing, the plugin degrades (for example no web routes
 when `webServer` is unavailable) instead of throwing.
@@ -111,18 +118,18 @@ when `webServer` is unavailable) instead of throwing.
 - The tracker counts time only when the idle time is below
   `usage.idleThresholdSeconds`; that time is added to the day total and to the
   current app's bucket. Idle samples end the continuous-work run.
-- **Rest suppression:** while `limits` reports a running rest, samples contribute
-  neither to the daily total, the continuous counter, nor the app buckets, so rest
-  time is excluded from usage as promised.
+- **Pause/rest suppression:** while `limits` reports a running rest or an active
+  pause, samples contribute neither to the daily total, the continuous counter, nor
+  the app buckets (`tracker.sample(..., { counted: false })`).
 - When `usage.trackApps` is false only the total active time is kept.
 - Aggregates are flushed roughly every 60 s to `usage/YYYY-MM-DD.jsonl`, one line
   per flush: `{ t, activeMs, apps: { exeKey: ms } }` (deltas since the previous
   flush), so a day stays around 288 lines. Retention pruning removes old day files.
 
-### Limits and forced rest
+### Limits, pause and forced rest
 
 `src/host/limits.js` is a small state machine evaluated on every sample and by the
-limiter tick:
+1 s tick:
 
 | Field | Meaning |
 | --- | --- |
@@ -130,29 +137,42 @@ limiter tick:
 | `limits.dailyMinutes` | Daily whole-machine active cap; `0` = no cap. |
 | `limits.continuousMinutes` | Continuous-use cap; `0` = no forced rest. |
 | `limits.restMinutes` | Forced-rest length (minimum 1 minute). |
-| `limits.extendMinutes` | Time granted by one “Use 20 more minutes” click. |
+| `limits.extendMinutes` | Time granted by one 「再使用 20 分钟」 click. |
 | `limits.dailyExtendLimit` | Extensions per day; `0` = no extensions. |
 
-- Active time while not resting adds to both `usage.activeTodayMs` and
-  `usage.continuousMs`.
-- **Continuous cap:** when `continuousMs >= continuousMinutes`, the assistant
+- **Pause mode:** `POST /pause` sets `paused`/`pausedAt`, stops counting, and emits
+  `paused`. The pause resumes only on a sampler sample that is active (idle below
+  `usage.idleThresholdSeconds`) and arrives at least 1.5 s after `pausedAt` — so the
+  click that entered pause is ignored. `POST /resume` also force-resumes; `paused`
+  and `pausedNeedsActivity` are exposed in `/state`. A forced rest supersedes a
+  pause (rest wins and clears it).
+- **Continuous cap:** when continuous use reaches `continuousMinutes`, the assistant
   immediately enters a rest (`resting: true`, `restUntil`, event `rest-started`),
-  resets the continuous counter, and the tracker suppresses further accumulation
-  until the rest ends (`rest-finished`). A `rest-due` event fires once at 80 % of
-  the continuous limit as an early warning.
+  resets the continuous counter, and the tracker suppresses accumulation. A
+  `rest-due` event fires once at 80 % as an early warning.
+- **Activity-gated rest:** a rest finishes only when `restUntil` has elapsed **and**
+  real activity was seen after `restUntil` (`rest-finished` with
+  `reason: "elapsed-and-active"`). While the machine stays idle the rest keeps
+  waiting and `restNeedsActivity: true` is exposed; a 30-minute cap after
+  `restUntil` ends it anyway so it can never get stuck. Rest time is excluded from
+  every counter.
+- **Skip rest:** `POST /rest/finish` ends a running rest immediately with
+  `rest-finished` `{ early: true, reason: "skipped" }` (409 `not-resting`).
 - **Daily cap:** when `activeTodayMs >= dailyMinutes` and no extension grace window
   is active, `dailyLocked` becomes true and a `daily-locked` event fires once. The
-  client shows the gray overlay.
+  daily cap is evaluated before the continuous cap, so a lock and a forced rest do
+  not stack.
 - **Extension:** `POST /extend` sets `extendedUntil = now + extendMinutes`,
-  increments `extendCountToday`, clears `dailyLocked`, and emits `extended`. It
-  refuses with `not-locked` or `extend-limit-reached`.
+  increments `extendCountToday`, clears `dailyLocked`, and emits `extended`; it
+  refuses with `not-locked` / `extend-limit-reached`. The overlay's 「跳过」 is a
+  client-side per-day acknowledgment, not an endpoint.
 - **Rollover:** at local midnight the daily lock, extension window and extension
-  count reset; the rest state is transient and simply finishes.
-- **Switch changes:** turning the assistant off ends any rest, clears the daily
-  lock, and emits `assistant-off`; turning it on emits `assistant-on` and
+  count reset.
+- **Switch changes:** turning the assistant off ends any rest, clears the daily lock
+  and pause, and emits `assistant-off`; turning it on emits `assistant-on` and
   re-evaluates.
-- `limits.json` stores the transient lock/rest state so a restart does not lose a
-  running rest or today's extension count.
+- `limits.json` stores the transient lock/rest/pause state so a restart does not
+  lose a running rest, an active pause, or today's extension count.
 
 ### Event feed and alerts
 
@@ -162,24 +182,20 @@ tracks the live agent status map (used by the API's root-session list for
 `sessions`/`solo`) and listens for:
 
 - `agent/status`, `agent/disposed` → running-session map.
-- `session/event` `turn/end` (`reason.kind === 'completed'`) → `task-completed`
-  when `alerts.taskDone` is on (the only remaining toast/chime alert).
-- `goal/changed` with `operation === 'complete'` → `task-completed` when
-  `alerts.taskDone` is on.
+- `session/event` `turn/end` (`reason.kind === 'completed'`) → `task-completed`.
+- `goal/changed` with `operation === 'complete'` → `task-completed`.
 
-The API computes `sessions` from `ctx.agents.roots()` (root conversations only) and
-cross-references the status map; subagent and teammate sessions never appear.
-
-The event kinds in the contract are `rest-due`, `rest-started`, `rest-finished`,
-`daily-locked`, `extended`, `assistant-off`, `assistant-on` (plus the
-`task-completed` alert).
+The browser decides whether the completion chime actually sounds (only when away).
+The event kinds are `task-completed`, `paused`, `resumed`, `rest-due`,
+`rest-started`, `rest-finished`, `daily-locked`, `extended`, `assistant-off` and
+`assistant-on`.
 
 ### Data files
 
 | File | Contents |
 | --- | --- |
-| `settings.json` | Normalized v3 runtime settings (mode `0600`). No secrets. |
-| `limits.json` | Daily lock, extension window/count, rest state (transient). |
+| `settings.json` | Normalized v4 runtime settings (mode `0600`). No secrets. |
+| `limits.json` | Daily lock, extension window/count, rest state and pause state (transient). |
 | `usage/YYYY-MM-DD.jsonl` | One aggregate line per flush: `{ t, activeMs, apps }`. |
 
 Writes are atomic (temporary file + rename) and serialized per file. Unknown or
@@ -191,12 +207,16 @@ than `usage.retentionDays` are pruned for the `usage` subdirectory (and any lega
 
 - Runtime settings live in `settings.json`, **not** in the Cordis Config schema, so
   changing them never reloads or restarts the plugin.
-- v3 groups: `limits`, `assistant`, `alerts`, `usage`.
+- v4 groups: `limits`, `assistant`, `alerts`, `usage`.
+  - `assistant.showRings` replaced `assistant.showCountdown`.
+  - `alerts` gained `repeatUntilActive` (bool), `repeatIntervalMs` (clamped
+    500–10000) and `awayIdleSeconds` (clamped 10–3600); `alerts.taskDone` was
+    removed (the completion chime is governed by `alerts.sound` and the away/repeat
+    settings).
 - `normalizeSettings()` deep-merges over `DEFAULT_SETTINGS`, drops unknown
   sections/keys, and clamps numbers/booleans and quiet hours.
-- **Migration:** a stored file whose `version` is not 3 (v1/v2) is discarded and
-  replaced with v3 defaults — a stale 480-minute cap from an older schema can never
-  re-enable a rule the user did not choose.
+- **Migration:** a stored file whose `version` is not 4 (v1/v2/v3) is discarded and
+  replaced with v4 defaults.
 
 ## HTTP API
 
@@ -204,13 +224,15 @@ Base: `/plugins/dsh-deep-focus/api` (same origin as the DSH Web GUI).
 
 | Method | Route | Body | Result |
 | --- | --- | --- | --- |
-| GET | `/state` | — | Full v3 state snapshot (below). |
-| GET | `/apps?days=7` | — | Per-app usage for the last N days (1–31). |
-| GET | `/settings` | — | Current v3 settings. |
+| GET | `/state` | — | Full v4 state snapshot (below). |
+| GET | `/apps?days=7` | — | Per-app usage for the last N days (1–31, today live). |
+| GET | `/settings` | — | Current v4 settings. |
 | POST | `/settings` | `{ settings?: partial }` | Normalized settings; unknown sections dropped. |
 | POST | `/assistant` | `{ enabled: boolean }` | Toggles enforcement; `{ ok, state }`. |
-| POST | `/rest/start` | `{}` | Starts/refreshes a rest; 409 `already-resting` / `assistant-off`. |
-| POST | `/rest/finish` | `{}` | Ends a rest early (continuous quota already reset); 409 `not-resting`. |
+| POST | `/pause` | `{}` | Stops counting and grays; 409 `already-paused` / `already-resting` / `assistant-off`. |
+| POST | `/resume` | `{}` | Force-resumes a pause; 409 `not-paused`. |
+| POST | `/rest/start` | `{}` | Starts a manual rest; 409 `already-resting` / `assistant-off`. |
+| POST | `/rest/finish` | `{}` | Skips the rest (`early: true`, reason `skipped`); 409 `not-resting`. |
 | POST | `/extend` | `{}` | Grants the extension window; 409 `not-locked` / `extend-limit-reached`. |
 
 `GET /state` returns exactly:
@@ -219,16 +241,19 @@ Base: `/plugins/dsh-deep-focus/api` (same origin as the DSH Web GUI).
 {
   "now": 0,
   "usage": { "activeTodayMs": 0, "continuousMs": 0,
-             "sampling": "ok", "appsSampling": "ok", "dayKey": "" },
+             "sampling": "ok", "appsSampling": "ok", "dayKey": "",
+             "idleMs": null, "away": false },
   "appsToday": { "totalMs": 0, "top": [{ "id": "chrome", "name": "浏览器", "ms": 0 }] },
   "limit": {
     "assistantEnabled": true,
     "dailyLimitMs": 10800000, "dailyUsedMs": 0, "dailyLocked": false,
     "extendedUntil": null, "extendCountToday": 0, "extendLimit": 2,
     "continuousLimitMs": 1800000, "continuousUsedMs": 0,
-    "restDue": false, "resting": false, "restUntil": null, "restRemainingMs": 0
+    "restDue": false, "resting": false, "restUntil": null, "restRemainingMs": 0,
+    "restNeedsActivity": false,
+    "paused": false, "pausedAt": null, "pausedNeedsActivity": false
   },
-  "settings": { /* v3 settings */ },
+  "settings": { /* v4 settings */ },
   "sessions": [{ "id": "...", "running": true }],
   "solo": { "active": false, "sessions": [] },
   "events": [{ "seq": 0, "kind": "rest-started", "at": 0, "meta": {} }]
@@ -237,9 +262,14 @@ Base: `/plugins/dsh-deep-focus/api` (same origin as the DSH Web GUI).
 
 `sessions` lists **root conversations only** (subagent/teammate sessions never
 appear); `solo.active` is true when at least one root conversation has a running
-agent, and `solo.sessions` lists their ids.
+agent, and `solo.sessions` lists their ids. `usage.idleMs` is the last sampled idle
+time and `usage.away` applies `alerts.awayIdleSeconds` to it, so the browser can
+decide whether the completion chime should sound. When the plugin reloaded
+mid-turn, `buildState()` reconciles a missed "running" flag from the durable
+session log's open-turn boundary (upgrades only; a live status event is never
+downgraded).
 
-`GET /apps?days=7` is unchanged from v0.2:
+`GET /apps?days=7` is unchanged from v0.x:
 
 ```jsonc
 {
@@ -253,8 +283,8 @@ agent, and `solo.sessions` lists their ids.
 ```
 
 `top` is today's apps sorted descending, capped at 8 rows. Building the state
-snapshot re-evaluates the limits first, so a poll between ticks still finishes an
-elapsed rest and observes a newly reached cap. Responses are `cache-control:
+snapshot re-evaluates the limits first, so a poll between ticks still ends an
+elapsed rest or observes a newly reached cap. Responses are `cache-control:
 no-store`. Every route passes a trust check: `sec-fetch-site: cross-site` is
 refused, a present `Origin` must match the request authority (loopback ports may be
 omitted), and absent `Origin`/`Host` headers are allowed for non-browser callers.
@@ -281,39 +311,62 @@ Slot registrations:
 | Slot | Id | Contents |
 | --- | --- | --- |
 | `sidebar.panellist` | `focus-assistant` | 「专注助手」/“Focus assistant” entry below the Plugins row. |
-| `main` (keyed) | `focus-assistant` | Assistant page: overview (daily/continuous progress, rest status, per-app today, 7-day trend), settings form, enable/pause switch. |
-| `conversation.session.header.utilities` | `dsh-deep-focus-countdown` | Top-right countdown chip: continuous remaining, rest remaining, or “today's cap used up”; hidden when the assistant is off. |
-| `shell.overlay` | `dsh-deep-focus-daily-lock` | Gray daily overlay: today's total, per-app rows, “Use 20 more minutes” (with remaining extensions), quiet “That's it for today” (a per-day `localStorage` acknowledgment, no data). |
-| `shell.overlay` | `dsh-deep-focus-rest` | Full-frame forced-rest screen with the rest countdown and breathing copy; no dismiss button — it disappears when the Host finishes the rest. |
-| `shell.overlay` | `dsh-deep-focus-solo-banner` | Soft banner while solo mode is hiding the sidebar. |
-| `shell.overlay` | `dsh-deep-focus-toasts` | Completion / rest / extension toasts. |
+| `main` (keyed) | `focus-assistant` | Assistant page: overview (daily/continuous progress, pause/rest status, per-app today, 7-day trend), settings form, enable/pause switch. |
+| `shell.overlay` | `dsh-deep-focus-rings` | Floating top-right glass card with two SVG rings (today vs. daily cap, continuous vs. continuous cap) and a small label; click enters pause. Hidden when the assistant is off or the two-ring setting is off. |
+| `shell.overlay` | `dsh-deep-focus-pause-gray` | Full-frame semi-transparent gray pause layer (`pointer-events: none` so it cannot trap the click): 「已暂停计时 · 动一下鼠标或键盘继续」. |
+| `shell.overlay` | `dsh-deep-focus-rest` | Full-frame forced-rest screen with the countdown, `restNeedsActivity` copy and the 「跳过休息」 button. |
+| `shell.overlay` | `dsh-deep-focus-daily-lock` | Gray daily overlay: today's total, per-app rows, 「再使用 20 分钟」 and 「跳过」 (per-day `localStorage` acknowledgment). |
+| `shell.overlay` | `dsh-deep-focus-toasts` | Completion / rest / extension / pause toasts. |
 
-The assistant page is the single settings surface in v0.3; the separate
-`settings.section` and the old “Usage” panel are gone.
+There is **no** `conversation.session.header.utilities` chip and **no** solo banner
+any more.
+
+**Pause flow:** clicking the rings `POST /pause`s and the client records the pause
+time; the gray layer renders from `limit.paused`. The client adds a one-shot
+`mousemove`/`keydown` listener after a 1.5 s grace and calls `POST /resume` when it
+fires; the Host also auto-resumes on its own activity sample, so whichever arrives
+first ends the pause. The layer clears when `limit.paused` becomes false, and on
+outage/cleanup.
+
+**Rest flow:** the rest overlay renders from `limit.resting`; when
+`restNeedsActivity` is true it shows 「休息完成 · 动一下鼠标键盘继续」 instead of a
+running countdown. The 「跳过休息」 button calls `POST /rest/finish`. The Host ends
+the rest only after its time elapsed **and** activity was observed (or the 30-minute
+cap), so the overlay cannot disappear while the user is away.
+
+**Daily flow:** the overlay renders from `limit.dailyLocked`; 「再使用 20 分钟」
+calls `POST /extend`, 「跳过」 writes the per-day ack key and hides the overlay
+locally.
 
 **One conversation at a time is a style injection, not DOM surgery.** While
 `solo.active` and `assistant.soloSession` + `assistant.hideOtherSessions` are on,
-the client sets one `<style>` node plus a `data-dsh-focus-solo` attribute on
-`<html>` that hides session/folder rows other than the running root sessions, and
-shows the banner. Nothing is rewritten inline on host elements; removing the style
-node / attribute restores everything synchronously on outage, 404, or cleanup. No
-tool, agent, or Host state is affected.
+the client hides session **and** workspace rows other than the running root
+sessions with one `<style>` node plus a timestamped `data-dsh-focus-solo` attribute
+on `<html>`. The attribute walks through `pre` → `out` (CSS transition fades
+opacity/max-height over ~220 ms) → `hidden` (`display: none`); restoring plays
+`in` → removed. It is timer-based, idempotent, cleared on outage/404/cleanup, and
+instant under `prefers-reduced-motion`. No host element gets inline styles, and
+there is no banner text.
 
 Polling is 1 s while the page is visible and 5 s while hidden, with a single shared
 store and an in-flight guard. **Robustness:** after two consecutive failed polls
 (fetch error or non-200) the client hides every element it renders and restores the
 solo styles; a `404` means the plugin was disabled/gone and switches the client to
 `disabled` immediately. Navigable slots (assistant row, keyed page) are registered
-only while the API is live and disposed when it is not, so a disabled Host leaves no
-dead sidebar rows or empty pages.
+only while the API is live and disposed when it is not.
 
-The chime is synthesized with Web Audio and only used for completion alerts
-(`alerts.taskDone`); it respects volume and quiet hours, unlocks the `AudioContext`
-on the first user gesture, and fails silently when blocked. All listeners,
-observers, timers and styles are removed on `ctx.effect` cleanup. The UI uses DSH
-theme tokens (`--dsw-alias-*`) only, follows `ctx.locale` for English/Chinese,
-respects `prefers-reduced-motion`, and labels interactive elements for screen
-readers.
+**Completion chime:** the client decides whether the user is away from
+`document.hidden`/focus and the machine idle time in `state.usage` (idle hint) —
+chime only when away, repeat every `alerts.repeatIntervalMs` until
+`mousemove`/`keydown`/focus, controlled by `alerts.sound`, `alerts.volume`,
+`alerts.repeatUntilActive` and quiet hours. One persistent toast is allowed; the
+chime is synthesized with Web Audio, unlocked on the first user gesture, and fails
+silently when blocked. The old `alerts.taskDone` toggle is gone.
+
+All listeners, observers, timers and styles are removed on `ctx.effect` cleanup. The
+UI uses DSH theme tokens (`--dsw-alias-*`) only, follows `ctx.locale` for
+English/Chinese, respects `prefers-reduced-motion`, and labels interactive elements
+for screen readers.
 
 ## Failure handling
 
@@ -329,14 +382,16 @@ readers.
 ## Testing and verification
 
 - `npm test` — `node --test` (auto-discovers `test/*.test.mjs`): pure functions for
-  settings merge/clamp and v3 migration, per-app aggregation, app-name mapping,
-  limits/rest transitions (continuous → rest, rest excludes usage, auto-finish,
-  daily lock + extend + extend limit + rollover, assistant off), root-session
-  selection, sampler line parsing. No DSH context required.
+  settings merge/clamp and v4 migration, per-app aggregation, app-name mapping,
+  limits/rest transitions (continuous → rest, activity-gated rest, 30-minute cap,
+  rest excludes usage, daily lock + extend + extend limit + rollover, assistant off),
+  pause behavior (auto-resume only after activity + grace, forced resume), root
+  session selection, sampler line parsing. No DSH context required.
 - `node scripts/verify.mjs` — offline packaging smoke: manifest/entry points,
-  locale parity, icon XML, v3 contract sanity, no pomodoro strings in `src/`,
-  README/contract settings-table drift, README must state the v0.3 rules and the
-  pure-plugin boundary, local-link integrity, workflow rules.
+  locale parity, icon XML, v4 contract sanity (version 4, new repeat/rings keys, old
+  chip/banner keys gone), no pomodoro code, no old header-chip/banner strings in
+  `src/`, README/contract settings-table drift, README must state the v0.3 rules and
+  the v0.4 UX plus the pure-plugin boundary, local-link integrity, workflow rules.
 - `.github/workflows/ci.yml` — syntax check, tests and verification on Node 20/22.
 
 ## Compatibility assumptions
@@ -344,14 +399,13 @@ readers.
 - Verified against DSH `0.2.2-rc.1` on Windows. The plugin relies only on public
   Host services (`agents`, `webServer`), Cordis events (`agent/status`,
   `agent/disposed`, `session/event`, `goal/changed`) and documented client slots
-  (`sidebar.panellist`, keyed `main`, `conversation.session.header.utilities`,
-  `shell.overlay`).
-- macOS/Linux foreground sampling, the header countdown slot, and the solo hiding
-  rules are implemented but not covered by the author's testing; unsupported paths
-  degrade visibly instead of failing the plugin.
-- v1/v2 data directories remain readable where the format is compatible
-  (`usage/*.jsonl`), while `settings.json` is intentionally not migrated: a v1/v2
-  settings file is replaced by v3 defaults.
+  (`sidebar.panellist`, keyed `main`, `shell.overlay`).
+- macOS/Linux foreground sampling and the solo-hiding DOM rules are implemented but
+  not covered by the author's testing; unsupported paths degrade visibly instead of
+  failing the plugin.
+- v1–v3 data directories remain readable where the format is compatible
+  (`usage/*.jsonl`); `settings.json` is intentionally not migrated, and the old
+  `focus.json`/`budget.json`/`stats/` files are ignored/pruned.
 - The assistant is a self-discipline aid. Nothing is enforced outside DSH:
   restarting DSH, disabling the plugin, or switching applications always gets you
   out.

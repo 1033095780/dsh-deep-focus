@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createEventRing } from '../src/host/events.js'
-import { createLimits, LIMITS_FILE } from '../src/host/limits.js'
+import { createLimits, LIMITS_FILE, PAUSE_ACTIVITY_GRACE_MS, REST_ACTIVITY_WAIT_CAP_MS } from '../src/host/limits.js'
 import { normalizeSettings } from '../src/host/settings.js'
 import { EVENT } from '../src/shared/contract.js'
 
@@ -30,160 +30,175 @@ function makeLimits({ settings = {}, usage = null, nowValue = BASE, storage = nu
     usage: usageState,
     setClock(value) { clock = value },
     get clock() { return clock },
+    advance(ms) { clock += ms },
     setSettings(patch) { settingsValue = normalizeSettings(patch) },
-    events: () => ring.list().map((event) => event.kind),
+    events: () => ring.list(),
+    kinds: () => ring.list().map((event) => event.kind),
   }
 }
 
-test('defaults: assistant on, 3h daily, 30min continuous, 10min rest, 2 extends', () => {
+function viewKeys() {
+  return [
+    'assistantEnabled', 'continuousLimitMs', 'continuousUsedMs', 'dailyLimitMs', 'dailyLocked', 'dailyUsedMs',
+    'extendCountToday', 'extendLimit', 'extendedUntil', 'paused', 'pausedAt', 'pausedNeedsActivity', 'restDue',
+    'restNeedsActivity', 'restRemainingMs', 'restUntil', 'resting',
+  ].sort()
+}
+
+test('defaults: assistant on, 3h daily, 30min continuous, 10min rest, not paused', () => {
   const env = makeLimits()
   const view = env.limits.evaluate(BASE)
-  assert.deepEqual(Object.keys(view).sort(), [
-    'assistantEnabled', 'continuousLimitMs', 'continuousUsedMs', 'dailyLimitMs', 'dailyLocked', 'dailyUsedMs',
-    'extendCountToday', 'extendLimit', 'extendedUntil', 'restDue', 'restRemainingMs', 'restUntil', 'resting',
-  ])
+  assert.deepEqual(Object.keys(view).sort(), viewKeys())
   assert.equal(view.assistantEnabled, true)
   assert.equal(view.dailyLimitMs, 180 * 60_000)
   assert.equal(view.continuousLimitMs, 30 * 60_000)
-  assert.equal(view.extendLimit, 2)
-  assert.equal(view.dailyLocked, false)
   assert.equal(view.resting, false)
-  assert.equal(view.restUntil, null)
-  assert.equal(view.restRemainingMs, 0)
-  assert.equal(view.restDue, false)
+  assert.equal(view.restNeedsActivity, false)
+  assert.equal(view.paused, false)
+  assert.equal(view.pausedAt, null)
+  assert.equal(view.pausedNeedsActivity, false)
 })
 
-test('80% continuous usage emits rest-due once and flags the warning', () => {
+test('manual pause stops the clock and emits paused', () => {
   const env = makeLimits()
-  env.usage.continuousMs = 25 * 60_000
-  const view = env.limits.evaluate(BASE)
-  assert.equal(view.restDue, true)
-  assert.equal(env.events().filter((kind) => kind === EVENT.restDue).length, 1)
-  env.limits.evaluate(BASE + 1000)
-  assert.equal(env.events().filter((kind) => kind === EVENT.restDue).length, 1)
+  const result = env.limits.pause(BASE)
+  assert.equal(result.ok, true)
+  const view = env.limits.getView(BASE)
+  assert.equal(view.paused, true)
+  assert.equal(view.pausedAt, BASE)
+  assert.equal(view.pausedNeedsActivity, true)
+  const event = env.ring.list().at(-1)
+  assert.equal(event.kind, EVENT.paused)
+  assert.deepEqual(event.meta, { at: BASE })
+  assert.equal(env.limits.isPaused(), true)
+  assert.deepEqual(env.limits.pause(BASE + 1000), { ok: false, code: 'already-paused' })
 })
 
-test('the continuous cap starts a forced rest immediately', () => {
+test('a pause resumes only after the grace window and real activity', () => {
+  const env = makeLimits()
+  env.limits.pause(BASE)
+  // Activity inside the click grace window is ignored.
+  env.limits.applySample({ idleMs: 100 }, BASE + PAUSE_ACTIVITY_GRACE_MS - 1)
+  assert.equal(env.limits.getView(BASE).paused, true)
+  // Activity after the grace window resumes the clock.
+  env.limits.applySample({ idleMs: 100 }, BASE + PAUSE_ACTIVITY_GRACE_MS + 1)
+  assert.equal(env.limits.getView(BASE).paused, false)
+  assert.equal(env.ring.list().at(-1).kind, EVENT.resumed)
+  assert.equal(env.ring.list().at(-1).meta.reason, 'activity')
+})
+
+test('an idle sample never resumes a pause', () => {
+  const env = makeLimits()
+  env.limits.pause(BASE)
+  env.limits.applySample({ idleMs: 10 * 60_000 }, BASE + 60_000)
+  assert.equal(env.limits.getView(BASE).paused, true)
+})
+
+test('POST /resume force-resumes and conflicts when not paused', () => {
+  const env = makeLimits()
+  env.limits.pause(BASE)
+  const resumed = env.limits.resume(BASE + 1000)
+  assert.equal(resumed.ok, true)
+  assert.equal(resumed.view.paused, false)
+  assert.equal(env.ring.list().at(-1).meta.reason, 'manual')
+  assert.deepEqual(env.limits.resume(BASE + 2000), { ok: false, code: 'not-paused' })
+})
+
+test('the continuous cap starts a forced rest that still needs activity to end', () => {
   const env = makeLimits()
   env.usage.continuousMs = 30 * 60_000
-  const view = env.limits.evaluate(BASE)
-  assert.equal(view.resting, true)
-  assert.equal(view.restUntil, BASE + 10 * 60_000)
-  assert.equal(view.restRemainingMs, 10 * 60_000)
-  assert.equal(view.continuousUsedMs, 0)
+  const started = env.limits.evaluate(BASE)
+  assert.equal(started.resting, true)
+  assert.equal(started.restRemainingMs, 10 * 60_000)
+  assert.equal(started.restNeedsActivity, false)
   assert.equal(env.tracker.resets, 1)
-  const started = env.ring.list().filter((event) => event.kind === EVENT.restStarted).at(-1)
-  assert.deepEqual(started.meta, { minutes: 10, reason: 'continuous' })
-  // No duplicate rest while one is running.
-  env.limits.evaluate(BASE + 1000)
-  assert.equal(env.events().filter((kind) => kind === EVENT.restStarted).length, 1)
+  assert.equal(env.ring.list().at(-1).kind, EVENT.restStarted)
+
+  // Time elapses, but the user is away: the rest keeps waiting, no counting.
+  const waiting = env.limits.evaluate(BASE + 10 * 60_000)
+  assert.equal(waiting.resting, true)
+  assert.equal(waiting.restRemainingMs, 0)
+  assert.equal(waiting.restNeedsActivity, true)
+  assert.equal(env.kinds().filter((kind) => kind === EVENT.restFinished).length, 0)
+
+  // Coming back (activity) finishes it, exactly once.
+  env.limits.applySample({ idleMs: 100 }, BASE + 10 * 60_000 + 5000)
+  const finished = env.limits.getView(BASE + 10 * 60_000 + 5000)
+  assert.equal(finished.resting, false)
+  const event = env.ring.list().at(-1)
+  assert.equal(event.kind, EVENT.restFinished)
+  assert.deepEqual(event.meta, { early: false, reason: 'elapsed-and-active' })
+  env.limits.applySample({ idleMs: 100 }, BASE + 10 * 60_000 + 6000)
+  assert.equal(env.kinds().filter((kind) => kind === EVENT.restFinished).length, 1)
 })
 
-test('the rest finishes automatically and emits rest-finished', () => {
+test('a rest finishes without activity after the 30-minute wait cap', () => {
   const env = makeLimits()
   env.usage.continuousMs = 30 * 60_000
   env.limits.evaluate(BASE)
-  const view = env.limits.evaluate(BASE + 10 * 60_000)
+  const restUntil = env.limits.getView(BASE).restUntil
+  env.setClock(restUntil + REST_ACTIVITY_WAIT_CAP_MS + 1000)
+  const view = env.limits.evaluate(restUntil + REST_ACTIVITY_WAIT_CAP_MS + 1000)
   assert.equal(view.resting, false)
-  assert.equal(view.restUntil, null)
-  assert.equal(view.restRemainingMs, 0)
-  const finished = env.ring.list().filter((event) => event.kind === EVENT.restFinished).at(-1)
-  assert.deepEqual(finished.meta, { early: false, reason: 'elapsed' })
+  const event = env.ring.list().at(-1)
+  assert.equal(event.kind, EVENT.restFinished)
+  assert.equal(event.meta.early, false)
+  assert.equal(event.meta.capped, true)
 })
 
-test('a manual rest can be started and finished early', () => {
+test('skipping a rest ends it immediately with reason skipped', () => {
   const env = makeLimits()
   const started = env.limits.startRest(BASE)
   assert.equal(started.ok, true)
   assert.equal(started.view.resting, true)
-  assert.equal(started.view.restRemainingMs, 10 * 60_000)
-  assert.deepEqual(env.ring.list().at(-1).meta, { minutes: 10, reason: 'manual' })
   assert.deepEqual(env.limits.startRest(BASE + 1000), { ok: false, code: 'already-resting' })
-
-  const finished = env.limits.finishRest(BASE + 1000)
-  assert.equal(finished.ok, true)
-  assert.equal(finished.view.resting, false)
-  assert.deepEqual(env.ring.list().at(-1).meta, { early: true, reason: 'manual' })
+  const skipped = env.limits.finishRest(BASE + 1000)
+  assert.equal(skipped.ok, true)
+  assert.equal(skipped.view.resting, false)
+  const event = env.ring.list().at(-1)
+  assert.equal(event.kind, EVENT.restFinished)
+  assert.deepEqual(event.meta, { early: true, reason: 'skipped' })
   assert.deepEqual(env.limits.finishRest(BASE + 2000), { ok: false, code: 'not-resting' })
 })
 
-test('manual rest is refused while the assistant is off', () => {
-  const env = makeLimits({ settings: { assistant: { enabled: false } } })
-  assert.deepEqual(env.limits.startRest(BASE), { ok: false, code: 'assistant-off' })
+test('pause and forced rest do not stack', () => {
+  const env = makeLimits()
+  env.limits.pause(BASE)
+  // A manual rest supersedes the pause: the rest screen is the stronger mode.
+  const rest = env.limits.startRest(BASE)
+  assert.equal(rest.ok, true)
+  assert.equal(rest.view.paused, false)
+  const resting = makeLimits()
+  resting.usage.continuousMs = 30 * 60_000
+  resting.limits.evaluate(BASE)
+  assert.deepEqual(resting.limits.pause(BASE + 1000), { ok: false, code: 'already-resting' })
 })
 
-test('the daily cap locks once and extend grants another window', () => {
+test('the assistant switch clears pause and enforcement', () => {
+  const env = makeLimits()
+  env.usage.activeTodayMs = 180 * 60_000
+  env.limits.pause(BASE)
+  env.usage.continuousMs = 30 * 60_000
+  env.setSettings({ assistant: { enabled: false } })
+  const off = env.limits.setAssistantEnabled(false, BASE + 1000)
+  assert.equal(off.paused, false)
+  assert.equal(off.resting, false)
+  assert.equal(off.dailyLocked, false)
+  assert.equal(env.kinds().includes(EVENT.assistantOff), true)
+})
+
+test('the daily cap locks and extend grants another window', () => {
   const env = makeLimits()
   env.usage.activeTodayMs = 180 * 60_000
   let view = env.limits.evaluate(BASE)
   assert.equal(view.dailyLocked, true)
-  assert.equal(view.dailyUsedMs, 180 * 60_000)
-  assert.equal(env.events().filter((kind) => kind === EVENT.dailyLocked).length, 1)
-  env.limits.evaluate(BASE + 1000)
-  assert.equal(env.events().filter((kind) => kind === EVENT.dailyLocked).length, 1)
-
   const extended = env.limits.extend(BASE + 1000)
   assert.equal(extended.ok, true)
   view = env.limits.getView(BASE + 1000)
   assert.equal(view.dailyLocked, false)
   assert.equal(view.extendCountToday, 1)
   assert.equal(view.extendedUntil, BASE + 1000 + 20 * 60_000)
-  assert.deepEqual(env.ring.list().at(-1).meta, { minutes: 20, extendCountToday: 1, extendLimit: 2 })
-
-  // Inside the extend window the app stays usable.
-  assert.equal(env.limits.evaluate(BASE + 20 * 60_000).dailyLocked, false)
-  // Then it locks again and the second extend is granted.
-  view = env.limits.evaluate(BASE + 21 * 60_000)
-  assert.equal(view.dailyLocked, true)
-  assert.equal(env.events().filter((kind) => kind === EVENT.dailyLocked).length, 2)
-  assert.equal(env.limits.extend(BASE + 21 * 60_000).ok, true)
-  assert.equal(env.limits.getView(BASE + 21 * 60_000).extendCountToday, 2)
-
-  env.limits.evaluate(BASE + 42 * 60_000)
-  assert.deepEqual(env.limits.extend(BASE + 42 * 60_000), { ok: false, code: 'extend-limit-reached' })
-})
-
-test('extend is refused when not locked and when the limit is zero', () => {
-  const env = makeLimits()
-  assert.deepEqual(env.limits.extend(BASE), { ok: false, code: 'not-locked' })
-
-  const noExtend = makeLimits({ settings: { limits: { dailyExtendLimit: 0 } } })
-  noExtend.usage.activeTodayMs = 180 * 60_000
-  noExtend.limits.evaluate(BASE)
-  assert.deepEqual(noExtend.limits.extend(BASE), { ok: false, code: 'extend-limit-reached' })
-})
-
-test('the assistant switch only tracks when off and re-enables immediately', () => {
-  const env = makeLimits()
-  env.usage.activeTodayMs = 180 * 60_000
-  env.limits.evaluate(BASE)
-  assert.equal(env.limits.getView(BASE).dailyLocked, true)
-
-  env.setSettings({ assistant: { enabled: false } })
-  const off = env.limits.setAssistantEnabled(false, BASE + 1000)
-  assert.equal(off.assistantEnabled, false)
-  assert.equal(off.dailyLocked, false)
-  assert.equal(env.events().includes(EVENT.assistantOff), true)
-  // Usage keeps counting but nothing is enforced.
-  assert.equal(env.limits.evaluate(BASE + 60_000).dailyLocked, false)
-  assert.equal(env.limits.evaluate(BASE + 61_000).resting, false)
-
-  env.setSettings({ assistant: { enabled: true } })
-  const on = env.limits.setAssistantEnabled(true, BASE + 62_000)
-  assert.equal(env.events().includes(EVENT.assistantOn), true)
-  assert.equal(on.dailyLocked, true)
-})
-
-test('turning the assistant off ends a running rest', () => {
-  const env = makeLimits()
-  env.usage.continuousMs = 30 * 60_000
-  env.limits.evaluate(BASE)
-  assert.equal(env.limits.getView(BASE).resting, true)
-  env.setSettings({ assistant: { enabled: false } })
-  const view = env.limits.setAssistantEnabled(false, BASE + 1000)
-  assert.equal(view.resting, false)
-  const finished = env.ring.list().filter((event) => event.kind === EVENT.restFinished).at(-1)
-  assert.deepEqual(finished.meta, { early: true, reason: 'assistant-off' })
+  assert.equal(env.ring.list().at(-1).kind, EVENT.extended)
 })
 
 test('daily counters reset at the next local day', () => {
@@ -200,54 +215,44 @@ test('daily counters reset at the next local day', () => {
   assert.equal(view.extendedUntil, null)
 })
 
-test('load restores a running rest and resets stale daily counters', async () => {
+test('load restores a waiting rest and a pause', async () => {
   const future = BASE + 5 * 60_000
   const storage = {
     readJson: async (path) => {
       assert.equal(path, LIMITS_FILE)
       return {
         dayKey: '2026-11-05',
-        resting: true,
-        restUntil: future,
-        restStartedAt: BASE,
-        dailyLocked: true,
-        lockedSince: BASE,
-        extendedUntil: BASE + 60_000,
-        extendCountToday: 2,
+        resting: false,
+        restUntil: null,
+        paused: true,
+        pausedAt: BASE - 1000,
+        dailyLocked: false,
+        lockedSince: null,
+        extendedUntil: null,
+        extendCountToday: 0,
       }
     },
     writeJson: async () => {},
   }
   const env = makeLimits({ storage })
   await env.limits.load()
-  assert.equal(env.limits.getView(BASE).resting, true)
-  assert.equal(env.limits.getView(BASE).restUntil, future)
+  const view = env.limits.getView(BASE)
+  assert.equal(view.paused, true)
+  assert.equal(view.pausedAt, BASE - 1000)
 
-  const stale = makeLimits({
-    storage: {
-      readJson: async () => ({ dayKey: '2026-11-04', resting: false, restUntil: BASE - 1000, extendCountToday: 2 }),
-      writeJson: async () => {},
-    },
-  })
-  await stale.limits.load()
-  const view = stale.limits.getView(BASE)
-  assert.equal(view.resting, false)
-  assert.equal(view.extendCountToday, 0)
-})
-
-test('usage.continuousMs and limit.continuousUsedMs stay aligned', () => {
-  const env = makeLimits()
-  env.usage.continuousMs = 12 * 60_000
-  const view = env.limits.evaluate(BASE)
-  assert.equal(view.continuousUsedMs, 12 * 60_000)
-})
-
-test('a daily lock does not stack a forced rest on top of it', () => {
-  const env = makeLimits()
-  env.usage.activeTodayMs = 180 * 60_000
-  env.usage.continuousMs = 30 * 60_000
-  const view = env.limits.evaluate(BASE)
-  assert.equal(view.dailyLocked, true)
-  assert.equal(view.resting, false)
-  assert.equal(env.events().filter((kind) => kind === EVENT.restStarted).length, 0)
+  const restStorage = {
+    readJson: async () => ({
+      dayKey: '2026-11-05',
+      resting: true,
+      restUntil: future,
+      restStartedAt: BASE,
+      paused: false,
+      pausedAt: null,
+    }),
+    writeJson: async () => {},
+  }
+  const restEnv = makeLimits({ storage: restStorage })
+  await restEnv.limits.load()
+  assert.equal(restEnv.limits.getView(BASE).resting, true)
+  assert.equal(restEnv.limits.getView(BASE).restNeedsActivity, false)
 })

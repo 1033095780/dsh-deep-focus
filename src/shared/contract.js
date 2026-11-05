@@ -1,19 +1,18 @@
 /**
- * Shared wire contract (v3) between the Host half and the browser half.
+ * Shared wire contract (v4) between the Host half and the browser half.
  *
- * v3 product shape (agreed with the user):
- * - default "one conversation at a time": while a root conversation's agent is
- *   running, the UI hides the other workspaces/sessions until it finishes
- * - no pomodoro timer anymore
- * - daily whole-machine usage cap (default 3h) and continuous-use cap
- *   (default 30min) that forces a rest (default 10min)
- * - overtime: DSH-only gray overlay with today's per-app breakdown and a small
- *   "use 20 more minutes" action
- * - a "Focus assistant" hub panel: usage stats + settings + on/off
- * - pure plugin: it never blocks tools and only enforces inside DSH
+ * v4 is a UX pass over v3:
+ * - the floating top-right widget shows two rings (today total, continuous) and
+ *   clicking it enters a paused "rest" mode (no counting, window grays) that
+ *   resumes only on real keyboard/mouse activity
+ * - a forced rest finishes only after its time elapsed AND the user is back
+ *   (activity detected), never while away
+ * - the completion chime repeats every second while the window is unfocused or
+ *   the user is away, until input returns
+ * - the solo (one conversation at a time) mode also hides workspace/folder rows
+ *   and animates; the old banner is gone
  *
- * The browser half is one self-contained bundle (no build step), so it keeps a
- * small copy of the route/event constants — keep them in sync.
+ * Times are minutes unless the field name says otherwise.
  */
 
 export const API_BASE = '/plugins/dsh-deep-focus/api'
@@ -23,6 +22,8 @@ export const ROUTES = {
   apps: `${API_BASE}/apps`,
   settings: `${API_BASE}/settings`,
   assistant: `${API_BASE}/assistant`,
+  pause: `${API_BASE}/pause`,
+  resume: `${API_BASE}/resume`,
   restStart: `${API_BASE}/rest/start`,
   restFinish: `${API_BASE}/rest/finish`,
   extend: `${API_BASE}/extend`,
@@ -31,6 +32,8 @@ export const ROUTES = {
 /** Toast / state-change events the Host pushes through the state ring buffer. */
 export const EVENT = {
   taskCompleted: 'task-completed',
+  paused: 'paused',
+  resumed: 'resumed',
   restDue: 'rest-due',
   restStarted: 'rest-started',
   restFinished: 'rest-finished',
@@ -40,13 +43,8 @@ export const EVENT = {
   assistantOn: 'assistant-on',
 }
 
-/**
- * Settings shape (also the deep-merge target). Every limit has a working,
- * non-zero default: the user asked for 3h/day, 30min continuous, 10min rest.
- * Times are minutes unless the field name says otherwise.
- */
 export const DEFAULT_SETTINGS = {
-  version: 3,
+  version: 4,
   limits: {
     dailyMinutes: 180,
     continuousMinutes: 30,
@@ -58,14 +56,18 @@ export const DEFAULT_SETTINGS = {
     enabled: true,
     soloSession: true,
     hideOtherSessions: true,
-    showCountdown: true,
+    showRings: true,
   },
   alerts: {
     sound: true,
     volume: 0.6,
     quietHoursStart: null,
     quietHoursEnd: null,
-    taskDone: true,
+    /** Repeat the completion chime while the user is away (until input). */
+    repeatUntilActive: true,
+    repeatIntervalMs: 1000,
+    /** Consider the user away when the machine has been idle this long. */
+    awayIdleSeconds: 30,
   },
   usage: {
     sampleSeconds: 5,
@@ -82,15 +84,10 @@ export function clampNumber(value, min, max, fallback) {
   return Math.min(max, Math.max(min, Math.round(n)))
 }
 
-/** Whether a plain object; used by both halves' settings merge. */
 export function isPlainObject(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-/**
- * Deep-merge a stored/partial settings object over `DEFAULT_SETTINGS`.
- * Unknown keys are dropped; a stale v1/v2 file can never leak extra fields.
- */
 export function mergeSettings(base, patch) {
   const out = {}
   for (const [section, sectionDefault] of Object.entries(base)) {

@@ -1,4 +1,4 @@
-/** Runtime settings v3: deep merge + clamping against the shared contract; no secrets, no focus section. */
+/** Runtime settings v4: deep merge + clamping against the shared contract; no secrets, no focus section. */
 import { DEFAULT_SETTINGS, isPlainObject, mergeSettings } from '../shared/contract.js'
 
 export const SETTINGS_FILE = 'settings.json'
@@ -10,6 +10,8 @@ const NUMBER_RULES = {
   'limits.restMinutes': [1, 60],
   'limits.extendMinutes': [1, 120],
   'limits.dailyExtendLimit': [0, 20],
+  'alerts.repeatIntervalMs': [500, 10_000],
+  'alerts.awayIdleSeconds': [10, 3_600],
   'usage.sampleSeconds': [3, 30],
   'usage.idleThresholdSeconds': [0, 3_600],
   'usage.retentionDays': [1, 365],
@@ -19,9 +21,9 @@ const BOOLEAN_FIELDS = [
   'assistant.enabled',
   'assistant.soloSession',
   'assistant.hideOtherSessions',
-  'assistant.showCountdown',
+  'assistant.showRings',
   'alerts.sound',
-  'alerts.taskDone',
+  'alerts.repeatUntilActive',
   'usage.trackApps',
 ]
 
@@ -115,11 +117,11 @@ export function createSettingsStore({ storage = null } = {}) {
     isLoaded: () => loaded,
     async load() {
       const raw = await storage?.readJson(SETTINGS_FILE, null)
-      // v3 is a breaking settings shape (v1/v2 carried focus/pomodoro fields):
-      // a file written by any earlier version is discarded, never migrated, so a
-      // stale 480-minute daily cap cannot re-enable a rule the user never chose.
-      const isV3 = raw !== null && raw !== undefined && raw.version === DEFAULT_SETTINGS.version
-      current = normalizeSettings(isV3 ? raw : undefined)
+      // v4 is a breaking settings shape (renames and new alert fields): a file
+      // written by any earlier version is discarded, never migrated, so a stale
+      // value cannot silently re-enable a rule the user never chose.
+      const isCurrent = raw !== null && raw !== undefined && raw.version === DEFAULT_SETTINGS.version
+      current = normalizeSettings(isCurrent ? raw : undefined)
       loaded = true
       return current
     },

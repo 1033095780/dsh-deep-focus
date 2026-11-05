@@ -9,7 +9,7 @@ discovery. This document is the release checklist; it is not run by CI.
 | Field | Value |
 | --- | --- |
 | npm package | `dsh-deep-focus` |
-| Version scheme | Semantic Versioning (the current series is `0.3.z`) |
+| Version scheme | Semantic Versioning (the current series is `0.4.z`) |
 | License | MIT |
 | Repository | `https://github.com/<OWNER>/dsh-deep-focus` (placeholder — replace `<OWNER>` everywhere) |
 | Workflow that publishes | `.github/workflows/publish.yml`, triggered by a published GitHub Release |
@@ -22,7 +22,7 @@ discovery. This document is the release checklist; it is not run by CI.
 
 `npm publish --provenance` requires the package manifest to declare where its
 source lives. The manifest in this workspace does not have those fields yet (the
-release kit cannot edit `package.json`), so add them as part of the `0.3.0`
+release kit cannot edit `package.json`), so add them as part of the `0.4.0`
 release commit:
 
 ```jsonc
@@ -70,8 +70,8 @@ npm --version    # >= 11.5.1 is required by the publish workflow; it upgrades np
    ```
 
    (A bootstrap publish does not have provenance. That is fine; subsequent
-   releases from GitHub Actions will. Neither 0.1.0 nor 0.2.0 was published, so
-   `0.3.0` is the first public version.)
+   releases from GitHub Actions will. None of 0.1.0–0.3.0 was published, so
+   `0.4.0` is the first public version.)
 
 2. Open `https://www.npmjs.com/package/dsh-deep-focus/access` →
    **Trusted Publisher** → **GitHub Actions** and fill in:
@@ -94,9 +94,9 @@ See the npm documentation for the current rules:
 ## Release procedure
 
 1. **Update the version**
-   - `package.json` → `version` (`0.3.0` for this release).
+   - `package.json` → `version` (`0.4.0` for this release).
    - `CHANGELOG.md` → move the `[Unreleased]` entries to
-     `## [0.3.0] - YYYY-MM-DD`.
+     `## [0.4.0] - YYYY-MM-DD`.
    - No dependency or lockfile changes are needed (the plugin has no dependencies).
 
 2. **Run the gates locally**
@@ -112,14 +112,14 @@ See the npm documentation for the current rules:
 
    ```bash
    git add -A
-   git commit -m "release: 0.3.0"
-   git tag v0.3.0
+   git commit -m "release: 0.4.0"
+   git tag v0.4.0
    git push origin main --tags
    ```
 
-4. **Create the GitHub Release** from tag `v0.3.0`. Publishing the release (not
+4. **Create the GitHub Release** from tag `v0.4.0`. Publishing the release (not
    drafting it) triggers `publish.yml`. The workflow refuses to publish when the
-   tag (`v0.3.0` → `0.3.0`) does not match `package.json`'s version.
+   tag (`v0.4.0` → `0.4.0`) does not match `package.json`'s version.
 
 5. **Watch the run** in the Actions tab. It re-runs syntax checks, `verify.mjs`
    and `npm test`, then runs `npm publish --provenance --access public`.
@@ -148,23 +148,31 @@ Before announcing the release:
 - [ ] In a clean profile: the **Focus assistant** sidebar entry appears below the
       Plugins row, the overview shows today's usage and the 7-day trend, and the
       settings form saves.
-- [ ] **Countdown**: the top-right chip shows the continuous countdown; it turns
-      warning-colored near the limit and disappears when the assistant is off.
+- [ ] **Floating rings**: the two-ring widget appears top-right; today's ring tracks
+      usage, the continuous ring tracks the timer; both hide when the assistant is
+      off.
+- [ ] **Pause / gray**: clicking the widget grays the DSH window and stops counting;
+      moving the mouse or typing resumes it; clicking the widget itself must not
+      immediately resume it (the grace period).
 - [ ] **Forced rest**: temporarily set `limits.continuousMinutes` to 1 and confirm
-      the rest screen appears with a countdown, rest time is not added to the
-      daily total, and the screen disappears when the rest ends.
+      the rest screen appears; while the machine is idle the rest keeps waiting even
+      after its timer; on activity it finishes; 「跳过休息」 ends it immediately.
+- [ ] **Rest exclusion**: rest time does not increase today's usage or per-app
+      totals.
 - [ ] **Daily overlay**: temporarily set `limits.dailyMinutes` to 1 and confirm the
-      gray overlay shows today's total plus per-app rows; “Use 20 more minutes”
-      grants the configured extension and respects `limits.dailyExtendLimit`;
-      “That's it for today” hides the overlay for the day.
-- [ ] **Solo mode**: start an agent turn in one conversation and confirm the other
-      folders/conversations are hidden while it runs, they return when it ends, and
-      no tool call is blocked.
-- [ ] **Assistant off**: switch the assistant off and confirm neither the countdown
-      nor the overlays appear while statistics keep running.
-- [ ] **Disable/outage**: disable the plugin while the UI is visible; everything it
-      rendered disappears immediately, the sidebar restores, and no stale hiding
-      or swallowed clicks remain.
+      gray overlay shows today's total plus per-app rows; 「再使用 20 分钟」 grants the
+      configured extension and respects `limits.dailyExtendLimit`; 「跳过」 hides it
+      for the day.
+- [ ] **Away chime**: with `alerts.repeatUntilActive` on, complete a task while the
+      window is unfocused or the machine is idle past `alerts.awayIdleSeconds`;
+      confirm the chime repeats at `alerts.repeatIntervalMs` until input returns,
+      and that no chime plays while actively watching.
+- [ ] **Solo mode**: start an agent turn in one conversation; other conversations
+      **and workspace folders** fade out, return when it finishes, no banner appears,
+      and no tool call is blocked.
+- [ ] **Disabled/outage**: disable the plugin while the UI is visible; everything it
+      rendered disappears immediately, the sidebar restores, and no stale hiding or
+      swallowed clicks remain.
 - [ ] `scripts/verify.mjs` passes on a clean checkout (`git clean -xdf`-safe: it
       needs no install step).
 
@@ -177,15 +185,16 @@ file paths visible.
 
 | File | Theme | Content |
 | --- | --- | --- |
-| `docs/images/assistant-panel-light.png` | Light | The **Focus assistant** page from the sidebar below the Plugins row: today's usage, continuous timer, per-app rows, 7-day trend of the overview. |
-| `docs/images/assistant-settings-dark.png` | Dark | The same page scrolled to the settings form (limits, assistant switches, alerts, sampling), with units visible. |
-| `docs/images/countdown-chip-light.png` | Light | A close-up of the top-right countdown chip in the DSH window (continuous time; warning state if convenient). |
-| `docs/images/daily-overlay-dark.png` | Dark | The gray daily overlay: “today used X”, per-app breakdown, 「再使用 20 分钟」 / “Use 20 more minutes” and the quiet “That's it for today”. |
-| `docs/images/rest-screen-dark.png` | Dark | The forced-rest screen with the large countdown and calm copy. |
-| `docs/images/solo-mode-light.png` (optional) | Light | Sidebar while solo mode is active: other folders/conversations hidden, soft banner visible. |
+| `docs/images/rings-light.png` | Light | The floating two-ring widget in the top-right corner: today's usage ring + continuous ring, close enough to read the labels. |
+| `docs/images/rings-dark.png` | Dark | The same widget in dark mode (also fine to capture together with a running conversation). |
+| `docs/images/pause-gray-dark.png` | Dark | The paused state: DSH window grayed with the 「已暂停计时 · 动一下鼠标或键盘继续」 note. |
+| `docs/images/rest-skip-dark.png` | Dark | The forced-rest screen with the countdown and the 「跳过休息」 / “Skip rest” button. |
+| `docs/images/daily-overlay-dark.png` | Dark | The gray daily overlay: today's total, per-app breakdown, 「再使用 20 分钟」 and 「跳过」. |
+| `docs/images/assistant-panel-light.png` | Light | The **Focus assistant** page from the sidebar: overview, usage bars, per-app rows, 7-day trend. |
+| `docs/images/solo-mode-light.png` (optional) | Light | Sidebar while solo mode is hiding other conversations and folders (no banner). |
 
-There are intentionally **no pomodoro/focus-timer screenshots** — that feature no
-longer exists in v0.3.
+There are intentionally **no pomodoro/focus-timer or header-chip screenshots** —
+those features no longer exist in v0.4.
 
 Steps after capturing:
 
@@ -203,7 +212,7 @@ The DSH plugin market reads configured plugin indexes, and the
 Open a PR with one entry in the list's Markdown file:
 
 ```markdown
-- [dsh-deep-focus](https://github.com/<OWNER>/dsh-deep-focus) — Focus assistant for DeepSeek Harness: per-app usage statistics, a 3-hour daily cap, a forced 10-minute rest after 30 continuous minutes, a top-right countdown, and one-conversation-at-a-time sidebar hiding — pure plugin, never blocks tools. Install: `dsh plugin add dsh-deep-focus`.
+- [dsh-deep-focus](https://github.com/<OWNER>/dsh-deep-focus) — Focus assistant for DeepSeek Harness: floating two-ring usage widget, click-to-pause with a gray DSH window, per-app statistics, a 3-hour daily cap, activity-gated 10-minute rests with skip, one-conversation-at-a-time sidebar hiding, and an away-only repeating completion chime — pure plugin, never blocks tools. Install: `dsh plugin add dsh-deep-focus`.
 ```
 
 - **Category recommendation:** `Workflow & Automation` (focus/session guidance).
@@ -236,6 +245,6 @@ PR checklist (match the list's contribution rules if they are stricter):
 - `package.json` still needs the `repository` block described above before a
   provenance publish can succeed.
 - The desktop-guard boundary is documented but deliberately not implemented;
-  v0.3 is the pure-plugin version only.
+  v0.4 is the pure-plugin version only.
 - `SECURITY.md` and issue/PR templates are not part of this release kit; add them
   before promoting the plugin widely.

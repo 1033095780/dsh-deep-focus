@@ -53,7 +53,7 @@ export function createStatusMap() {
  *    is kept as a harmless bonus source.
  * Returns one disposer; the caller owns it inside its own effect.
  */
-export function installHostEventListeners({ ctx, ring, settings, statusMap }) {
+export function installHostEventListeners({ ctx, ring, statusMap }) {
   const disposers = []
 
   disposers.push(ctx.on('api-session/status', (sessionId, running) => {
@@ -77,7 +77,6 @@ export function installHostEventListeners({ ctx, ring, settings, statusMap }) {
     }
     if (event?.type !== 'turn/end') return
     if (event.data?.reason?.kind !== 'completed') return
-    if (!settings.get().alerts.taskDone) return
     ring.emit(EVENT.taskCompleted, {
       source: 'turn',
       sessionId: session?.id ?? null,
@@ -101,7 +100,6 @@ export function installHostEventListeners({ ctx, ring, settings, statusMap }) {
   disposers.push(ctx.on('goal/changed', (payload) => {
     const change = payload?.change
     if (change?.operation !== 'complete') return
-    if (!settings.get().alerts.taskDone) return
     const task = typeof change.goal?.objective === 'string' ? change.goal.objective.slice(0, 200) : null
     ring.emit(EVENT.taskCompleted, {
       source: 'goal',

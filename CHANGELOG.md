@@ -9,11 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
-## [0.3.0] - Unreleased
+## [0.4.0] - Unreleased
 
-First public release. Versions 0.1.0 and 0.2.0 were never published; 0.2.0 started
-the "pure plugin, no blocking" direction, and 0.3.0 turns it into a focus assistant
-with default usage limits. Install it with:
+First public release; versions 0.1.0, 0.2.0 and 0.3.0 were never published. v0.4 is
+a UX pass over the v0.3 focus assistant: a floating two-ring widget, a real pause
+mode, activity-gated rest, skip actions, an away-only repeating completion chime,
+and smoother solo-mode hiding. Install it with:
 
 ```bash
 dsh plugin --profile desktop add dsh-deep-focus
@@ -21,68 +22,61 @@ dsh plugin --profile desktop add dsh-deep-focus
 
 ### Added
 
-- **「专注助手」 / “Focus assistant” panel** — one sidebar entry below the Plugins
-  row (`sidebar.panellist` + keyed `main` page) with an overview (today's usage,
-  continuous timer, daily/continuous progress, per-app breakdown, 7-day trend),
-  the full settings form, and an enable/pause switch. It replaces the separate
-  “Usage” panel.
-- **Daily usage cap, on by default** — whole-machine active time while DSH runs is
-  capped at **180 minutes (3 hours)** by default. When reached, DSH shows a gray
-  overlay with today's total, a per-app breakdown and a **“Use 20 more minutes”**
-  action (`limits.extendMinutes`, default 20; up to `limits.dailyExtendLimit`,
-  default 2 per day). “That's it for today” simply hides the overlay for the
-  current day.
-- **Continuous-use cap → forced rest, on by default** — after **30 continuous
-  minutes** the assistant immediately starts a **10-minute rest**: a calm
-  full-screen rest screen inside DSH, with the rest time excluded from the daily
-  total and the continuous counter reset when it ends.
-- **Top-right countdown chip** in the DSH window header
-  (`conversation.session.header.utilities`): continuous time remaining, rest time
-  remaining, or “today's cap used up”. Toggleable with `assistant.showCountdown`.
-- **One conversation at a time, default on** — while any root conversation's agent
-  is running, other folders and conversations are temporarily hidden from the
-  sidebar (one injected style node + banner) and restored when it finishes.
-  Background agents keep working; no tool call is blocked.
-- **New Host state machine and API** — `limits`/rest evaluation and new routes
-  `GET /state`, `POST /assistant`, `POST /rest/start`, `POST /rest/finish`,
-  `POST /extend` (plus the existing `/apps` and `/settings`). The plugin entry no
-  longer renders a pomodoro timer.
-- **New settings groups** — `limits` (180/30/10/20/2 defaults), `assistant`
-  (enabled, solo session, hide other sessions, countdown), `alerts`, `usage`.
-- Documentation and the packaging smoke test were rewritten for v0.3, including an
-  explicit pure-plugin capability-boundary section.
+- **Floating two-ring widget** in the top-right of the DSH window
+  (`shell.overlay`): one SVG ring for today's usage vs. the daily cap, one for
+  continuous use vs. the continuous cap, plus a small label. It replaces the old
+  header countdown chip.
+- **Pause & gray mode** — clicking the widget calls `POST /pause`: counting stops
+  immediately and the whole DSH window grays with a calm “已暂停计时” note (visual
+  only, no pointer capture). The pause is released by real keyboard/mouse activity
+  (`POST /resume`, or the Host's own activity check with a short grace period) —
+  never by the click that started it.
+- **Activity-gated forced rest** — a rest now finishes only when its time has
+  elapsed **and** the user is back (real input detected). While the user is away it
+  simply keeps waiting, with a 30-minute cap so it cannot get stuck. The rest screen
+  shows `restNeedsActivity` when the time is up but nobody is there.
+- **Skip actions** — 「跳过休息」 / “Skip rest” on the rest screen (`POST
+  /rest/finish`, reason `skipped`), and 「跳过」 / “Skip” on the daily overlay
+  (per-day acknowledgment) next to the existing 「再使用 20 分钟」.
+- **Away-only repeating completion chime** — the completion chime stays silent
+  while you are actively watching; when the window is unfocused/hidden or the
+  machine has been idle for `alerts.awayIdleSeconds` it repeats every
+  `alerts.repeatIntervalMs` (clamped 500–10000 ms) until input returns.
+  `alerts.repeatUntilActive` turns the repetition off.
+- **New settings** — `assistant.showRings`, `alerts.repeatUntilActive`,
+  `alerts.repeatIntervalMs`, `alerts.awayIdleSeconds`; new `pause`/`resume` routes
+  and `paused`/`resumed` events.
+- **Animated solo mode** — the one-conversation mode now hides other conversations
+  **and workspace folders**, fading them out and back over ~220 ms
+  (`prefers-reduced-motion` falls back to instant), instead of hard-cutting rows.
 
 ### Changed
 
-- **Defaults now enforce** — the assistant is enabled out of the box with the 3-hour
-  daily cap and 30-minute continuous cap. `assistant.enabled` can be turned off to
-  keep statistics only.
-- **Settings schema v3** — new groups `limits`, `assistant`, `alerts`, `usage`; a
-  stored settings file from an older schema is discarded and replaced with the v3
-  defaults.
-- **Usage statistics moved** under the Focus assistant panel; per-app tracking
-  itself is unchanged (foreground application name + duration only).
-- **Storage state** now keeps the limits/rest state instead of the removed focus
-  block state.
-- **Rest time is excluded** from the daily usage total and from per-app totals.
+- The top-right countdown chip (`conversation.session.header.utilities`) was
+  replaced by the floating two-ring widget in `shell.overlay`.
+- The forced rest no longer ends just because its timer elapsed; the user must be
+  back (or press skip). Rest time remains excluded from the daily total.
+- The completion chime is now away-gated and repeatable instead of a single chime
+  at completion.
+- Settings schema v4: `assistant.showCountdown` became `assistant.showRings`, the
+  alert group gained the repeat/away fields, and a stored settings file from any
+  earlier schema (v1–v3) is discarded and replaced with v4 defaults.
+- Solo mode lost its banner; the sidebar hiding itself is now the only cue.
 
 ### Removed
 
-- **The pomodoro timer and everything around it** — work/break blocks, the composer
-  focus pill, 25/5 presets and rounds, long breaks, pomodoro counters, the
-  `/focus/*` API routes, focus events, and `src/host/focus.js`.
-- **The v0.2 overtime flow** — the `focus`/`budget` settings
-  (`limits.dailyActiveMinutes`, `continuousWorkMinutes`, `sessionMinutes`,
-  `unlockMinutes`) and the click-to-continue overlay are replaced by the daily cap
-  and its extension action.
-- **The separate “Usage” sidebar entry** — it is now part of the Focus assistant
-  panel.
-- **“Locked” / focus-block copy** that implied a hard lock; the assistant only
-  guides inside DSH and never blocks tools or other agents.
+- The solo banner (「专注中：其它文件夹和会话已暂时隐藏…」) — nothing replaces it.
+- The header countdown chip slot registration and its `dsh-deep-focus-countdown`
+  id.
+- `assistant.showCountdown` and `alerts.taskDone` settings (completion sound is
+  controlled by `alerts.sound` plus the away/repeat fields).
+- The “chime on completion even while watching” behavior.
 
-### Notes
+### Fixed
 
-- v0.3 is a **pure DSH plugin**: it cannot bring DSH to the front, cannot block
-  other applications, and cannot count usage while DSH is closed. A companion
-  desktop guard that would cover those cases is a possible later phase and is not
-  part of this release.
+- Workspace/folder rows are now hidden in solo mode too (previously only session
+  rows disappeared).
+- The daily overlay's secondary button no longer renders as a white, unstyled
+  button in dark mode; it uses the theme tokens.
+- A forced rest can no longer auto-finish while the machine is away just because
+  the countdown reached zero.

@@ -46,10 +46,12 @@ function createRuntime(ctx) {
   const limits = createLimits({ storage, settings, tracker, ring, now })
 
   function onSample(sample, sampledAt) {
-    // Finish an elapsed rest first, so this sample is skipped while resting.
+    // Resolve pause/rest state first, then decide whether this sample is counted:
+    // paused and resting periods must never add active, app or continuous time.
     limits.evaluate(sampledAt)
-    const resting = limits.isResting(sampledAt)
-    tracker.sample(sample, sampledAt, { counted: !resting })
+    limits.applySample(sample, sampledAt)
+    const counted = limits.isResting() === false && limits.isPaused() === false
+    tracker.sample(sample, sampledAt, { counted })
     // The sample may have reached the continuous cap; enforce immediately.
     limits.evaluate(sampledAt)
   }
@@ -107,7 +109,7 @@ function createRuntime(ctx) {
       })
 
       try {
-        disposers.push(installHostEventListeners({ ctx, ring, settings, statusMap }))
+        disposers.push(installHostEventListeners({ ctx, ring, statusMap }))
       } catch (error) {
         warn(ctx, 'event listeners could not be installed', error)
       }

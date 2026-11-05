@@ -58,6 +58,7 @@ async function makeFixture({
   settingsPatch = null,
   sessionsStore = null,
   turnBoundaryOf = null,
+  idleMs = null,
 } = {}) {
   let clock = new Date(2026, 10, 5, 10, 0, 0).getTime()
   const now = () => clock
@@ -78,6 +79,7 @@ async function makeFixture({
     state: () => 'ok',
     appsState: () => 'ok',
     detail: () => null,
+    lastIdleMs: () => idleMs,
     setSampleSeconds: () => {},
     start: () => {},
     stop: () => {},
@@ -156,21 +158,24 @@ test('readJsonBody enforces a size cap and rejects malformed JSON', async () => 
   )
 })
 
-test('GET /state returns the v3 contract shape with root-only sessions and solo', async () => {
+test('GET /state returns the v4 contract shape with root-only sessions and solo', async () => {
   const fixture = await makeFixture({ running: ['root-2'] })
   const result = await call(fixture.api, makeRequest({ url: ROUTES.state }))
   assert.equal(result.status, 200)
   assert.equal(result.headers['cache-control'], 'no-store')
   const state = result.json
   assert.deepEqual(Object.keys(state).sort(), ['appsToday', 'events', 'limit', 'now', 'sessions', 'settings', 'solo', 'usage'])
-  assert.deepEqual(Object.keys(state.usage).sort(), ['activeTodayMs', 'appsSampling', 'continuousMs', 'dayKey', 'sampling'])
+  assert.deepEqual(Object.keys(state.usage).sort(), [
+    'activeTodayMs', 'appsSampling', 'away', 'continuousMs', 'dayKey', 'idleMs', 'sampling',
+  ])
   assert.deepEqual(Object.keys(state.appsToday).sort(), ['top', 'totalMs'])
   assert.deepEqual(Object.keys(state.limit).sort(), [
     'assistantEnabled', 'continuousLimitMs', 'continuousUsedMs', 'dailyLimitMs', 'dailyLocked', 'dailyUsedMs',
-    'extendCountToday', 'extendLimit', 'extendedUntil', 'restDue', 'restRemainingMs', 'restUntil', 'resting',
+    'extendCountToday', 'extendLimit', 'extendedUntil', 'paused', 'pausedAt', 'pausedNeedsActivity', 'restDue',
+    'restNeedsActivity', 'restRemainingMs', 'restUntil', 'resting',
   ])
   assert.deepEqual(Object.keys(state.settings).sort(), ['alerts', 'assistant', 'limits', 'usage', 'version'])
-  assert.equal(state.settings.version, 3)
+  assert.equal(state.settings.version, 4)
   assert.equal(state.settings.focus, undefined)
   assert.equal(state.settings.security, undefined)
   assert.equal(state.limit.assistantEnabled, true)
@@ -291,27 +296,85 @@ test('POST /assistant toggles the assistant and its events', async () => {
   assert.equal(invalid.json.error.code, 'invalid-assistant')
 })
 
-test('the continuous cap forces a rest and the rest finishes automatically', async () => {
+test('POST /pause and /resume with predictable conflicts', async () => {
+  const fixture = await makeFixture()
+  const paused = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.pause, body: '{}' }))
+  assert.equal(paused.status, 200)
+  assert.equal(paused.json.state.limit.paused, true)
+  assert.equal(paused.json.state.limit.pausedAt, paused.json.state.now)
+  assert.equal(paused.json.state.limit.pausedNeedsActivity, true)
+  assert.ok(paused.json.state.events.some((event) => event.kind === 'paused'))
+
+  const pausedAgain = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.pause, body: '{}' }))
+  assert.equal(pausedAgain.status, 409)
+  assert.equal(pausedAgain.json.error.code, 'already-paused')
+
+  const resumed = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.resume, body: '{}' }))
+  assert.equal(resumed.status, 200)
+  assert.equal(resumed.json.state.limit.paused, false)
+  assert.equal(resumed.json.state.limit.pausedAt, null)
+  assert.ok(resumed.json.state.events.some((event) => event.kind === 'resumed'))
+
+  const resumedAgain = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.resume, body: '{}' }))
+  assert.equal(resumedAgain.status, 409)
+  assert.equal(resumedAgain.json.error.code, 'not-paused')
+
+  await fixture.settings.update({ assistant: { enabled: false } })
+  const off = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.pause, body: '{}' }))
+  assert.equal(off.status, 409)
+  assert.equal(off.json.error.code, 'assistant-off')
+})
+
+test('usage exposes machine idle time and the away flag', async () => {
+  const near = await makeFixture({ idleMs: 1000 })
+  const nearState = (await call(near.api, makeRequest({ url: ROUTES.state }))).json
+  assert.equal(nearState.usage.idleMs, 1000)
+  assert.equal(nearState.usage.away, false)
+
+  const away = await makeFixture({ idleMs: 60_000 })
+  const awayState = (await call(away.api, makeRequest({ url: ROUTES.state }))).json
+  assert.equal(awayState.usage.idleMs, 60_000)
+  assert.equal(awayState.usage.away, true)
+
+  const noSignal = await makeFixture()
+  const nullState = (await call(noSignal.api, makeRequest({ url: ROUTES.state }))).json
+  assert.equal(nullState.usage.idleMs, null)
+  assert.equal(nullState.usage.away, false)
+})
+
+test('the continuous cap forces a rest that waits for real activity', async () => {
   const fixture = await makeFixture()
   fixture.feedActive('chrome', 361)
   const resting = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
   assert.equal(resting.limit.resting, true)
   assert.equal(resting.limit.restRemainingMs, 10 * 60_000)
+  assert.equal(resting.limit.restNeedsActivity, false)
   assert.equal(resting.usage.continuousMs, 0)
   assert.ok(resting.events.some((event) => event.kind === 'rest-started'))
   const usedBefore = resting.usage.activeTodayMs
   assert.ok(usedBefore >= 30 * 60_000)
 
+  // Time is up but the user is away: the rest keeps waiting and nothing counts.
   fixture.advance(10 * 60_000 + 1000)
+  const waiting = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+  assert.equal(waiting.limit.resting, true)
+  assert.equal(waiting.limit.restRemainingMs, 0)
+  assert.equal(waiting.limit.restNeedsActivity, true)
+  assert.equal(waiting.usage.activeTodayMs, usedBefore)
+  assert.equal(waiting.events.some((event) => event.kind === 'rest-finished'), false)
+
+  // Real activity ends the rest (this is the sampler path used by the Host).
+  fixture.limits.applySample({ idleMs: 100 }, fixture.clock)
   const finished = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
   assert.equal(finished.limit.resting, false)
-  assert.equal(finished.limit.restRemainingMs, 0)
+  assert.equal(finished.limit.restNeedsActivity, false)
   assert.ok(finished.events.some((event) => event.kind === 'rest-finished'))
-  // The rest window added no usage.
   assert.equal(finished.usage.activeTodayMs, usedBefore)
+  const finishedEvent = finished.events.filter((event) => event.kind === 'rest-finished').at(-1)
+  assert.deepEqual(finishedEvent.meta, { early: false, reason: 'elapsed-and-active' })
 })
 
-test('manual rest start/finish and their conflicts', async () => {
+test('manual rest start/skip and their conflicts', async () => {
   const fixture = await makeFixture()
   const started = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.restStart, body: '{}' }))
   assert.equal(started.status, 200)
@@ -322,9 +385,11 @@ test('manual rest start/finish and their conflicts', async () => {
   assert.equal(again.status, 409)
   assert.equal(again.json.error.code, 'already-resting')
 
-  const finished = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.restFinish, body: '{}' }))
-  assert.equal(finished.status, 200)
-  assert.equal(finished.json.state.limit.resting, false)
+  const skipped = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.restFinish, body: '{}' }))
+  assert.equal(skipped.status, 200)
+  assert.equal(skipped.json.state.limit.resting, false)
+  const skippedEvent = skipped.json.state.events.filter((event) => event.kind === 'rest-finished').at(-1)
+  assert.deepEqual(skippedEvent.meta, { early: true, reason: 'skipped' })
 
   const finishAgain = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.restFinish, body: '{}' }))
   assert.equal(finishAgain.status, 409)

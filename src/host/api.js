@@ -98,6 +98,8 @@ const CONFLICT_STATUS = {
   'already-resting': 409,
   'assistant-off': 409,
   'not-resting': 409,
+  'already-paused': 409,
+  'not-paused': 409,
   'not-locked': 409,
   'extend-limit-reached': 409,
 }
@@ -112,6 +114,8 @@ function errorMessage(code) {
     'already-resting': 'A rest is already running.',
     'assistant-off': 'The focus assistant is off.',
     'not-resting': 'No rest is running.',
+    'already-paused': 'Counting is already paused.',
+    'not-paused': 'Counting is not paused.',
     'not-locked': 'The daily usage cap is not reached.',
     'extend-limit-reached': "Today's extend limit is used up.",
     'not-found': 'Unknown deep-focus API path.',
@@ -210,6 +214,10 @@ export function createApi({
     reconcileRunning(sessions)
     const running = sessions.filter((session) => session.running).map((session) => session.id)
     const appRows = appsToRows(usage.apps)
+    const idleMs = typeof sampler.lastIdleMs === 'function' ? sampler.lastIdleMs() : null
+    const away = idleMs !== null
+      && Number.isFinite(idleMs)
+      && idleMs >= Math.max(0, Math.round(current.alerts.awayIdleSeconds)) * 1000
     return {
       now: at,
       usage: {
@@ -218,6 +226,8 @@ export function createApi({
         sampling: sampler.state(),
         appsSampling: appsSampling(current),
         dayKey: usage.dayKey,
+        idleMs: Number.isFinite(idleMs) ? idleMs : null,
+        away,
       },
       appsToday: {
         totalMs: Math.round(appsTotal(usage.apps)),
@@ -331,6 +341,16 @@ export function createApi({
     },
     { method: 'POST', path: ROUTES.settings, handler: handleSettingsWrite },
     { method: 'POST', path: ROUTES.assistant, handler: handleAssistant },
+    {
+      method: 'POST',
+      path: ROUTES.pause,
+      handler: (request, response) => handleCommand(request, response, () => limits.pause(), 409),
+    },
+    {
+      method: 'POST',
+      path: ROUTES.resume,
+      handler: (request, response) => handleCommand(request, response, () => limits.resume(), 409),
+    },
     {
       method: 'POST',
       path: ROUTES.restStart,

@@ -3,34 +3,38 @@ import test from 'node:test'
 import { createSettingsStore, normalizeSettings, publicSettings } from '../src/host/settings.js'
 import { DEFAULT_SETTINGS } from '../src/shared/contract.js'
 
-test('normalizeSettings fills every v3 default', () => {
+test('normalizeSettings fills every v4 default', () => {
   const settings = normalizeSettings(undefined)
-  assert.equal(settings.version, 3)
+  assert.equal(settings.version, 4)
   assert.deepEqual(settings.limits, DEFAULT_SETTINGS.limits)
   assert.deepEqual(settings.assistant, DEFAULT_SETTINGS.assistant)
   assert.deepEqual(settings.alerts, DEFAULT_SETTINGS.alerts)
   assert.deepEqual(settings.usage, DEFAULT_SETTINGS.usage)
-  assert.deepEqual(settings.limits, {
-    dailyMinutes: 180,
-    continuousMinutes: 30,
-    restMinutes: 10,
-    extendMinutes: 20,
-    dailyExtendLimit: 2,
-  })
+  assert.equal(settings.assistant.showRings, true)
+  assert.equal(settings.alerts.repeatUntilActive, true)
+  assert.equal(settings.alerts.repeatIntervalMs, 1000)
+  assert.equal(settings.alerts.awayIdleSeconds, 30)
 })
 
-test('v3 has no focus, lock or security sections', () => {
-  const settings = normalizeSettings({ focus: { workMinutes: 25 }, lock: { singleConversation: true }, security: { passwordHash: 'x' } })
+test('v4 has no focus, lock or security sections and drops showCountdown', () => {
+  const settings = normalizeSettings({
+    focus: { workMinutes: 25 },
+    lock: { singleConversation: true },
+    security: { passwordHash: 'x' },
+    assistant: { showCountdown: false, showRings: false },
+  })
   assert.equal(settings.focus, undefined)
   assert.equal(settings.lock, undefined)
   assert.equal(settings.security, undefined)
+  assert.equal(settings.assistant.showCountdown, undefined)
+  assert.equal(settings.assistant.showRings, false)
 })
 
 test('normalizeSettings clamps numbers and drops unknown keys', () => {
   const settings = normalizeSettings({
-    limits: { dailyMinutes: -5, continuousMinutes: 9_999, restMinutes: 0, extendMinutes: 0, dailyExtendLimit: 99, nope: 1 },
+    limits: { dailyMinutes: -5, continuousMinutes: 9_999, restMinutes: 0, extendMinutes: 0, dailyExtendLimit: 99 },
+    alerts: { repeatIntervalMs: 100, awayIdleSeconds: 1, volume: 2, nope: 1 },
     usage: { sampleSeconds: 1, retentionDays: 10_000 },
-    alerts: { volume: 2 },
     unknownSection: { a: 1 },
   })
   assert.equal(settings.limits.dailyMinutes, 0)
@@ -38,28 +42,31 @@ test('normalizeSettings clamps numbers and drops unknown keys', () => {
   assert.equal(settings.limits.restMinutes, 1)
   assert.equal(settings.limits.extendMinutes, 1)
   assert.equal(settings.limits.dailyExtendLimit, 20)
-  assert.equal(settings.limits.nope, undefined)
+  assert.equal(settings.alerts.repeatIntervalMs, 500)
+  assert.equal(settings.alerts.awayIdleSeconds, 10)
+  assert.equal(settings.alerts.nope, undefined)
+  assert.equal(settings.alerts.volume, 1)
   assert.equal(settings.usage.sampleSeconds, 3)
   assert.equal(settings.usage.retentionDays, 365)
-  assert.equal(settings.alerts.volume, 1)
   assert.equal(settings.unknownSection, undefined)
-  assert.equal(normalizeSettings({ limits: { dailyMinutes: 999_999 } }).limits.dailyMinutes, 1_440)
+  assert.equal(normalizeSettings({ alerts: { repeatIntervalMs: 999_999 } }).alerts.repeatIntervalMs, 10_000)
+  assert.equal(normalizeSettings({ alerts: { awayIdleSeconds: 99_999 } }).alerts.awayIdleSeconds, 3_600)
 })
 
 test('normalizeSettings coerces booleans and quiet hours', () => {
   const settings = normalizeSettings({
-    assistant: { enabled: 'yes', soloSession: 0 },
+    assistant: { enabled: 'yes', soloSession: 0, showRings: 'no' },
+    alerts: { repeatUntilActive: 'yes', quietHoursStart: '22:00', quietHoursEnd: '7:00' },
     usage: { trackApps: 'no' },
-    alerts: { quietHoursStart: '22:00', quietHoursEnd: '7:00' },
   })
   assert.equal(settings.assistant.enabled, DEFAULT_SETTINGS.assistant.enabled)
   assert.equal(settings.assistant.soloSession, DEFAULT_SETTINGS.assistant.soloSession)
+  assert.equal(settings.assistant.showRings, DEFAULT_SETTINGS.assistant.showRings)
+  assert.equal(settings.alerts.repeatUntilActive, DEFAULT_SETTINGS.alerts.repeatUntilActive)
   assert.equal(settings.usage.trackApps, DEFAULT_SETTINGS.usage.trackApps)
-  assert.equal(normalizeSettings({ assistant: { enabled: false } }).assistant.enabled, false)
-  assert.equal(normalizeSettings({ usage: { trackApps: false } }).usage.trackApps, false)
+  assert.equal(normalizeSettings({ alerts: { repeatUntilActive: false } }).alerts.repeatUntilActive, false)
   assert.equal(settings.alerts.quietHoursStart, '22:00')
   assert.equal(settings.alerts.quietHoursEnd, null)
-  assert.equal(normalizeSettings({ alerts: { quietHoursStart: '08:30' } }).alerts.quietHoursStart, '08:30')
 })
 
 test('publicSettings copies the merged settings', () => {
@@ -79,12 +86,12 @@ test('settings store persists and normalizes through the storage facade', async 
   }
   const store = createSettingsStore({ storage })
   await store.load()
-  await store.update({ limits: { dailyMinutes: 60 }, assistant: { enabled: false } })
+  await store.update({ limits: { dailyMinutes: 60 }, assistant: { showRings: false } })
   assert.equal(store.get().limits.dailyMinutes, 60)
-  assert.equal(store.get().assistant.enabled, false)
+  assert.equal(store.get().assistant.showRings, false)
   assert.equal(writes.length, 1)
   assert.equal(writes[0].path, 'settings.json')
-  assert.equal(writes[0].value.version, 3)
+  assert.equal(writes[0].value.version, 4)
 })
 
 test('settings updates cannot reintroduce removed sections', async () => {
@@ -96,13 +103,13 @@ test('settings updates cannot reintroduce removed sections', async () => {
   assert.equal(store.get().lock, undefined)
 })
 
-test('a v3 settings file keeps and clamps its values', async () => {
+test('a v4 settings file keeps and clamps its values', async () => {
   const storage = {
     readJson: async () => ({
-      version: 3,
+      version: 4,
       limits: { dailyMinutes: 60, continuousMinutes: 45 },
-      assistant: { enabled: false },
-      alerts: { volume: -1 },
+      assistant: { enabled: false, showRings: false },
+      alerts: { volume: -1, repeatIntervalMs: 7_500, awayIdleSeconds: 120 },
     }),
     writeJson: async () => {},
   }
@@ -111,11 +118,14 @@ test('a v3 settings file keeps and clamps its values', async () => {
   assert.equal(store.get().limits.dailyMinutes, 60)
   assert.equal(store.get().limits.continuousMinutes, 45)
   assert.equal(store.get().assistant.enabled, false)
+  assert.equal(store.get().assistant.showRings, false)
   assert.equal(store.get().alerts.volume, 0)
+  assert.equal(store.get().alerts.repeatIntervalMs, 7_500)
+  assert.equal(store.get().alerts.awayIdleSeconds, 120)
   assert.equal(store.get().limits.restMinutes, 10)
 })
 
-test('v1 and v2 settings files are discarded for v3 defaults', async () => {
+test('v1/v2/v3 settings files are discarded for v4 defaults', async () => {
   const files = [
     {
       version: 1,
@@ -129,6 +139,12 @@ test('v1 and v2 settings files are discarded for v3 defaults', async () => {
       limits: { dailyActiveMinutes: 480, continuousWorkMinutes: 90, sessionMinutes: 90, unlockMinutes: 20 },
       usage: { trackApps: false },
     },
+    {
+      version: 3,
+      limits: { dailyMinutes: 90, continuousMinutes: 20 },
+      assistant: { enabled: false, showCountdown: false },
+      alerts: { taskDone: false, volume: 0.2 },
+    },
   ]
   for (const file of files) {
     let wrote = null
@@ -140,22 +156,23 @@ test('v1 and v2 settings files are discarded for v3 defaults', async () => {
     })
     await store.load()
     const settings = store.get()
-    assert.equal(settings.version, 3)
+    assert.equal(settings.version, 4)
     assert.deepEqual(settings.limits, DEFAULT_SETTINGS.limits)
     assert.deepEqual(settings.assistant, DEFAULT_SETTINGS.assistant)
+    assert.deepEqual(settings.alerts, DEFAULT_SETTINGS.alerts)
     assert.equal(settings.usage.trackApps, true)
     assert.equal(settings.focus, undefined)
     assert.equal(settings.security, undefined)
     assert.equal(wrote, null)
-    // The next write persists the v3 shape.
+    // The next write persists the v4 shape.
     await store.update({ limits: { dailyMinutes: 90 } })
-    assert.equal(wrote.value.version, 3)
+    assert.equal(wrote.value.version, 4)
     assert.equal(wrote.value.limits.dailyMinutes, 90)
-    assert.equal(wrote.value.focus, undefined)
+    assert.equal(wrote.value.assistant.showRings, true)
   }
 })
 
-test('a settings file without a version is treated as pre-v3', async () => {
+test('a settings file without a version is treated as pre-v4', async () => {
   const store = createSettingsStore({
     storage: {
       readJson: async () => ({ limits: { dailyMinutes: 480 }, usage: { trackApps: false } }),
@@ -163,7 +180,7 @@ test('a settings file without a version is treated as pre-v3', async () => {
     },
   })
   await store.load()
-  assert.equal(store.get().version, 3)
+  assert.equal(store.get().version, 4)
   assert.equal(store.get().limits.dailyMinutes, 180)
   assert.equal(store.get().usage.trackApps, true)
 })

@@ -35,12 +35,16 @@ window.__ModuleLoader__.load({
       apps: API_BASE + '/apps',
       settings: API_BASE + '/settings',
       assistant: API_BASE + '/assistant',
+      pause: API_BASE + '/pause',
+      resume: API_BASE + '/resume',
       restStart: API_BASE + '/rest/start',
       restFinish: API_BASE + '/rest/finish',
       extend: API_BASE + '/extend',
     }
     const EVENT = {
       taskCompleted: 'task-completed',
+      paused: 'paused',
+      resumed: 'resumed',
       restDue: 'rest-due',
       restStarted: 'rest-started',
       restFinished: 'rest-finished',
@@ -64,12 +68,20 @@ window.__ModuleLoader__.load({
     const NS = 'deepFocus'
     const I18N = {
       zh: {
-        'chip.continuous': '连续 {time}',
-        'chip.rest': '休息 {time}',
-        'chip.dailyLocked': '今日已用完',
-        'chip.restDue': '该休息了',
-        'chip.open': '打开专注助手',
-        'chip.aria': '使用时长：{status}，点击打开专注助手',
+        'rings.aria': '今日已用 {today}，连续 {continuous}，点击暂停计时',
+        'rings.today': '今日',
+        'rings.continuous': '连续',
+        'rings.pause': '暂停计时',
+        'rings.paused': '已暂停',
+        'rings.busy': '正在暂停…',
+        'rings.summary': '今日 {today} / 连续 {continuous}',
+        'pause.title': '已暂停计时',
+        'pause.hint': '动一下鼠标或键盘继续',
+        'pause.aria': '计时已暂停，动一下鼠标或键盘继续',
+        'rest.skip': '跳过休息',
+        'rest.thenRestart': '已跳过休息，连续计时重新开始',
+        'rest.doneWaiting': '休息完成 · 动一下鼠标键盘继续',
+        'rest.waitingNote': '你回来并动一下键鼠后，本次休息才会结束。',
         'hub.title': '专注助手',
         'hub.subtitle': '使用统计、单会话与休息规则，都在这里。',
         'hub.assistant': '专注助手',
@@ -127,10 +139,15 @@ window.__ModuleLoader__.load({
         'field.soloSession.hint': '有会话运行时限制进入其它会话',
         'field.hideOtherSessions': '隐藏其它文件夹和会话',
         'field.hideOtherSessions.hint': '专注时只显示正在运行的会话',
-        'field.showCountdown': '显示右上角倒计时',
+        'field.showRings': '显示悬浮双环',
+        'field.repeatUntilActive': '离开时重复提示音',
+        'field.repeatUntilActive.hint': '直到你回来为止',
+        'field.repeatIntervalMs': '重复提示间隔',
+        'field.repeatIntervalMs.hint': '毫秒，500–10000',
+        'field.awayIdleSeconds': '离开判定时长',
+        'field.awayIdleSeconds.hint': '秒，10–3600',
         'field.sound': '提示音',
         'field.volume': '音量',
-        'field.taskDone': '对话完成提示',
         'field.quietHours': '静音时段',
         'field.quietHours.hint': '留空表示不静音',
         'field.quietHoursStart': '开始',
@@ -161,8 +178,8 @@ window.__ModuleLoader__.load({
         'daily.extendRemaining': '今日还可续期 {n} 次',
         'daily.extendNone': '今日续期次数已用完',
         'daily.extendDisabled': '今日不可续期',
-        'daily.ack': '今天到此为止',
-        'daily.ackHint': '仅隐藏当前遮罩（best effort），不影响统计与限制。',
+        'daily.skip': '跳过',
+        'daily.skipHint': '仅隐藏今日提醒（best effort），不影响统计与限制。',
         'daily.error': '操作失败，请稍后重试',
         'daily.used': '今日已用',
         'rest.title': '休息中',
@@ -171,9 +188,6 @@ window.__ModuleLoader__.load({
         'rest.auto': '休息结束后会自动恢复。',
         'rest.remaining': '剩余',
         'rest.aria': '休息倒计时 {time}',
-        'solo.banner': '专注中：其它文件夹和会话已暂时隐藏，完成当前对话后恢复',
-        'solo.bannerRest': '专注中：其它文件夹和会话已暂时隐藏，{time} 后恢复',
-        'solo.aria': '专注模式提示',
         'toast.taskCompleted': '对话完成',
         'toast.taskCompletedTask': '对话完成：{task}',
         'time.hm': '{h} 小时 {m} 分',
@@ -210,12 +224,20 @@ window.__ModuleLoader__.load({
         'wd.6': '周六',
       },
       en: {
-        'chip.continuous': 'Continuous {time}',
-        'chip.rest': 'Rest {time}',
-        'chip.dailyLocked': 'Daily limit reached',
-        'chip.restDue': 'Time to rest',
-        'chip.open': 'Open focus assistant',
-        'chip.aria': 'Usage: {status}. Click to open the focus assistant',
+        'rings.aria': 'Used {today} today, continuous {continuous}. Click to pause tracking.',
+        'rings.today': 'Today',
+        'rings.continuous': 'Continuous',
+        'rings.pause': 'Pause tracking',
+        'rings.paused': 'Paused',
+        'rings.busy': 'Pausing…',
+        'rings.summary': '{today} today / {continuous} continuous',
+        'pause.title': 'Tracking paused',
+        'pause.hint': 'Move the mouse or press a key to continue',
+        'pause.aria': 'Tracking is paused. Move the mouse or press a key to continue.',
+        'rest.skip': 'Skip rest',
+        'rest.thenRestart': 'Rest skipped — the continuous timer starts over',
+        'rest.doneWaiting': 'Rest done · move the mouse or press a key to continue',
+        'rest.waitingNote': 'This rest ends once you are back and move the mouse or keyboard.',
         'hub.title': 'Focus assistant',
         'hub.subtitle': 'Usage stats, one-conversation mode, and rest rules — all here.',
         'hub.assistant': 'Focus assistant',
@@ -273,10 +295,15 @@ window.__ModuleLoader__.load({
         'field.soloSession.hint': 'limits entering other conversations while one runs',
         'field.hideOtherSessions': 'Hide other folders and conversations',
         'field.hideOtherSessions.hint': 'shows only the running conversation',
-        'field.showCountdown': 'Show the top-right countdown',
+        'field.showRings': 'Show the floating rings',
+        'field.repeatUntilActive': 'Repeat the chime while away',
+        'field.repeatUntilActive.hint': 'until you come back',
+        'field.repeatIntervalMs': 'Repeat interval',
+        'field.repeatIntervalMs.hint': 'milliseconds, 500-10000',
+        'field.awayIdleSeconds': 'Away threshold',
+        'field.awayIdleSeconds.hint': 'seconds, 10-3600',
         'field.sound': 'Sound',
         'field.volume': 'Volume',
-        'field.taskDone': 'Conversation-completed notice',
         'field.quietHours': 'Quiet hours',
         'field.quietHours.hint': 'leave empty to disable',
         'field.quietHoursStart': 'start',
@@ -307,8 +334,8 @@ window.__ModuleLoader__.load({
         'daily.extendRemaining': '{n} extension(s) left today',
         'daily.extendNone': 'No extensions left today',
         'daily.extendDisabled': 'Extensions are disabled today',
-        'daily.ack': "That's it for today",
-        'daily.ackHint': 'Only hides this overlay (best effort); tracking and limits are unchanged.',
+        'daily.skip': 'Skip',
+        'daily.skipHint': 'Only hides this reminder for today (best effort); tracking and limits are unchanged.',
         'daily.error': 'Something went wrong — try again shortly',
         'daily.used': 'Used today',
         'rest.title': 'Resting',
@@ -317,9 +344,6 @@ window.__ModuleLoader__.load({
         'rest.auto': 'It clears automatically when the rest ends.',
         'rest.remaining': 'Remaining',
         'rest.aria': 'Rest countdown {time}',
-        'solo.banner': 'Focus mode: other folders and conversations are hidden until this run finishes',
-        'solo.bannerRest': 'Focus mode: other folders and conversations are hidden — back in {time}',
-        'solo.aria': 'Focus mode notice',
         'toast.taskCompleted': 'Conversation finished',
         'toast.taskCompletedTask': 'Finished: {task}',
         'time.hm': '{h}h {m}m',
@@ -740,16 +764,6 @@ window.__ModuleLoader__.load({
       '[data-df-root]{box-sizing:border-box;font-family:inherit}',
       '.df-frame{box-sizing:border-box;font-family:inherit;color:var(--dsw-alias-label-primary)}',
       /* countdown chip in the conversation header */
-      '.df-chip{display:inline-flex;align-items:center;gap:5px;height:24px;margin:0;padding:0 9px;border:1px solid var(--dsw-alias-border-l1);border-radius:999px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:11.5px;line-height:1;white-space:nowrap;cursor:pointer;flex:0 0 auto;transition:background-color .16s ease,border-color .16s ease,color .16s ease}',
-      '.df-chip:hover{background:var(--dsw-alias-bg-layer-2)}',
-      '.df-chip:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}',
-      '.df-chip-time{font-variant-numeric:tabular-nums;font-weight:600;color:var(--dsw-alias-label-primary)}',
-      '.df-chip[data-state="warn"]{border-color:var(--dsw-alias-state-warn-primary)}',
-      '.df-chip[data-state="warn"] .df-chip-time{color:var(--dsw-alias-state-warn-primary)}',
-      '.df-chip[data-state="danger"]{border-color:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary)}',
-      '.df-chip[data-state="danger"] .df-chip-time{color:var(--dsw-alias-state-error-primary)}',
-      '.df-chip[data-state="rest"]{border-color:var(--dsw-alias-state-success-primary);color:var(--dsw-alias-state-success-primary)}',
-      '.df-chip[data-state="rest"] .df-chip-time{color:var(--dsw-alias-state-success-primary)}',
       '.df-dot{width:6px;height:6px;border-radius:50%;background:var(--dsw-alias-brand-primary);flex:0 0 auto}',
       '.df-dot[data-state="rest"]{background:var(--dsw-alias-state-success-primary)}',
       '.df-dot[data-state="danger"]{background:var(--dsw-alias-state-error-primary)}',
@@ -766,14 +780,14 @@ window.__ModuleLoader__.load({
       '.df-app-bar-fill{position:absolute;top:0;bottom:0;left:0;border-radius:999px;background:var(--dsw-alias-brand-primary)}',
       '.df-app-time{min-width:52px;text-align:right;color:var(--dsw-alias-label-secondary);font-size:12px;font-variant-numeric:tabular-nums}',
       '.df-divider{height:1px;border:0;margin:0;background:var(--dsw-alias-border-l2)}',
-      '.df-btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;height:32px;padding:0 14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:13px;cursor:pointer;transition:opacity .15s ease}',
-      '.df-btn:hover:not([disabled]){opacity:.85}',
-      '.df-btn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}',
-      '.df-btn[disabled]{opacity:.5;cursor:default}',
-      '.df-btn-primary{background:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary);font-weight:600}',
-      '.df-btn-ghost{background:transparent;border-color:transparent;color:var(--dsw-alias-label-secondary)}',
-      '.df-btn-ghost:hover:not([disabled]){background:var(--dsw-alias-bg-layer-2);opacity:1}',
-      '.df-btn-sm{height:28px;padding:0 10px;font-size:12px}',
+      '[data-df-root] .df-btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;height:32px;padding:0 14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:13px;line-height:1.2;text-decoration:none;appearance:none;-webkit-appearance:none;cursor:pointer;transition:opacity .15s ease}',
+      '[data-df-root] .df-btn:hover:not([disabled]){opacity:.85}',
+      '[data-df-root] .df-btn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}',
+      '[data-df-root] .df-btn[disabled]{opacity:.5;cursor:default}',
+      '[data-df-root] .df-btn-primary{background:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary);font-weight:600}',
+      '[data-df-root] .df-btn-ghost{background:transparent;border-color:transparent;color:var(--dsw-alias-label-secondary)}',
+      '[data-df-root] .df-btn-ghost:hover:not([disabled]){background:var(--dsw-alias-bg-layer-2);opacity:1}',
+      '[data-df-root] .df-btn-sm{height:28px;padding:0 10px;font-size:12px}',
       '.df-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}',
       '.df-error{color:var(--dsw-alias-state-error-primary);font-size:12px;margin:0}',
       '.df-muted{color:var(--dsw-alias-label-secondary);font-size:12px;margin:0}',
@@ -787,9 +801,29 @@ window.__ModuleLoader__.load({
       '.df-rest-body{color:var(--dsw-alias-label-secondary);font-size:14px;margin:0}',
       '.df-rest-note{color:var(--dsw-alias-label-secondary);font-size:12px;margin:0;max-width:440px}',
       '.df-rest-card{box-sizing:border-box;display:flex;flex-direction:column;align-items:center;gap:14px;padding:28px 32px;border:1px solid var(--dsw-alias-border-l1);border-radius:20px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 24px 60px color-mix(in srgb, var(--dsw-alias-bg-overlay) 70%, transparent)}',
-      /* solo banner */
-      '.df-solo-banner{position:absolute;top:calc(var(--dsh-frame-top-clearance, 0px) + 10px);left:50%;transform:translateX(-50%);z-index:70;box-sizing:border-box;max-width:calc(100vw - 32px);padding:7px 14px;border:1px solid var(--dsw-alias-border-l1);border-radius:999px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:12px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;box-shadow:0 6px 20px color-mix(in srgb, var(--dsw-alias-bg-overlay) 45%, transparent)}',
-      '.df-solo-banner b{color:var(--dsw-alias-label-primary);font-weight:600}',
+      '.df-rings-layer{position:absolute;top:calc(var(--dsh-frame-top-clearance, 0px) + 56px);right:16px;z-index:75;display:flex;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none}',
+      '.df-rings{position:static;display:flex;align-items:center;gap:10px;box-sizing:border-box;padding:9px 11px;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent);backdrop-filter:blur(8px);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:11px;line-height:1.2;cursor:pointer;pointer-events:auto;box-shadow:0 8px 24px color-mix(in srgb, var(--dsw-alias-bg-overlay) 40%, transparent);transition:border-color .16s ease,opacity .16s ease}',
+      '.df-rings:hover{border-color:var(--dsw-alias-border-l2)}',
+      '.df-rings:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}',
+      '.df-rings[data-busy="true"]{opacity:.7;cursor:default}',
+      '.df-rings[data-paused="true"]{border-color:var(--dsw-alias-state-warn-primary)}',
+      '.df-ring{position:relative;width:34px;height:34px;flex:0 0 auto}',
+      '.df-ring svg{display:block;width:34px;height:34px;transform:rotate(-90deg)}',
+      '.df-ring-track{stroke:var(--dsw-alias-border-l1);fill:none}',
+      '.df-ring-value{fill:none;stroke-linecap:round;transition:stroke-dashoffset .3s ease}',
+      '.df-ring[data-kind="daily"] .df-ring-value{stroke:var(--dsw-alias-brand-primary)}',
+      '.df-ring[data-kind="continuous"] .df-ring-value{stroke:var(--dsw-alias-state-success-primary)}',
+      '.df-ring[data-tone="warn"] .df-ring-value{stroke:var(--dsw-alias-state-warn-primary)}',
+      '.df-ring[data-tone="danger"] .df-ring-value{stroke:var(--dsw-alias-state-error-primary)}',
+      '.df-ring-label{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;color:var(--dsw-alias-label-secondary)}',
+      '.df-rings-text{display:flex;flex-direction:column;gap:1px;white-space:nowrap;max-width:150px}',
+      '.df-rings-text b{font-weight:600;font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis}',
+      '.df-rings-text span{color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis}',
+      '.df-rings-error{box-sizing:border-box;padding:4px 8px;border:1px solid var(--dsw-alias-state-error-primary);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-state-error-primary);font-family:inherit;font-size:11px;pointer-events:none}',
+      '.df-pause{position:absolute;inset:0;z-index:118;display:flex;align-items:center;justify-content:center;box-sizing:border-box;padding:24px;background:color-mix(in srgb, var(--dsw-alias-bg-overlay) 55%, transparent);backdrop-filter:grayscale(1) blur(1px);pointer-events:none}',
+      '.df-pause-card{box-sizing:border-box;max-width:420px;display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 20px;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:13px;text-align:center;box-shadow:0 12px 32px color-mix(in srgb, var(--dsw-alias-bg-overlay) 45%, transparent)}',
+      '.df-pause-title{font-size:15px;font-weight:600;margin:0}',
+      '.df-pause-hint{color:var(--dsw-alias-label-secondary);font-size:12px;margin:0}',
       /* toasts */
       '.df-toasts{position:absolute;top:var(--dsh-frame-overlay-top,56px);right:16px;z-index:60;display:flex;flex-direction:column;gap:8px;max-width:340px;pointer-events:none}',
       '.df-toast{box-sizing:border-box;padding:9px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:10px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:12px;line-height:1.45;box-shadow:0 8px 24px color-mix(in srgb, var(--dsw-alias-bg-overlay) 55%, transparent);animation:df-toast-in .18s ease-out}',
@@ -841,21 +875,21 @@ window.__ModuleLoader__.load({
       '.df-field-title{font-size:14px}',
       '.df-field-hint{color:var(--dsw-alias-label-secondary);font-size:12px}',
       '.df-field-control{display:flex;align-items:center;gap:8px;flex:0 0 auto}',
-      '.df-number{box-sizing:border-box;width:92px;height:30px;padding:0 8px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:13px;text-align:right;outline:none}',
-      '.df-time{box-sizing:border-box;height:30px;padding:0 8px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:13px;outline:none;color-scheme:inherit}',
+      '[data-df-root] .df-number{box-sizing:border-box;width:92px;height:30px;padding:0 8px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:13px;text-align:right;outline:none}',
+      '[data-df-root] .df-time{box-sizing:border-box;height:30px;padding:0 8px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:13px;outline:none;color-scheme:inherit}',
       '.df-number:focus-visible,.df-time:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}',
-      '.df-range{width:140px;accent-color:var(--dsw-alias-brand-primary)}',
-      '.df-switch{position:relative;width:38px;height:22px;flex:0 0 auto;padding:0;border:1px solid var(--dsw-alias-border-l1);border-radius:999px;background:var(--dsw-alias-bg-layer-2);cursor:pointer;transition:background-color .16s ease,border-color .16s ease}',
-      '.df-switch[aria-checked="true"]{background:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary)}',
-      '.df-switch:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}',
-      '.df-switch[disabled]{opacity:.5;cursor:default}',
-      '.df-switch::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--dsw-alias-bg-base);transition:transform .16s ease}',
-      '.df-switch[aria-checked="true"]::after{transform:translateX(16px)}',
-      '.df-savebar{position:sticky;bottom:0;z-index:1;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 0;margin-top:6px;border-top:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base)}',
-      '.df-save-state{font-size:12px;color:var(--dsw-alias-label-secondary)}',
-      '.df-save-state[data-kind="error"]{color:var(--dsw-alias-state-error-primary)}',
-      '.df-save-state[data-kind="saved"]{color:var(--dsw-alias-state-success-primary)}',
-      '@media (prefers-reduced-motion: reduce){.df-toast{animation:none}.df-rest-orb{animation:none}.df-progress-fill,.df-switch,.df-switch::after,.df-chip,.df-btn{transition:none}}',
+      '[data-df-root] .df-range{width:140px;accent-color:var(--dsw-alias-brand-primary)}',
+      '[data-df-root] .df-switch{position:relative;width:38px;height:22px;flex:0 0 auto;padding:0;border:1px solid var(--dsw-alias-border-l1);border-radius:999px;background:var(--dsw-alias-bg-layer-2);cursor:pointer;transition:background-color .16s ease,border-color .16s ease}',
+      '[data-df-root] .df-switch[aria-checked="true"]{background:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary)}',
+      '[data-df-root] .df-switch:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}',
+      '[data-df-root] .df-switch[disabled]{opacity:.5;cursor:default}',
+      '[data-df-root] .df-switch::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--dsw-alias-bg-base);transition:transform .16s ease}',
+      '[data-df-root] .df-switch[aria-checked="true"]::after{transform:translateX(16px)}',
+      '[data-df-root] .df-savebar{position:sticky;bottom:0;z-index:1;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 0;margin-top:6px;border-top:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base)}',
+      '[data-df-root] .df-save-state{font-size:12px;color:var(--dsw-alias-label-secondary)}',
+      '[data-df-root] .df-save-state[data-kind="error"]{color:var(--dsw-alias-state-error-primary)}',
+      '[data-df-root] .df-save-state[data-kind="saved"]{color:var(--dsw-alias-state-success-primary)}',
+      '@media (prefers-reduced-motion: reduce){.df-toast{animation:none}.df-rest-orb{animation:none}.df-progress-fill,.df-switch,.df-switch::after,.df-btn,.df-rings,.df-ring-value{transition:none}}',
     ].join('')
 
     /**
@@ -1009,6 +1043,7 @@ window.__ModuleLoader__.load({
         let active = false
         let lastSeq = null
         let toastSeq = 0
+        let alertHandler = null
 
         function get() {
           return snapshot
@@ -1078,15 +1113,18 @@ window.__ModuleLoader__.load({
         function completionToast(meta, alerts) {
           const task = meta && typeof meta.task === 'string' && meta.task.length > 0 ? meta.task : null
           pushToast('task-completed', task ? t('toast.taskCompletedTask', { task: task }) : t('toast.taskCompleted'))
-          if (alerts && alerts.sound === false) return
-          if (isQuietHours(alerts)) return
-          audio.chime(numberOr(alerts && alerts.volume, 0.6))
+          if (typeof alertHandler === 'function') {
+            try {
+              alertHandler(meta || {}, alerts || null)
+            } catch (error) {
+              /* alerting is optional */
+            }
+          }
         }
 
         function handleEvent(event, alerts) {
           const kind = event && event.kind
           if (kind !== EVENT.taskCompleted) return
-          if (alerts && alerts.taskDone === false) return
           completionToast((event && event.meta) || {}, alerts)
         }
 
@@ -1134,7 +1172,8 @@ window.__ModuleLoader__.load({
           const serverNow = toTimestamp(next.now)
           const clockOffset = serverNow === null ? 0 : Date.now() - serverNow
           const recovering = snapshot.status !== 'live'
-          ingestEvents(next.events, next, recovering)
+          // Publish the fresh snapshot before ingesting the ring so event handlers
+          // (completion chime away check) see the current state, not the previous one.
           snapshot = Object.assign({}, snapshot, {
             status: 'live',
             state: next,
@@ -1142,6 +1181,7 @@ window.__ModuleLoader__.load({
             consecutiveFailures: 0,
             clockOffset: clockOffset,
           })
+          ingestEvents(next.events, next, recovering)
           emit()
         }
 
@@ -1280,6 +1320,18 @@ window.__ModuleLoader__.load({
           return postAction(ROUTES.restFinish, {})
         }
 
+        function pause() {
+          return postAction(ROUTES.pause, {})
+        }
+
+        function resume() {
+          return postAction(ROUTES.resume, {})
+        }
+
+        function setAlertHandler(handler) {
+          alertHandler = typeof handler === 'function' ? handler : null
+        }
+
         async function loadAppsTrend(force) {
           if (snapshot.appsLoading) return
           if (!force && snapshot.appsTrend) return
@@ -1324,6 +1376,9 @@ window.__ModuleLoader__.load({
           extend: extend,
           startRest: startRest,
           finishRest: finishRest,
+          pause: pause,
+          resume: resume,
+          setAlertHandler: setAlertHandler,
           loadAppsTrend: loadAppsTrend,
           saveSettings: saveSettings,
           pushToast: pushToast,
@@ -1335,13 +1390,220 @@ window.__ModuleLoader__.load({
       // injected rule hides non-running session rows and the other workspace
       // rows; activation/teardown is synchronous and idempotent.
 
+      /* ── Away detection + repeating completion chime ─────────── */
+      // The chime only rings while the user is not watching: window hidden or
+      // unfocused, the Host reports away/idle, or local inactivity exceeds
+      // alerts.awayIdleSeconds. It repeats until real input returns.
+
+      const awayTracker = (function createAwayTracker() {
+        let lastActivityAt = Date.now()
+        let started = false
+
+        function markActive() {
+          lastActivityAt = Date.now()
+        }
+
+        function start() {
+          if (started) return function () {}
+          started = true
+          const handler = function () {
+            markActive()
+          }
+          const events = ['mousemove', 'keydown', 'pointerdown', 'wheel', 'touchstart', 'focus']
+          try {
+            events.forEach(function (name) {
+              document.addEventListener(name, handler, true)
+            })
+          } catch (error) {
+            /* ignored */
+          }
+          return function () {
+            started = false
+            try {
+              events.forEach(function (name) {
+                document.removeEventListener(name, handler, true)
+              })
+            } catch (error) {
+              /* ignored */
+            }
+          }
+        }
+
+        function hostIdleMs(state) {
+          const usage = state && state.usage ? state.usage : null
+          if (!usage) return null
+          const candidates = [usage.idleMs, usage.idleLengthMs]
+          let best = null
+          for (let index = 0; index < candidates.length; index += 1) {
+            const value = candidates[index]
+            if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+              best = best === null ? value : Math.max(best, value)
+            }
+          }
+          return best
+        }
+
+        function isAway(alerts, state) {
+          try {
+            if (typeof document !== 'undefined' && document.hidden) return true
+            if (
+              typeof document !== 'undefined' &&
+              typeof document.hasFocus === 'function' &&
+              document.hasFocus() === false
+            ) {
+              return true
+            }
+          } catch (error) {
+            /* ignored */
+          }
+          const limit = state && state.limit ? state.limit : null
+          if (limit && limit.pausedNeedsActivity === true) return true
+          const usage = state && state.usage ? state.usage : null
+          if (usage && usage.away === true) return true
+          const awaySeconds = clampNumber(alerts && alerts.awayIdleSeconds, 10, 3600, 30)
+          const idle = hostIdleMs(state)
+          if (idle !== null && idle >= awaySeconds * 1000) return true
+          return Date.now() - lastActivityAt >= awaySeconds * 1000
+        }
+
+        return { start: start, isAway: isAway, markActive: markActive }
+      })()
+
+      const completionChime = (function createCompletionChime() {
+        const INPUT_EVENTS = ['mousemove', 'keydown', 'pointerdown', 'wheel', 'touchstart', 'focus']
+        let timer = 0
+        let repeating = false
+        let activeAlerts = null
+        let detachInput = null
+
+        function clampInterval(value) {
+          return clampNumber(value, 500, 10000, 1000)
+        }
+
+        function play(alerts) {
+          if (!alerts || alerts.sound === false) return
+          if (isQuietHours(alerts)) return
+          audio.chime(numberOr(alerts.volume, 0.6))
+        }
+
+        function detach() {
+          if (typeof detachInput === 'function') {
+            try {
+              detachInput()
+            } catch (error) {
+              /* ignored */
+            }
+          }
+          detachInput = null
+        }
+
+        function stop() {
+          repeating = false
+          activeAlerts = null
+          if (timer) {
+            clearInterval(timer)
+            timer = 0
+          }
+          detach()
+        }
+
+        function tick() {
+          if (!repeating) return
+          const state = store.get().state
+          if (!awayTracker.isAway(activeAlerts, state)) {
+            stop()
+            return
+          }
+          play(activeAlerts)
+        }
+
+        function startRepeating(alerts) {
+          activeAlerts = alerts
+          repeating = true
+          play(alerts)
+          if (timer) clearInterval(timer)
+          timer = setInterval(tick, clampInterval(alerts && alerts.repeatIntervalMs))
+          const onInput = function () {
+            awayTracker.markActive()
+            stop()
+          }
+          try {
+            INPUT_EVENTS.forEach(function (name) {
+              document.addEventListener(name, onInput, true)
+            })
+          } catch (error) {
+            /* ignored */
+          }
+          detachInput = function () {
+            INPUT_EVENTS.forEach(function (name) {
+              document.removeEventListener(name, onInput, true)
+            })
+          }
+        }
+
+        /** Called once per task-completed event; never rings while the user watches. */
+        function trigger(meta, alerts) {
+          const state = store.get().state
+          if (!awayTracker.isAway(alerts, state)) return
+          if (alerts && alerts.repeatUntilActive === false) {
+            play(alerts)
+            return
+          }
+          startRepeating(alerts || {})
+        }
+
+        return { trigger: trigger, stop: stop }
+      })()
+
+      store.setAlertHandler(completionChime.trigger)
+
+      /* ── Solo session hiding: one style node + animated html attribute ── */
+      // Client-primary running-set detection. Non-owner session rows and the other
+      // workspace/overflow rows fade out (~220ms) and then collapse to display:none;
+      // restore runs the reverse. No inline styles and no banner.
+
       const soloHider = (function createSoloHider() {
+        const PHASE_MS = 220
+        const MAX_COLLAPSED_HEIGHT = 120
         let styleElement = null
         let running = false
-        // Client-primary running root conversation ids (null = client list unavailable).
         let clientRunningIds = null
-        let lastSignature = ''
+        let activeIds = null
+        let phase = ''
+        let phaseTimer = 0
+        let frameId = 0
         const listeners = new Set()
+
+        function prefersReducedMotion() {
+          try {
+            return (
+              typeof window !== 'undefined' &&
+              typeof window.matchMedia === 'function' &&
+              window.matchMedia('(prefers-reduced-motion: reduce)').matches === true
+            )
+          } catch (error) {
+            return false
+          }
+        }
+
+        function nextFrame(callback) {
+          try {
+            if (typeof requestAnimationFrame === 'function') return requestAnimationFrame(callback)
+          } catch (error) {
+            /* ignored */
+          }
+          return setTimeout(callback, 0)
+        }
+
+        function cancelFrame(id) {
+          if (!id) return
+          try {
+            if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(id)
+          } catch (error) {
+            /* ignored */
+          }
+          clearTimeout(id)
+        }
 
         function notify() {
           listeners.forEach(function (listener) {
@@ -1351,6 +1613,44 @@ window.__ModuleLoader__.load({
               /* ignored */
             }
           })
+        }
+
+        function clearTimers() {
+          if (phaseTimer) {
+            clearTimeout(phaseTimer)
+            phaseTimer = 0
+          }
+          if (frameId) {
+            cancelFrame(frameId)
+            frameId = 0
+          }
+        }
+
+        function setPhase(value) {
+          phase = value
+          try {
+            if (value) document.documentElement.setAttribute(SOLO_HTML_ATTR, value)
+            else document.documentElement.removeAttribute(SOLO_HTML_ATTR)
+          } catch (error) {
+            /* ignored */
+          }
+        }
+
+        function removeStyle() {
+          try {
+            if (styleElement && styleElement.parentNode) styleElement.parentNode.removeChild(styleElement)
+          } catch (error) {
+            /* ignored */
+          }
+          styleElement = null
+        }
+
+        function teardownInstant() {
+          clearTimers()
+          activeIds = null
+          setPhase('')
+          removeStyle()
+          restoreLegacyDimMarks()
         }
 
         function activeState() {
@@ -1363,11 +1663,8 @@ window.__ModuleLoader__.load({
           if (assistant.soloSession === false || assistant.hideOtherSessions === false) return null
           let ids = null
           if (clientRunningIds !== null) {
-            // Client session data is authoritative: the sidebar dot uses the same
-            // source, so a turn started before a plugin reload is still detected.
             ids = clientRunningIds
           } else if (state.solo && state.solo.active === true && Array.isArray(state.solo.sessions)) {
-            // Secondary fallback for compositions without the client session hooks.
             ids = state.solo.sessions
           }
           if (!Array.isArray(ids) || ids.length === 0) return null
@@ -1377,7 +1674,7 @@ window.__ModuleLoader__.load({
           return clean.length > 0 ? clean : null
         }
 
-        /** Best effort: find the sidebar group rows that contain a running session. */
+        /** Best effort: sidebar rows of the groups that contain a running session. */
         function workspaceKeysForSessions(ids) {
           const keys = new Set()
           try {
@@ -1410,7 +1707,7 @@ window.__ModuleLoader__.load({
           return keys
         }
 
-        function buildCss(ids) {
+        function selectorGroups(ids) {
           const sessionKeep = ids
             .map(function (id) {
               return ':not([data-row-key="session:' + cssEscape(id) + '"])'
@@ -1421,18 +1718,39 @@ window.__ModuleLoader__.load({
               return ':not([data-row-key="' + cssEscape(key) + '"])'
             })
             .join('')
-          return (
-            'html[data-dsh-focus-solo] [data-row-key^="session:"]' +
-            sessionKeep +
-            '{display:none!important}' +
-            'html[data-dsh-focus-solo] [data-row-key^="workspace:"]' +
-            workspaceKeep +
-            '{display:none!important}' +
-            'html[data-dsh-focus-solo] [data-row-key^="overflow:"]{display:none!important}'
-          )
+          return {
+            session: '[data-row-key^="session:"]' + sessionKeep,
+            workspace: '[data-row-key^="workspace:"]' + workspaceKeep,
+            overflow: '[data-row-key^="overflow:"]',
+          }
         }
 
-        function mountStyle(ids) {
+        function buildCss(ids) {
+          const groups = selectorGroups(ids)
+          const targets = [groups.session, groups.workspace, groups.overflow]
+          const base = targets
+            .map(function (selector) {
+              return 'html[data-dsh-focus-solo] ' + selector
+            })
+            .join(',')
+          let css = base + '{transition:opacity ' + PHASE_MS + 'ms ease,max-height ' + PHASE_MS + 'ms ease}'
+          css += 'html[data-dsh-focus-solo="out"] ' + groups.session + '{opacity:0;max-height:0!important;overflow:hidden;padding-top:0!important;padding-bottom:0!important;margin-top:0!important;margin-bottom:0!important}'
+          css += 'html[data-dsh-focus-solo="out"] ' + groups.workspace + '{opacity:0;max-height:0!important;overflow:hidden;padding-top:0!important;padding-bottom:0!important;margin-top:0!important;margin-bottom:0!important}'
+          css += 'html[data-dsh-focus-solo="out"] ' + groups.overflow + '{opacity:0;max-height:0!important;overflow:hidden}'
+          css += 'html[data-dsh-focus-solo="pre"] ' + groups.session + '{opacity:0;max-height:0;overflow:hidden;transition:none!important}'
+          css += 'html[data-dsh-focus-solo="pre"] ' + groups.workspace + '{opacity:0;max-height:0;overflow:hidden;transition:none!important}'
+          css += 'html[data-dsh-focus-solo="pre"] ' + groups.overflow + '{opacity:0;max-height:0;overflow:hidden;transition:none!important}'
+          css += 'html[data-dsh-focus-solo="in"] ' + groups.session + '{opacity:1;max-height:' + MAX_COLLAPSED_HEIGHT + 'px;overflow:visible}'
+          css += 'html[data-dsh-focus-solo="in"] ' + groups.workspace + '{opacity:1;max-height:' + MAX_COLLAPSED_HEIGHT + 'px;overflow:visible}'
+          css += 'html[data-dsh-focus-solo="in"] ' + groups.overflow + '{opacity:1;max-height:' + MAX_COLLAPSED_HEIGHT + 'px;overflow:visible}'
+          css += 'html[data-dsh-focus-solo="hidden"] ' + groups.session + '{display:none!important}'
+          css += 'html[data-dsh-focus-solo="hidden"] ' + groups.workspace + '{display:none!important}'
+          css += 'html[data-dsh-focus-solo="hidden"] ' + groups.overflow + '{display:none!important}'
+          css += '@media (prefers-reduced-motion: reduce){' + base + '{transition:none!important}}'
+          return css
+        }
+
+        function ensureStyle(ids) {
           try {
             if (!styleElement || !styleElement.isConnected) {
               styleElement = document.createElement('style')
@@ -1442,41 +1760,94 @@ window.__ModuleLoader__.load({
             }
             const css = buildCss(ids)
             if (styleElement.textContent !== css) styleElement.textContent = css
-            document.documentElement.setAttribute(SOLO_HTML_ATTR, ids.join(','))
           } catch (error) {
             /* hiding is cosmetic; never break the app */
           }
         }
 
-        /** Synchronous, idempotent teardown: no style node, no html attribute, no marks. */
+        function activate(ids) {
+          clearTimers()
+          activeIds = ids.slice()
+          ensureStyle(ids)
+          setPhase('out')
+          if (prefersReducedMotion()) {
+            setPhase('hidden')
+            notify()
+            return
+          }
+          phaseTimer = setTimeout(function () {
+            phaseTimer = 0
+            setPhase('hidden')
+            notify()
+          }, PHASE_MS)
+          notify()
+        }
+
+        function refreshActive(ids) {
+          activeIds = ids.slice()
+          ensureStyle(ids)
+          if (phase === '' || phase === 'pre' || phase === 'in') {
+            clearTimers()
+            setPhase('out')
+            if (prefersReducedMotion()) {
+              setPhase('hidden')
+            } else {
+              phaseTimer = setTimeout(function () {
+                phaseTimer = 0
+                setPhase('hidden')
+                notify()
+              }, PHASE_MS)
+            }
+          }
+          notify()
+        }
+
         function deactivate() {
-          try {
-            if (styleElement && styleElement.parentNode) styleElement.parentNode.removeChild(styleElement)
-          } catch (error) {
-            /* ignored */
+          if (phase === '' && styleElement === null) {
+            activeIds = null
+            return
           }
-          styleElement = null
-          try {
-            document.documentElement.removeAttribute(SOLO_HTML_ATTR)
-          } catch (error) {
-            /* ignored */
+          clearTimers()
+          activeIds = null
+          if (styleElement === null || prefersReducedMotion()) {
+            teardownInstant()
+            notify()
+            return
           }
-          restoreLegacyDimMarks()
+          // Phase 1: rows visible again but collapsed with no transition, then
+          // expand on the next frame so the browser has a start value to animate.
+          setPhase('pre')
+          frameId = nextFrame(function () {
+            frameId = 0
+            setPhase('in')
+            phaseTimer = setTimeout(function () {
+              phaseTimer = 0
+              teardownInstant()
+              notify()
+            }, PHASE_MS)
+          })
+          notify()
         }
 
         function sync() {
           if (!running) return
+          const current = store.get()
           const ids = activeState()
-          const signature = ids === null ? '' : ids.join('|')
-          if (ids === null) deactivate()
-          else mountStyle(ids)
-          if (signature !== lastSignature) {
-            lastSignature = signature
-            notify()
+          if (ids === null) {
+            if (current.status !== 'live') teardownInstant()
+            else deactivate()
+            return
           }
+          if (activeIds === null) {
+            activate(ids)
+            return
+          }
+          const previous = activeIds.join('|')
+          const next = ids.join('|')
+          if (previous !== next) refreshActive(ids)
+          else if (phase === '') activate(ids)
         }
 
-        /** Feed the running root conversation ids observed by the client. */
         function setClientRunning(ids) {
           const next = Array.isArray(ids)
             ? ids.filter(function (id) {
@@ -1505,13 +1876,12 @@ window.__ModuleLoader__.load({
 
         function stop() {
           running = false
-          deactivate()
+          teardownInstant()
         }
 
         function isActive() {
-          return running && activeState() !== null
+          return running && activeIds !== null
         }
-
 
         return {
           start: start,
@@ -1525,6 +1895,7 @@ window.__ModuleLoader__.load({
 
       function start() {
         const stopStore = store.start()
+        const stopAway = awayTracker.start()
         soloHider.start()
         const unsubscribe = store.subscribe(function () {
           soloHider.sync()
@@ -1545,6 +1916,8 @@ window.__ModuleLoader__.load({
           } catch (error) {
             /* ignored */
           }
+          completionChime.stop()
+          stopAway()
           unsubscribe()
           soloHider.stop()
           stopStore()
@@ -1845,61 +2218,226 @@ window.__ModuleLoader__.load({
         )
       }
 
-      function chipStatus(state, clockOffset) {
-        if (!state || !state.limit || !state.settings) return null
-        const limit = state.limit
-        if (limit.assistantEnabled === false || (state.settings.assistant || {}).enabled === false) return null
-        if ((state.settings.assistant || {}).showCountdown === false) return null
-        if (limit.resting === true) {
-          return {
-            state: 'rest',
-            text: t('chip.rest', { time: fmtClock(restRemainingMs(limit, clockOffset)) }),
-            label: t('chip.aria', { status: t('chip.rest', { time: fmtClock(restRemainingMs(limit, clockOffset)) }) }),
-          }
-        }
-        if (limit.dailyLocked === true) {
-          return { state: 'danger', text: t('chip.dailyLocked'), label: t('chip.aria', { status: t('chip.dailyLocked') }) }
-        }
-        if (limit.restDue === true) {
-          return { state: 'warn', text: t('chip.restDue'), label: t('chip.aria', { status: t('chip.restDue') }) }
-        }
-        const continuousLimit = numberOr(limit.continuousLimitMs, 0)
-        if (continuousLimit <= 0) return null
-        const used = Math.max(0, numberOr(limit.continuousUsedMs, 0))
-        const ratio = continuousLimit > 0 ? used / continuousLimit : 0
-        const chipState = ratio >= 1 ? 'danger' : ratio >= 0.8 ? 'warn' : 'normal'
-        const text = t('chip.continuous', { time: fmtClock(used) })
-        return { state: chipState, text: text, label: t('chip.aria', { status: text }) }
+      /* ── Floating dual-ring widget (top-right) + pause overlay ── */
+
+      function Ring(props) {
+        const radius = 14
+        const circumference = 2 * Math.PI * radius
+        const ratio = props.limit > 0 ? Math.min(1, Math.max(0, numberOr(props.used, 0) / props.limit)) : 0
+        return h(
+          'span',
+          {
+            className: 'df-ring',
+            'data-kind': props.kind,
+            'data-tone': props.tone === 'normal' ? undefined : props.tone,
+            'aria-hidden': 'true',
+          },
+          h(
+            'svg',
+            { viewBox: '0 0 34 34' },
+            h('circle', { className: 'df-ring-track', cx: 17, cy: 17, r: radius, strokeWidth: 3 }),
+            h('circle', {
+              className: 'df-ring-value',
+              cx: 17,
+              cy: 17,
+              r: radius,
+              strokeWidth: 3,
+              strokeDasharray: circumference.toFixed(2),
+              strokeDashoffset: (circumference * (1 - ratio)).toFixed(2),
+            }),
+          ),
+        )
       }
 
-      /* ── Top-right countdown chip ────────────────────────────────────── */
+      /** Stand-in for a standard source hook in compositions that do not bind it. */
+      function useAbsentSessionSource(selector) {
+        React.useState(0)
+        React.useEffect(function () {
+          return undefined
+        }, [])
+        return selector ? selector(undefined) : undefined
+      }
 
-      function CountdownChip() {
+      function selectWholeSource(value) {
+        return value
+      }
+
+      /**
+       * Floating top-right widget: two SVG rings (today total vs daily cap,
+       * continuous use vs continuous cap) plus a tiny summary. Clicking enters
+       * the manual pause mode (POST /pause) and pauses counting; the same widget
+       * resumes on click too. This always-mounted entry also feeds the
+       * client-primary running-conversation detector for solo hiding.
+       */
+      function FloatingRings(props) {
         useLocaleTick()
         const snapshot = useStore(true)
-        if (!store.isVisible()) return null
-        const status = chipStatus(snapshot.state, snapshot.clockOffset)
-        if (!status) return null
+        const busyPair = React.useState(false)
+        const busy = busyPair[0]
+        const setBusy = busyPair[1]
+        const errorPair = React.useState(null)
+        const error = errorPair[0]
+        const setError = errorPair[1]
+
+        const useSessionsHook =
+          props && typeof props.useSessions === 'function' ? props.useSessions : useAbsentSessionSource
+        const useSessionStatusHook =
+          props && typeof props.useSessionStatus === 'function' ? props.useSessionStatus : useAbsentSessionSource
+        const sessionsSnapshot = useSessionsHook(selectWholeSource)
+        const statusMap = useSessionStatusHook(selectWholeSource)
+        const runningIds = runningRootIdsFrom(sessionsSnapshot, statusMap)
+        const signature = runningIds === null ? '\u0000' : runningIds.join('|')
+        React.useEffect(
+          function () {
+            soloHider.setClientRunning(runningIds)
+            return function () {
+              soloHider.setClientRunning(null)
+            }
+          },
+          [signature],
+        )
+
+        const state = snapshot.state
+        const limit = (state && state.limit) || {}
+        const settings = (state && state.settings) || {}
+        const assistantCfg = settings.assistant || {}
+        const assistantOn = limit.assistantEnabled !== false && assistantCfg.enabled !== false
+        if (!store.isVisible() || !assistantOn || assistantCfg.showRings === false) return null
+
+        const dailyLimit = Math.max(0, numberOr(limit.dailyLimitMs, 0))
+        const dailyUsed = Math.max(0, numberOr(limit.dailyUsedMs, 0))
+        const continuousLimit = Math.max(0, numberOr(limit.continuousLimitMs, 0))
+        const continuousUsed = Math.max(0, numberOr(limit.continuousUsedMs, 0))
+        const dailyRatio = progressRatio(dailyUsed, dailyLimit)
+        const continuousRatio = progressRatio(continuousUsed, continuousLimit)
+        const dailyTone = dailyLimit > 0 && dailyRatio >= 1 ? 'danger' : dailyLimit > 0 && dailyRatio >= 0.9 ? 'warn' : 'normal'
+        const continuousTone =
+          continuousLimit > 0 && continuousRatio >= 1
+            ? 'danger'
+            : limit.restDue === true || (continuousLimit > 0 && continuousRatio >= 0.8)
+              ? 'warn'
+              : 'normal'
+        const paused = limit.paused === true
+        const todayText = t('rings.today') + ' ' + fmtDuration(t, dailyUsed)
+        const continuousText =
+          continuousLimit > 0 ? t('rings.continuous') + ' ' + fmtClock(continuousUsed) : t('rings.continuous') + ' —'
+        const ariaLabel = t('rings.aria', {
+          today: fmtDuration(t, dailyUsed),
+          continuous: continuousLimit > 0 ? fmtClock(continuousUsed) : '—',
+        })
+
+        async function togglePause() {
+          if (busy) return
+          setBusy(true)
+          setError(null)
+          let result
+          try {
+            result = paused ? await store.resume() : await store.pause()
+          } catch (caught) {
+            result = { ok: false }
+          }
+          setBusy(false)
+          if (!result || !result.ok) setError(t('error.generic'))
+        }
+
         return h(
           Fragment,
           null,
           h(Styles),
           h(
-            'button',
-            {
-              type: 'button',
-              className: 'df-chip',
-              'data-df-root': 'countdown',
-              'data-dsh-deep-focus-root': 'countdown',
-              'data-state': status.state,
-              title: t('chip.open'),
-              'aria-label': status.label,
-              onClick: function () {
-                selectAssistantPanel()
+            'div',
+            { className: 'df-rings-layer', 'data-df-root': 'rings-layer' },
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'df-rings',
+                'data-df-root': 'rings',
+                'data-dsh-deep-focus-root': 'rings',
+                'data-busy': busy ? 'true' : undefined,
+                'data-paused': paused ? 'true' : undefined,
+                title: paused ? t('rings.paused') : t('rings.pause'),
+                'aria-label': ariaLabel,
+                disabled: busy,
+                onClick: togglePause,
               },
+              h(Ring, { kind: 'daily', used: dailyUsed, limit: dailyLimit, tone: dailyTone }),
+              h(Ring, { kind: 'continuous', used: continuousUsed, limit: continuousLimit, tone: continuousTone }),
+              h('span', { className: 'df-rings-text' }, h('b', null, todayText), h('span', null, continuousText)),
+            ),
+            error ? h('span', { className: 'df-rings-error', role: 'alert' }, error) : null,
+          ),
+        )
+      }
+
+      /** Manual pause: grays the whole window without blocking any interaction. */
+      function PauseOverlay() {
+        useLocaleTick()
+        const snapshot = useStore(true)
+        const state = snapshot.state
+        const limit = state && state.limit
+        const paused = Boolean(store.isVisible() && limit && limit.paused === true)
+        const resumingPair = React.useState(false)
+        const resuming = resumingPair[0]
+        const setResuming = resumingPair[1]
+
+        React.useEffect(
+          function () {
+            if (!paused) return undefined
+            const pausedAt = toTimestamp(limit && limit.pausedAt)
+            const graceUntil =
+              pausedAt === null ? Date.now() + 1500 : pausedAt + 1500 - numberOr(snapshot.clockOffset, 0)
+            let used = false
+            const onActivity = function () {
+              if (used || Date.now() < graceUntil) return
+              used = true
+              setResuming(true)
+              Promise.resolve(store.resume()).catch(function () {}).then(function () {
+                setResuming(false)
+              })
+            }
+            const events = ['mousemove', 'keydown', 'pointerdown']
+            try {
+              events.forEach(function (name) {
+                document.addEventListener(name, onActivity, true)
+              })
+            } catch (error) {
+              /* ignored */
+            }
+            return function () {
+              try {
+                events.forEach(function (name) {
+                  document.removeEventListener(name, onActivity, true)
+                })
+              } catch (error) {
+                /* ignored */
+              }
+            }
+          },
+          [paused, limit && limit.pausedAt],
+        )
+
+        if (!paused) return null
+        return h(
+          Fragment,
+          null,
+          h(Styles),
+          h(
+            'div',
+            {
+              className: 'df-pause',
+              'data-df-root': 'pause',
+              'data-dsh-deep-focus-root': 'pause',
+              role: 'status',
+              'aria-live': 'polite',
+              'aria-label': t('pause.aria'),
             },
-            h('span', { className: 'df-dot', 'data-state': status.state, 'aria-hidden': 'true' }),
-            h('span', { className: 'df-chip-time' }, status.text),
+            h(
+              'div',
+              { className: 'df-pause-card' },
+              h('p', { className: 'df-pause-title' }, resuming ? t('rings.busy') : t('pause.title')),
+              h('p', { className: 'df-pause-hint' }, t('pause.hint')),
+            ),
           ),
         )
       }
@@ -2014,16 +2552,28 @@ window.__ModuleLoader__.load({
               h(AppRows, { t: t, rows: apps }),
               error ? h('p', { className: 'df-error', role: 'alert' }, error) : null,
               h(
+                'p',
+                { className: 'df-muted' },
+                canExtend
+                  ? remaining > 0
+                    ? t('daily.extendRemaining', { n: remaining })
+                    : t('daily.extendNone')
+                  : t('daily.extendDisabled'),
+              ),
+              h(
                 'div',
                 { className: 'df-actions', style: { justifyContent: 'flex-end' } },
                 h(
-                  'span',
-                  { className: 'df-muted' },
-                  canExtend
-                    ? remaining > 0
-                      ? t('daily.extendRemaining', { n: remaining })
-                      : t('daily.extendNone')
-                    : t('daily.extendDisabled'),
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'df-btn',
+                    disabled: busy,
+                    onClick: function () {
+                      if (dayKey) store.ackToday(dayKey)
+                    },
+                  },
+                  t('daily.skip'),
                 ),
                 h(
                   'button',
@@ -2037,26 +2587,13 @@ window.__ModuleLoader__.load({
                   t('daily.extend', { n: extendMinutes }),
                 ),
               ),
-              h(
-                'button',
-                {
-                  type: 'button',
-                  className: 'df-btn df-btn-ghost',
-                  style: { alignSelf: 'flex-start', paddingLeft: 0 },
-                  disabled: busy,
-                  onClick: function () {
-                    if (dayKey) store.ackToday(dayKey)
-                  },
-                },
-                t('daily.ack'),
-              ),
-              h('p', { className: 'df-muted' }, t('daily.ackHint')),
+              h('p', { className: 'df-muted' }, t('daily.skipHint')),
             ),
           ),
         )
       }
 
-      /* ── Forced-rest full screen ─────────────────────────────────────── */
+      /* ── Forced-rest full screen (skip + away waiting) ── */
 
       function RestOverlay() {
         useLocaleTick()
@@ -2065,6 +2602,12 @@ window.__ModuleLoader__.load({
         const limit = state && state.limit
         const resting = Boolean(store.isVisible() && limit && limit.resting === true)
         const cardRef = React.useRef(null)
+        const busyPair = React.useState(false)
+        const busy = busyPair[0]
+        const setBusy = busyPair[1]
+        const errorPair = React.useState(null)
+        const error = errorPair[0]
+        const setError = errorPair[1]
 
         React.useEffect(
           function () {
@@ -2077,8 +2620,11 @@ window.__ModuleLoader__.load({
               /* ignored */
             }
             const onKeyDown = function (event) {
-              if (event.key !== 'Tab') return
-              event.preventDefault()
+              if (event.key === 'Tab') {
+                event.preventDefault()
+                return
+              }
+              if (event.key === 'Escape') event.preventDefault()
             }
             card.addEventListener('keydown', onKeyDown)
             return function () {
@@ -2090,18 +2636,25 @@ window.__ModuleLoader__.load({
 
         if (!resting) return null
         const remaining = restRemainingMs(limit, snapshot.clockOffset)
+        const needsActivity = limit.restNeedsActivity === true || remaining <= 0
+
+        async function skipRest() {
+          if (busy) return
+          setBusy(true)
+          setError(null)
+          const result = await store.finishRest()
+          setBusy(false)
+          if (result.ok) store.pushToast('rest-skipped', t('rest.thenRestart'))
+          else setError(t('error.generic'))
+        }
+
         return h(
           Fragment,
           null,
           h(Styles),
           h(
             'div',
-            {
-              className: 'df-rest',
-              'data-df-root': 'rest',
-              'data-dsh-deep-focus-root': 'rest',
-              role: 'presentation',
-            },
+            { className: 'df-rest', 'data-df-root': 'rest', 'data-dsh-deep-focus-root': 'rest', role: 'presentation' },
             h(
               'div',
               {
@@ -2115,94 +2668,31 @@ window.__ModuleLoader__.load({
               },
               h('div', { className: 'df-rest-orb', 'aria-hidden': 'true' }),
               h('h2', { className: 'df-rest-title' }, t('rest.title')),
-              h('p', { className: 'df-rest-time', 'aria-live': 'polite', 'aria-label': t('rest.aria', { time: fmtClock(remaining) }) }, fmtClock(remaining)),
+              needsActivity
+                ? h('p', { className: 'df-rest-body', role: 'status', 'aria-live': 'polite' }, t('rest.doneWaiting'))
+                : h(
+                    'p',
+                    {
+                      className: 'df-rest-time',
+                      'aria-live': 'polite',
+                      'aria-label': t('rest.aria', { time: fmtClock(remaining) }),
+                    },
+                    fmtClock(remaining),
+                  ),
               h('p', { className: 'df-rest-body' }, t('rest.body')),
-              h('p', { className: 'df-rest-note' }, t('rest.note')),
+              h('p', { className: 'df-rest-note' }, needsActivity ? t('rest.waitingNote') : t('rest.note')),
               h('p', { className: 'df-rest-note' }, t('rest.auto')),
+              error ? h('p', { className: 'df-error', role: 'alert' }, error) : null,
+              h(
+                'div',
+                { className: 'df-actions', style: { justifyContent: 'center' } },
+                h(
+                  'button',
+                  { type: 'button', className: 'df-btn', disabled: busy, onClick: skipRest },
+                  t('rest.skip'),
+                ),
+              ),
             ),
-          ),
-        )
-      }
-
-      /* ── Solo banner ─────────────────────────────────────────────────── */
-
-      function useSoloTick() {
-        const pair = React.useState(0)
-        const force = pair[1]
-        React.useEffect(function () {
-          return soloHider.subscribe(function () {
-            force(function (value) {
-              return value + 1
-            })
-          })
-        }, [])
-      }
-
-      /** Stand-in for a standard source hook in compositions that do not bind it. */
-      function useAbsentSessionSource(selector) {
-        React.useState(0)
-        React.useEffect(function () {
-          return undefined
-        }, [])
-        return selector ? selector(undefined) : undefined
-      }
-
-      function selectWholeSource(value) {
-        return value
-      }
-
-      /**
-       * Solo banner + client-side running-conversation detector.
-       *
-       * The running set comes from the same client session sources the sidebar
-       * uses for its running dot (standard `useSessions` + `useSessionStatus`
-       * props bound for root-scoped entries). `state.solo` remains the fallback
-       * only when those hooks are not bound in the composition.
-       */
-      function SoloBanner(props) {
-        useLocaleTick()
-        const snapshot = useStore(true)
-        useSoloTick()
-        const useSessionsHook =
-          props && typeof props.useSessions === 'function' ? props.useSessions : useAbsentSessionSource
-        const useSessionStatusHook =
-          props && typeof props.useSessionStatus === 'function' ? props.useSessionStatus : useAbsentSessionSource
-        const sessionsSnapshot = useSessionsHook(selectWholeSource)
-        const statusMap = useSessionStatusHook(selectWholeSource)
-        const runningIds = runningRootIdsFrom(sessionsSnapshot, statusMap)
-        const signature = runningIds === null ? '\u0000' : runningIds.join('|')
-        React.useEffect(
-          function () {
-            soloHider.setClientRunning(runningIds)
-            return function () {
-              soloHider.setClientRunning(null)
-            }
-          },
-          [signature],
-        )
-        if (!store.isVisible()) return null
-        if (!soloHider.isActive()) return null
-        const state = snapshot.state
-        const limit = state && state.limit
-        const resting = Boolean(limit && limit.resting === true)
-        const text = resting
-          ? t('solo.bannerRest', { time: fmtClock(restRemainingMs(limit, snapshot.clockOffset)) })
-          : t('solo.banner')
-        return h(
-          Fragment,
-          null,
-          h(Styles),
-          h(
-            'div',
-            {
-              className: 'df-solo-banner',
-              id: 'dsh-deep-focus-solo-banner',
-              'data-df-root': 'solo-banner',
-              'data-dsh-deep-focus-root': 'solo-banner',
-              role: 'status',
-              'aria-label': t('solo.aria'),
-            },
-            text,
           ),
         )
       }
@@ -2328,6 +2818,7 @@ window.__ModuleLoader__.load({
           if (!assistantOn) return t('hub.status.offNote')
           if (resting) return t('hub.status.resting', { time: fmtClock(restRemaining) })
           const parts = []
+          if (limit.paused === true) parts.push(t('rings.paused'))
           parts.push(
             dailyLimit > 0
               ? t('hub.status.daily', { used: fmtDuration(t, dailyUsed), limit: fmtDuration(t, dailyLimit) })
@@ -2648,13 +3139,13 @@ window.__ModuleLoader__.load({
                 ),
                 h(
                   FieldRow,
-                  { label: t('field.showCountdown') },
+                  { label: t('field.showRings') },
                   h(Switch, {
-                    checked: draftAssistant.showCountdown !== false,
-                    label: t('field.showCountdown'),
+                    checked: draftAssistant.showRings !== false,
+                    label: t('field.showRings'),
                     disabled: disabled,
                     onChange: function (value) {
-                      patch('assistant.showCountdown', value)
+                      patch('assistant.showRings', value)
                     },
                   }),
                 ),
@@ -2662,18 +3153,6 @@ window.__ModuleLoader__.load({
               h(
                 Section,
                 { title: t('group.alerts') },
-                h(
-                  FieldRow,
-                  { label: t('field.taskDone') },
-                  h(Switch, {
-                    checked: Boolean(draftAlerts.taskDone),
-                    label: t('field.taskDone'),
-                    disabled: disabled,
-                    onChange: function (value) {
-                      patch('alerts.taskDone', value)
-                    },
-                  }),
-                ),
                 h(
                   FieldRow,
                   { label: t('field.sound') },
@@ -2741,6 +3220,48 @@ window.__ModuleLoader__.load({
                     disabled: disabled,
                     onChange: function (event) {
                       patch('alerts.quietHoursEnd', event.target.value || null)
+                    },
+                  }),
+                ),
+                h(
+                  FieldRow,
+                  { label: t('field.repeatUntilActive'), hint: t('field.repeatUntilActive.hint') },
+                  h(Switch, {
+                    checked: draftAlerts.repeatUntilActive !== false,
+                    label: t('field.repeatUntilActive'),
+                    disabled: disabled,
+                    onChange: function (value) {
+                      patch('alerts.repeatUntilActive', value)
+                    },
+                  }),
+                ),
+                h(
+                  FieldRow,
+                  { label: t('field.repeatIntervalMs'), hint: t('field.repeatIntervalMs.hint') },
+                  h(NumberInput, {
+                    value: draftAlerts.repeatIntervalMs,
+                    min: 500,
+                    max: 10000,
+                    step: 100,
+                    label: t('field.repeatIntervalMs'),
+                    disabled: disabled,
+                    onChange: function (value) {
+                      patch('alerts.repeatIntervalMs', value)
+                    },
+                  }),
+                ),
+                h(
+                  FieldRow,
+                  { label: t('field.awayIdleSeconds'), hint: t('field.awayIdleSeconds.hint') },
+                  h(NumberInput, {
+                    value: draftAlerts.awayIdleSeconds,
+                    min: 10,
+                    max: 3600,
+                    step: 5,
+                    label: t('field.awayIdleSeconds'),
+                    disabled: disabled,
+                    onChange: function (value) {
+                      patch('alerts.awayIdleSeconds', value)
                     },
                   }),
                 ),
@@ -2842,10 +3363,10 @@ window.__ModuleLoader__.load({
         store: store,
         start: start,
         components: {
-          CountdownChip: CountdownChip,
+          FloatingRings: FloatingRings,
+          PauseOverlay: PauseOverlay,
           DailyLockOverlay: DailyLockOverlay,
           RestOverlay: RestOverlay,
-          SoloBanner: SoloBanner,
           Toasts: Toasts,
           AssistantIcon: AssistantIcon,
           AssistantPage: AssistantPage,
@@ -2893,15 +3414,11 @@ window.__ModuleLoader__.load({
 
         // Always-present entries: they render nothing while the Host is unavailable.
         const staticEntries = [
-          [
-            'conversation.session.header.utilities',
-            { name: 'conversation.session.header.utilities', id: 'dsh-deep-focus-countdown', order: 10 },
-            client.components.CountdownChip,
-          ],
+          ['shell.overlay', { name: 'shell.overlay', id: 'dsh-deep-focus-rings', order: 70 }, client.components.FloatingRings],
+          ['shell.overlay', { name: 'shell.overlay', id: 'dsh-deep-focus-toasts', order: 90 }, client.components.Toasts],
           ['shell.overlay', { name: 'shell.overlay', id: 'dsh-deep-focus-daily-lock', order: 100 }, client.components.DailyLockOverlay],
           ['shell.overlay', { name: 'shell.overlay', id: 'dsh-deep-focus-rest', order: 110 }, client.components.RestOverlay],
-          ['shell.overlay', { name: 'shell.overlay', id: 'dsh-deep-focus-solo-banner', order: 80 }, client.components.SoloBanner],
-          ['shell.overlay', { name: 'shell.overlay', id: 'dsh-deep-focus-toasts', order: 90 }, client.components.Toasts],
+          ['shell.overlay', { name: 'shell.overlay', id: 'dsh-deep-focus-pause-gray', order: 118 }, client.components.PauseOverlay],
         ]
         staticEntries.forEach(function (entry) {
           try {

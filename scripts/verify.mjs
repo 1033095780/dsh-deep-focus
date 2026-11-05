@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 /**
- * Offline packaging smoke test for dsh-deep-focus v0.3.
+ * Offline packaging smoke test for dsh-deep-focus v0.4.
  *
  * Plain `node scripts/verify.mjs` — no install step, no network. It exits
  * non-zero when the published package would be broken: missing entry points,
  * unparsable JSON/XML, locale drift, a contract that no longer matches what the
- * README documents, a reintroduced pomodoro/tool-blocking/password concept, or
- * source files importing something the DSH runtime cannot resolve.
+ * README documents, a reintroduced pomodoro/tool-blocking/password concept, an old
+ * header chip or solo banner lingering in `src/`, or source files importing
+ * something the DSH runtime cannot resolve.
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -324,7 +325,7 @@ check('icon is valid SVG', () => {
   return iconPath
 })
 
-check('contract.js is a sane v3 contract', async () => {
+check('contract.js is a sane v4 contract', async () => {
   const contractPath = abs('src/shared/contract.js')
   if (!existsSync(contractPath)) fail('src/shared/contract.js is missing')
   let contract
@@ -335,12 +336,12 @@ check('contract.js is a sane v3 contract', async () => {
   }
   const defaults = contract.DEFAULT_SETTINGS
   if (!isPlainObject(defaults)) fail('contract.js does not export DEFAULT_SETTINGS')
-  if (defaults.version !== 3) fail(`DEFAULT_SETTINGS.version is ${defaults.version}, expected 3 (v0.3 contract)`)
+  if (defaults.version !== 4) fail(`DEFAULT_SETTINGS.version is ${defaults.version}, expected 4 (v0.4 contract)`)
   for (const section of ['limits', 'assistant', 'alerts', 'usage']) {
     if (!isPlainObject(defaults[section])) fail(`DEFAULT_SETTINGS.${section} is missing`)
   }
   for (const removed of ['focus', 'lock', 'security']) {
-    if (removed in defaults) fail(`DEFAULT_SETTINGS.${removed} must not exist in the v0.3 contract`)
+    if (removed in defaults) fail(`DEFAULT_SETTINGS.${removed} must not exist in the v0.4 contract`)
   }
   const expectedDefaults = {
     'limits.dailyMinutes': 180,
@@ -348,10 +349,12 @@ check('contract.js is a sane v3 contract', async () => {
     'limits.restMinutes': 10,
     'limits.extendMinutes': 20,
     'limits.dailyExtendLimit': 2,
+    'alerts.repeatIntervalMs': 1000,
+    'alerts.awayIdleSeconds': 30,
   }
   for (const [key, expected] of Object.entries(expectedDefaults)) {
     if (getPath(defaults, key) !== expected) {
-      fail(`DEFAULT_SETTINGS.${key} is ${getPath(defaults, key)}, expected the agreed v0.3 default ${expected}`)
+      fail(`DEFAULT_SETTINGS.${key} is ${getPath(defaults, key)}, expected the agreed v0.4 default ${expected}`)
     }
   }
   const numericKeys = [
@@ -360,6 +363,8 @@ check('contract.js is a sane v3 contract', async () => {
     'limits.restMinutes',
     'limits.extendMinutes',
     'limits.dailyExtendLimit',
+    'alerts.repeatIntervalMs',
+    'alerts.awayIdleSeconds',
     'usage.sampleSeconds',
     'usage.idleThresholdSeconds',
     'usage.retentionDays',
@@ -368,11 +373,14 @@ check('contract.js is a sane v3 contract', async () => {
     const value = getPath(defaults, key)
     if (!Number.isInteger(value) || value < 0) fail(`DEFAULT_SETTINGS.${key} must be a non-negative integer (got ${value})`)
   }
-  for (const key of ['limits.restMinutes', 'limits.extendMinutes', 'usage.sampleSeconds', 'usage.idleThresholdSeconds']) {
+  for (const key of ['limits.restMinutes', 'limits.extendMinutes', 'alerts.repeatIntervalMs', 'alerts.awayIdleSeconds', 'usage.sampleSeconds', 'usage.idleThresholdSeconds']) {
     if (getPath(defaults, key) < 1) fail(`DEFAULT_SETTINGS.${key} must be at least 1`)
   }
   for (const key of ['limits.dailyMinutes', 'limits.continuousMinutes', 'limits.dailyExtendLimit']) {
     if (getPath(defaults, key) < 0) fail(`DEFAULT_SETTINGS.${key} cannot be negative`)
+  }
+  if (getPath(defaults, 'alerts.repeatIntervalMs') < 500 || getPath(defaults, 'alerts.repeatIntervalMs') > 10_000) {
+    fail('alerts.repeatIntervalMs default must stay inside the supported 500–10000 ms range')
   }
   const volume = defaults.alerts.volume
   if (typeof volume !== 'number' || volume < 0 || volume > 1) fail('alerts.volume must be a number between 0 and 1')
@@ -386,31 +394,33 @@ check('contract.js is a sane v3 contract', async () => {
     'assistant.enabled',
     'assistant.soloSession',
     'assistant.hideOtherSessions',
-    'assistant.showCountdown',
+    'assistant.showRings',
     'alerts.sound',
-    'alerts.taskDone',
+    'alerts.repeatUntilActive',
     'usage.trackApps',
   ]
   for (const key of booleanKeys) {
     if (typeof getPath(defaults, key) !== 'boolean') fail(`DEFAULT_SETTINGS.${key} must be a boolean`)
   }
-  for (const key of ['assistant.enabled', 'assistant.soloSession', 'assistant.hideOtherSessions', 'assistant.showCountdown']) {
-    if (getPath(defaults, key) !== true) fail(`DEFAULT_SETTINGS.${key} must default to true in v0.3`)
+  for (const key of ['assistant.enabled', 'assistant.soloSession', 'assistant.hideOtherSessions', 'assistant.showRings', 'alerts.repeatUntilActive']) {
+    if (getPath(defaults, key) !== true) fail(`DEFAULT_SETTINGS.${key} must default to true in v0.4`)
   }
   for (const removedKey of ['dailyActiveMinutes', 'continuousWorkMinutes', 'sessionMinutes', 'unlockMinutes']) {
     if (removedKey in defaults.limits) fail(`DEFAULT_SETTINGS.limits.${removedKey} was removed in v0.3`)
   }
   if ('detectMedia' in defaults.usage) fail('DEFAULT_SETTINGS.usage.detectMedia was removed in v0.3')
   if ('turnDone' in defaults.alerts) fail('DEFAULT_SETTINGS.alerts.turnDone was removed in v0.3')
+  if ('taskDone' in defaults.alerts) fail('DEFAULT_SETTINGS.alerts.taskDone was removed in v0.4')
+  if ('showCountdown' in defaults.assistant) fail('DEFAULT_SETTINGS.assistant.showCountdown was renamed to assistant.showRings in v0.4')
   const serializedDefaults = JSON.stringify(defaults).toLowerCase()
   if (serializedDefaults.includes('password') || serializedDefaults.includes('security')) {
-    fail('DEFAULT_SETTINGS must not contain password/security fields in v0.3')
+    fail('DEFAULT_SETTINGS must not contain password/security fields in v0.4')
   }
   if (typeof contract.API_BASE !== 'string' || !/^\/[\w/-]+\/api$/.test(contract.API_BASE)) {
     fail(`contract.API_BASE looks wrong: ${contract.API_BASE}`)
   }
   if (!isPlainObject(contract.ROUTES)) fail('contract.js does not export ROUTES')
-  for (const route of ['state', 'apps', 'settings', 'assistant', 'restStart', 'restFinish', 'extend']) {
+  for (const route of ['state', 'apps', 'settings', 'assistant', 'pause', 'resume', 'restStart', 'restFinish', 'extend']) {
     if (typeof contract.ROUTES[route] !== 'string') fail(`contract.js ROUTES.${route} is missing`)
   }
   for (const removedRoute of ['focusStart', 'focusPause', 'focusResume', 'focusStop', 'focusComplete']) {
@@ -422,12 +432,33 @@ check('contract.js is a sane v3 contract', async () => {
   if (!isPlainObject(contract.EVENT) || Object.keys(contract.EVENT).length === 0) {
     fail('contract.js does not export EVENT')
   }
-  for (const event of ['restDue', 'restStarted', 'restFinished', 'dailyLocked', 'extended', 'assistantOff', 'assistantOn']) {
+  for (const event of ['taskCompleted', 'paused', 'resumed', 'restDue', 'restStarted', 'restFinished', 'dailyLocked', 'extended', 'assistantOff', 'assistantOn']) {
     if (typeof contract.EVENT[event] !== 'string') fail(`contract.js EVENT.${event} is missing`)
   }
   if ('PHASE' in contract) fail('contract.js still exports PHASE (the pomodoro phase enum was removed in v0.3)')
   if ('LOCK_REASON' in contract) fail('contract.js still exports LOCK_REASON (removed in v0.3)')
   return `v${defaults.version}: ${numericKeys.length} numeric, ${Object.keys(contract.ROUTES).length} routes`
+})
+
+check('v0.4 removed the old header chip and solo banner', () => {
+  const banned = [
+    'conversation.session.header.utilities',
+    'dsh-deep-focus-countdown',
+    'dsh-deep-focus-solo-banner',
+    'solo.banner',
+    'showCountdown',
+    'taskDone',
+  ]
+  const problems = []
+  for (const file of walkFiles(abs('src')).filter((entry) => entry.endsWith('.js') || entry.endsWith('.ps1'))) {
+    const relativeFile = file.slice(ROOT.length + 1).split('\\').join('/')
+    const code = file.endsWith('.js') ? stripComments(readFileSync(file, 'utf8')) : readFileSync(file, 'utf8')
+    for (const token of banned) {
+      if (code.includes(token)) problems.push(`${relativeFile}: still contains "${token}"`)
+    }
+  }
+  if (problems.length) fail(problems.join('; '))
+  return 'no header chip, no solo banner, no showCountdown/taskDone'
 })
 
 check('v0.3 removed the pomodoro machinery', () => {
@@ -496,16 +527,14 @@ check('README settings tables match contract.js', async () => {
   return module.checkConfigTables()
 })
 
-check('READMEs describe the v0.3 product', () => {
+check('READMEs describe the v0.4 product', () => {
   const en = readText('README.md')
   const zh = readText('README.zh.md')
+  // v0.3 rules are still part of the product.
   if (!/focus assistant/i.test(en)) fail('README.md must introduce the “Focus assistant” panel')
   if (!/(?:3 hours|180 minutes)/i.test(en) || !/daily/i.test(en)) fail('README.md must document the 3-hour daily cap')
   if (!/30 (?:continuous minutes|minutes of continuous|continuous)/i.test(en)) fail('README.md must document the 30-minute continuous cap')
   if (!/10-minute (?:forced )?rest/i.test(en)) fail('README.md must document the 10-minute forced rest')
-  if (!/countdown/i.test(en) || !/top-right|top right/i.test(en)) {
-    fail('README.md must document the top-right countdown chip')
-  }
   if (!/20 more minutes/i.test(en)) fail('README.md must document the “Use 20 more minutes” action')
   if (!/one conversation at a time/i.test(en)) fail('README.md must document the one-conversation-at-a-time mode')
   if (!/no pomodoro/i.test(en)) fail('README.md must state that the pomodoro timer is gone')
@@ -516,12 +545,31 @@ check('READMEs describe the v0.3 product', () => {
   if (!/desktop (?:guard|daemon)/i.test(en) || !/later phase/i.test(en)) {
     fail('README.md must describe the desktop guard as a possible later phase, not part of this version')
   }
-  // Chinese mirrors
+  // v0.4 UX changes.
+  if (!/floating/i.test(en) || !/(?:two|dual)[- ]?ring/i.test(en)) {
+    fail('README.md must document the floating two-ring widget')
+  }
+  if (!/top-right|top right/i.test(en)) fail('README.md must document that the rings float in the top-right')
+  if (!/pause/i.test(en) || !/gray|grays|grey/i.test(en)) {
+    fail('README.md must document that clicking the widget pauses counting and grays the DSH window')
+  }
+  if (!/real keyboard\/mouse activity|move the mouse or type|real activity/i.test(en)) {
+    fail('README.md must document that the pause resumes only on real keyboard/mouse activity')
+  }
+  if (!/skip rest/i.test(en)) fail('README.md must document the forced-rest “Skip rest” action')
+  if (!/“Skip”|Skip button|\bSkip\b/.test(en)) fail('README.md must document the daily overlay “Skip” action')
+  if (!/away/i.test(en) || !/repeat/i.test(en) || !/chime/i.test(en)) {
+    fail('README.md must document that the completion chime only repeats while you are away')
+  }
+  if (!/folders?/i.test(en) || !/fade|animat/i.test(en)) {
+    fail('README.md must document that solo mode hides workspace folders too and animates the hide/show')
+  }
+  if (!/no banner|without a banner|no banner text/i.test(en)) fail('README.md must state that solo mode shows no banner')
+  // Chinese mirrors.
   if (!/专注助手/.test(zh)) fail('README.zh.md must introduce the「专注助手」panel')
   if (!/(?:3 小时|180 分钟)/.test(zh) || !/每日/.test(zh)) fail('README.zh.md must document the 3-hour daily cap')
   if (!/30 分钟/.test(zh)) fail('README.zh.md must document the 30-minute continuous cap')
   if (!/10 分钟/.test(zh)) fail('README.zh.md must document the 10-minute forced rest')
-  if (!/倒计时/.test(zh) || !/右上角/.test(zh)) fail('README.zh.md must document the top-right countdown')
   if (!/再使用 20 分钟/.test(zh)) fail('README.zh.md must document the「再使用 20 分钟」action')
   if (!/一次只/.test(zh)) fail('README.zh.md must document the one-conversation-at-a-time mode')
   if (!/没有番茄/.test(zh)) fail('README.zh.md must state that the pomodoro timer is gone')
@@ -532,6 +580,23 @@ check('READMEs describe the v0.3 product', () => {
   if (!/桌面守护程序/.test(zh) || !/后续可选阶段/.test(zh)) {
     fail('README.zh.md must describe the desktop guard as a possible later phase')
   }
+  if (!/双环/.test(zh) || !/悬浮/.test(zh)) fail('README.zh.md must document the floating two-ring widget')
+  if (!/右上角/.test(zh)) fail('README.zh.md must document that the rings float in the top-right')
+  if (!/暂停/.test(zh) || !/灰/.test(zh)) {
+    fail('README.zh.md must document that clicking the widget pauses counting and grays the DSH window')
+  }
+  if (!/动(?:一下)?鼠标|动键鼠|真实(?:键鼠|活动)/.test(zh)) {
+    fail('README.zh.md must document that the pause resumes only on real keyboard/mouse activity')
+  }
+  if (!/跳过休息/.test(zh)) fail('README.zh.md must document the forced-rest「跳过休息」action')
+  if (!/跳过/.test(zh)) fail('README.zh.md must document the daily overlay「跳过」action')
+  if (!/离开/.test(zh) || !/重复/.test(zh) || !/提示音/.test(zh)) {
+    fail('README.zh.md must document that the completion chime only repeats while you are away')
+  }
+  if (!/文件夹/.test(zh) || !/淡出|动画|平滑/.test(zh)) {
+    fail('README.zh.md must document that solo mode hides workspace folders too and animates the hide/show')
+  }
+  if (!/不再显示任何提示横幅|没有提示条|去掉提示条/.test(zh)) fail('README.zh.md must state that solo mode shows no banner')
   const forbidden = [
     /25\s*[\/:]\s*5/,
     /focus block/i,
@@ -539,6 +604,10 @@ check('READMEs describe the v0.3 product', () => {
     /pomodoro presets/i,
     /composer pill/i,
     /the Usage panel/i,
+    /countdown chip/i,
+    /conversation\.session\.header\.utilities/,
+    /dsh-deep-focus-countdown/,
+    /其它文件夹和会话已暂时隐藏/,
     /enter (?:your |the )?password/i,
     /unlock password/i,
     /密码解锁/,
@@ -549,12 +618,12 @@ check('READMEs describe the v0.3 product', () => {
   for (const pattern of forbidden) {
     if (pattern.test(en) || pattern.test(zh)) fail(`README still advertises a removed earlier-version concept: ${pattern}`)
   }
-  return 'v0.3 rules, assistant panel, capability boundary, no pomodoro'
+  return 'v0.4 rings, pause/gray, rest+skip, away chime, solo folders+animation, v0.3 rules'
 })
 
-check('package version is the v0.3 series', () => {
-  if (!/^0\.3\.\d+$/.test(pkg.version)) {
-    fail(`package.json version is "${pkg.version}"; the release kit documents v0.3.x`)
+check('package version is the v0.4 series', () => {
+  if (!/^0\.4\.\d+$/.test(pkg.version)) {
+    fail(`package.json version is "${pkg.version}"; the release kit documents v0.4.x`)
   }
   return pkg.version
 })
@@ -574,11 +643,11 @@ check('LICENSE and CHANGELOG', () => {
   const changelog = readText('CHANGELOG.md')
   if (!changelog.includes('## [Unreleased]')) fail('CHANGELOG.md has no [Unreleased] section')
   if (!changelog.includes(`## [${pkg.version}]`)) fail(`CHANGELOG.md has no entry for version ${pkg.version}`)
-  for (const heading of ['### Added', '### Changed', '### Removed']) {
-    if (!changelog.includes(heading)) fail(`CHANGELOG.md v0.3 entry is missing "${heading}"`)
+  for (const heading of ['### Added', '### Changed', '### Removed', '### Fixed']) {
+    if (!changelog.includes(heading)) fail(`CHANGELOG.md v0.4 entry is missing "${heading}"`)
   }
-  if (!/never published|未发布/i.test(changelog)) {
-    fail('CHANGELOG.md must note that 0.1.0 and 0.2.0 were never published')
+  if (!/0\.1\.0[^\n]*0\.3\.0[^\n]*never published/i.test(changelog)) {
+    fail('CHANGELOG.md must note that 0.1.0–0.3.0 were never published')
   }
   return `MIT, changelog covers ${pkg.version}`
 })
@@ -679,7 +748,7 @@ check('publish workflow uses OIDC only', () => {
   return 'OIDC publish, CI on Node 20/22'
 })
 
-check('privacy docs match the v0.3 data collection', () => {
+check('privacy docs match the v0.4 data collection', () => {
   const combined = readText('README.md') + readText('README.zh.md') + readText('docs/privacy.md')
   if (!combined.includes('$DSH_HOME/plugin-data/dsh-deep-focus')) {
     fail('READMEs and docs/privacy.md must document $DSH_HOME/plugin-data/dsh-deep-focus')
@@ -694,7 +763,11 @@ check('privacy docs match the v0.3 data collection', () => {
   if (!/rest time is excluded|休息.*不计入|rest.*not (?:counted|added)/i.test(combined)) {
     fail('docs must state that rest time is excluded from the daily total')
   }
-  return 'foreground apps, names + durations only, rest excluded, local'
+  if (!/pause|暂停/i.test(combined)) fail('docs must mention the pause/gray mode')
+  if (!/no new data|nothing new is recorded|不新增/i.test(combined)) {
+    fail('docs must state that the pause/away logic records no new data')
+  }
+  return 'foreground apps, names + durations, rest excluded, pause reuses idle signal, local'
 })
 
 // --- runner -----------------------------------------------------------------

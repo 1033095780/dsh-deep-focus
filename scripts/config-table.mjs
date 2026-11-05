@@ -86,24 +86,24 @@ const FIELDS = [
     key: 'assistant.hideOtherSessions',
     unit: '',
     note: {
-      en: 'Temporarily hide other folders/conversations while one is running.',
-      zh: '有会话在运行时临时隐藏其它文件夹与会话。',
+      en: 'Temporarily hide other conversations and workspace folders while one is running.',
+      zh: '有会话在运行时临时隐藏其它会话与工作区文件夹。',
     },
   },
   {
-    key: 'assistant.showCountdown',
+    key: 'assistant.showRings',
     unit: '',
     note: {
-      en: 'Show the countdown chip in the DSH window header.',
-      zh: '在 DSH 窗口右上角显示倒计时胶囊。',
+      en: 'Show the floating top-right widget with the two usage rings.',
+      zh: '在 DSH 右上角显示悬浮双环小组件。',
     },
   },
   {
     key: 'alerts.sound',
     unit: '',
     note: {
-      en: 'Play the short chime for rest and completion alerts.',
-      zh: '休息与完成提醒时播放短提示音。',
+      en: 'Play the short chime for rest, pause and completion alerts.',
+      zh: '休息、暂停与完成提醒时播放短提示音。',
     },
   },
   {
@@ -125,11 +125,27 @@ const FIELDS = [
     note: { en: 'End of quiet hours; null = off.', zh: '静音时段的结束时间；null = 关闭。' },
   },
   {
-    key: 'alerts.taskDone',
+    key: 'alerts.awayIdleSeconds',
+    unit: 's',
+    note: {
+      en: 'Consider you away (for the completion chime) after this much idle time.',
+      zh: '空闲达到此时长即视为离开（决定完成提示音是否响起）。',
+    },
+  },
+  {
+    key: 'alerts.repeatUntilActive',
     unit: '',
     note: {
-      en: 'Toast and chime when an agent task completes.',
-      zh: 'agent 任务完成时显示 toast 并播放提示音。',
+      en: 'Repeat the completion chime while you are away until input returns.',
+      zh: '离开期间重复播放完成提示音，直到你回来操作。',
+    },
+  },
+  {
+    key: 'alerts.repeatIntervalMs',
+    unit: 'ms',
+    note: {
+      en: 'Chime repeat interval while away (clamped to 500–10000 ms).',
+      zh: '离开期间提示音的重复间隔（限制在 500–10000 毫秒）。',
     },
   },
   {
@@ -163,6 +179,7 @@ const FIELDS = [
 const UNIT_LABELS = {
   min: { en: 'min', zh: '分钟' },
   s: { en: 's', zh: '秒' },
+  ms: { en: 'ms', zh: '毫秒' },
   days: { en: 'days', zh: '天' },
   count: { en: 'count', zh: '次' },
   ratio: { en: '0–1', zh: '0–1' },
@@ -176,8 +193,8 @@ const COLUMNS = {
 }
 
 const FOOTER = {
-  en: '> Times are minutes unless the unit says otherwise. The defaults are the agreed product rules: a 3-hour daily cap, a forced 10-minute rest after 30 continuous minutes, and 2 × 20-minute extensions per day. The assistant never blocks tools and only enforces inside DSH (see the capability boundary below).',
-  zh: '> 未特别注明时时间单位为分钟。默认值即已确认的产品规则：每日上限 3 小时、连续使用 30 分钟后强制休息 10 分钟、每日可续期 2 次、每次 20 分钟。助手绝不拦截工具，限制只在 DSH 内生效（见下方能力边界）。',
+  en: '> Times are minutes unless the unit says otherwise. The defaults are the agreed product rules: a 3-hour daily cap, a forced 10-minute rest after 30 continuous minutes, 2 × 20-minute extensions per day, and a completion chime that only repeats while you are away. The assistant never blocks tools and only enforces inside DSH (see the capability boundary below).',
+  zh: '> 未特别注明时时间单位为分钟。默认值即已确认的产品规则：每日上限 3 小时、连续使用 30 分钟后强制休息 10 分钟、每日可续期 2 次（每次 20 分钟），完成提示音只在你离开时重复。助手绝不拦截工具，限制只在 DSH 内生效（见下方能力边界）。',
 }
 
 function loadDefaults() {
