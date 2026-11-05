@@ -1,6 +1,6 @@
 {
   "name": "dsh-deep-focus",
-  "version": "0.4.12",
+  "version": "0.4.13",
   "description": "Focus assistant for DeepSeek Harness: per-application usage statistics, a floating dual-ring usage widget, a 3-hour daily cap, a 30-minute continuous-use cap with an activity-gated forced rest, and a gentle one-conversation-at-a-time sidebar. Pure plugin: never blocks tools and only enforces inside DSH.",
   "type": "module",
   "license": "MIT",

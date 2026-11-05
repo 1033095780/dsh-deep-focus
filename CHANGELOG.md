@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.4.13] - 2026-11-05
+
+Patch release. Versions 0.1.0–0.4.9 were never published.
+
+### Fixed
+
+- **One-conversation mode could stop working.** The browser's own running-session
+  snapshot was treated as authoritative, so a briefly empty snapshot disabled the
+  graying even though the Host still reported `solo.primary`. The Host value now
+  wins; the client snapshot is only a fallback.
+
 ## [0.4.12] - 2026-11-05
 
 Patch release. Versions 0.1.0–0.4.9 were never published.

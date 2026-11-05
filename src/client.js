@@ -1568,11 +1568,20 @@ window.__ModuleLoader__.load({
           // single running root, then the visible conversation if it is running.
           const solo = state.solo && typeof state.solo === 'object' ? state.solo : null
           const hostPrimary = solo ? solo.primary || solo.primarySession : null
+          // The Host is authoritative: an empty client snapshot must never
+          // override a non-empty Host solo state (that made the sidebar stay
+          // usable when the client session hooks briefly reported nothing).
+          const hostActive = Boolean(
+            solo &&
+            solo.active === true &&
+            typeof hostPrimary === 'string' &&
+            hostPrimary.length > 0
+          )
           const clientEmpty = clientRunningIds !== null && clean.length === 0
           let owner = null
-          if (!clientEmpty) {
-            if (typeof hostPrimary === 'string' && hostPrimary.length > 0) owner = hostPrimary
-            else if (clean.length === 1) owner = clean[0]
+          if (hostActive) owner = hostPrimary
+          else if (!clientEmpty) {
+            if (clean.length === 1) owner = clean[0]
             else if (clientCurrentId !== null && clean.indexOf(clientCurrentId) >= 0) owner = clientCurrentId
           }
 
