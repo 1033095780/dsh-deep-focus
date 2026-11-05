@@ -1,7 +1,7 @@
-/** Host event feed v3: the state ring buffer, live root-agent status map and completion alerts. */
+/** Host event feed: the state ring buffer, live root-agent status map and completion alerts. */
 import { EVENT } from '../shared/contract.js'
 
-export const EVENT_RING_SIZE = 50
+const EVENT_RING_SIZE = 50
 
 /**
  * Fixed-size event ring. Sequence numbers start from the current epoch so a
@@ -43,7 +43,7 @@ export function createStatusMap() {
 
 /**
  * Bridge Host events into the state ring and the status map.
- * Only completion alerts remain: v3 has no focus/pomodoro blocks.
+ * Only completion alerts remain: there are no focus/pomodoro blocks.
  *
  * Running-state sources, most authoritative first:
  * 1. `api-session/status` — a root-level emit, the only feed an unscoped plugin

@@ -83,15 +83,6 @@ export function createStorage({ dir = pluginDataDir() } = {}) {
   }
 
   return {
-    dir,
-
-    /** @param {string} relativePath forward-slash path under the data directory */
-    pathOf(relativePath) {
-      return absolute(relativePath)
-    },
-
-    ensureRoot,
-
     async readJson(relativePath, fallback = null) {
       try {
         const text = await fs.readFile(absolute(relativePath), 'utf8')
@@ -141,8 +132,8 @@ export function createStorage({ dir = pluginDataDir() } = {}) {
 
     /**
      * Sum one usage day: `{ activeMs, apps: Map<id, ms> }`.
-     * v2 lines are `{t, activeMs, apps}`; v1 lines (`{t, ms}`) are still counted
-     * so an upgraded install keeps its history.
+     * Current lines are `{t, activeMs, apps}`; legacy v1/v2 lines (`{t, ms}`) are
+     * still counted so an upgraded install keeps its history.
      */
     async readUsageDay(dayKey) {
       const records = await this.readJsonl(`usage/${dayKey}.jsonl`)
@@ -157,7 +148,7 @@ export function createStorage({ dir = pluginDataDir() } = {}) {
       return { activeMs, apps }
     },
 
-    /** Day keys that have a JSONL file in `subdir` (`usage` or `stats`). */
+    /** Day keys that have a JSONL file in `subdir` (`usage`, plus legacy `stats`). */
     async listDayKeys(subdir) {
       let names
       try {
@@ -171,7 +162,7 @@ export function createStorage({ dir = pluginDataDir() } = {}) {
         .sort()
     },
 
-    /** Delete per-day files older than the retention window (today included). */
+    /** Delete per-day files older than the retention window (today included); `stats` is legacy cleanup. */
     async prune({ retentionDays = 30, dayKey }) {
       const days = Math.max(1, Math.round(retentionDays))
       const cutoff = shiftDayKey(dayKey, -(days - 1))

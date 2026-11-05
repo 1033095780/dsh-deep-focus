@@ -58,13 +58,6 @@ export function friendlyAppName(raw) {
   return APP_NAMES.get(name.toLowerCase()) ?? name
 }
 
-/** `{id, name}` for a raw executable name, or null when the name is empty. */
-export function appEntry(raw) {
-  const id = normalizeAppKey(raw)
-  if (id.length === 0) return null
-  return { id, name: friendlyAppName(raw) }
-}
-
 /** Add one app's milliseconds into a `Map<id, ms>` accumulator. */
 export function addAppMs(target, rawName, ms) {
   if (!(target instanceof Map)) return target

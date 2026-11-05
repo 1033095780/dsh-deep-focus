@@ -1,7 +1,7 @@
 /** Runtime settings v4: deep merge + clamping against the shared contract; no secrets, no focus section. */
 import { DEFAULT_SETTINGS, isPlainObject, mergeSettings } from '../shared/contract.js'
 
-export const SETTINGS_FILE = 'settings.json'
+const SETTINGS_FILE = 'settings.json'
 
 /** Inclusive integer ranges; anything outside is clamped, non-numbers fall back to the default. */
 const NUMBER_RULES = {
@@ -96,7 +96,7 @@ export function normalizeSettings(raw) {
   return out
 }
 
-/** Settings as they travel over the wire (v3 has nothing to redact, so this is a copy). */
+/** Settings as they travel over the wire (nothing to redact, so this is a copy). */
 export function publicSettings(settings) {
   const out = {}
   for (const [section, value] of Object.entries(settings)) {
@@ -108,7 +108,6 @@ export function publicSettings(settings) {
 /** Settings store: the in-memory merged settings plus serialized persistence. */
 export function createSettingsStore({ storage = null } = {}) {
   let current = normalizeSettings(undefined)
-  let loaded = false
 
   async function persist() {
     if (storage !== null) await storage.writeJson(SETTINGS_FILE, current)
@@ -117,7 +116,6 @@ export function createSettingsStore({ storage = null } = {}) {
   return {
     get: () => current,
     getPublic: () => publicSettings(current),
-    isLoaded: () => loaded,
     async load() {
       const raw = await storage?.readJson(SETTINGS_FILE, null)
       // v4 is a breaking settings shape (renames and new alert fields): a file
@@ -125,7 +123,6 @@ export function createSettingsStore({ storage = null } = {}) {
       // value cannot silently re-enable a rule the user never chose.
       const isCurrent = raw !== null && raw !== undefined && raw.version === DEFAULT_SETTINGS.version
       current = normalizeSettings(isCurrent ? raw : undefined)
-      loaded = true
       return current
     },
     /** Replace settings with a merged + clamped version of `partial`; unknown keys vanish. */

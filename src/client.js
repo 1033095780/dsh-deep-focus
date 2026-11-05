@@ -124,9 +124,7 @@ window.__ModuleLoader__.load({
         'hub.offline': '插件服务暂不可用，正在重试…',
         'hub.todayAppsTotal': '今日应用合计 {time}',
         'group.limits': '使用限制',
-        'group.assistant': '会话显示',
         'group.alerts': '提示与统计',
-        'group.usage': '统计与数据',
         'field.dailyMinutes': '每日使用上限',
         'field.dailyMinutes.hint': '分钟，0 = 不限',
         'field.continuousMinutes': '连续使用上限',
@@ -135,48 +133,16 @@ window.__ModuleLoader__.load({
         'field.restMinutes.hint': '分钟',
         'field.extendMinutes': '每次续期时长',
         'field.extendMinutes.hint': '分钟',
-        'field.dailyExtendLimit': '每日续期次数',
-        'field.dailyExtendLimit.hint': '次，0 = 不限',
-        'field.soloSession': '单会话模式',
-        'field.soloSession.hint': '有会话运行时限制进入其它会话',
-        'field.hideOtherSessions': '隐藏其它文件夹和会话',
-        'field.hideOtherSessions.hint': '专注时只显示正在运行的会话',
-        'field.showRings': '显示悬浮双环',
-        'field.repeatUntilActive': '离开时重复提示音',
-        'field.repeatUntilActive.hint': '直到你回来为止',
-        'field.repeatIntervalMs': '重复提示间隔',
-        'field.repeatIntervalMs.hint': '毫秒，500–10000',
-        'field.awayIdleSeconds': '离开判定时长',
-        'field.awayIdleSeconds.hint': '秒，10–3600',
         'field.sound': '提示音',
-        'field.volume': '音量',
-        'field.quietHours': '静音时段',
-        'field.quietHours.hint': '留空表示不静音',
-        'field.quietHoursStart': '开始',
-        'field.quietHoursEnd': '结束',
-        'field.sampleSeconds': '采样间隔',
-        'field.sampleSeconds.hint': '秒，3–30',
-        'field.idleThresholdSeconds': '空闲判定阈值',
-        'field.idleThresholdSeconds.hint': '秒，0 = 关闭',
         'field.autoPauseSeconds': '空闲自动休息',
         'field.autoPauseSeconds.hint': '秒，0 = 关闭',
-        'field.retentionDays': '数据保留',
-        'field.retentionDays.hint': '天',
         'field.trackApps': '按应用统计使用时长',
         'field.trackApps.hint': '记录前台应用的名称与时长',
         'settings.preview': '试听',
-        'settings.volumeValue': '{n}%',
-        'settings.minutesValue': '{n} 分钟',
-        'settings.countValue': '{n} 次',
         'settings.hintZeroUnlimited': '0 = 不限',
         'settings.loading': '正在加载…',
-        'settings.group.privacy': '隐私',
-        'settings.note.sampling': '只在 DSH 运行时统计；未运行时段不计入。',
-        'settings.sampling.degraded': '系统活跃采样已降级，统计可能不完整。',
-        'settings.sampling.off': '系统活跃采样不可用，限制功能不受影响。',
         'settings.appsSampling.off': '应用统计当前不可用（可能因为长时间空闲或未开启按应用统计）。',
         'daily.title': '今天已经用了 {h} 小时 {m} 分',
-        'daily.body': '达到每日使用上限了。休息一下，或者再续 {n} 分钟。',
         'daily.apps': '应用明细',
         'daily.extend': '再使用 {n} 分钟',
         'daily.extendRemaining': '今日还可续期 {n} 次',
@@ -184,26 +150,17 @@ window.__ModuleLoader__.load({
         'daily.skip': '跳过',
         'daily.skipHint': '仅隐藏今日提醒（best effort），不影响统计与限制。',
         'daily.error': '操作失败，请稍后重试',
-        'daily.used': '今日已用',
         'today.total': '今日总计',
         'rest.title': '休息中',
         'rest.body': '深呼吸，站起来走走，看看远处。',
         'rest.auto': '休息结束后会自动恢复。',
-        'rest.remaining': '剩余',
         'rest.aria': '休息倒计时 {time}',
         'toast.taskCompleted': '对话完成',
         'toast.gentleSwitch': '当前任务完成后再切换吧',
         'toast.taskCompletedTask': '对话完成：{task}',
         'time.hm': '{h} 小时 {m} 分',
         'time.m': '{m} 分钟',
-        'time.none': '不限',
-        'error.generic': '操作失败，请重试',
-        'error.network': '无法连接插件服务',
         'error.extendLimit': '今日续期次数已用完',
-        'error.notLocked': '当前没有超出每日上限',
-        'error.alreadyResting': '已经在休息中',
-        'error.assistantOff': '专注助手已暂停',
-        'error.notResting': '当前不在休息中',
         'app.browser': '浏览器',
         'app.qq': 'QQ',
         'app.wechat': '微信',
@@ -284,9 +241,7 @@ window.__ModuleLoader__.load({
         'hub.offline': 'Plugin service unavailable — retrying…',
         'hub.todayAppsTotal': 'App time today {time}',
         'group.limits': 'Usage limits',
-        'group.assistant': 'Conversation display',
         'group.alerts': 'Alerts & tracking',
-        'group.usage': 'Tracking & data',
         'field.dailyMinutes': 'Daily usage limit',
         'field.dailyMinutes.hint': 'minutes, 0 = unlimited',
         'field.continuousMinutes': 'Continuous-use limit',
@@ -295,48 +250,16 @@ window.__ModuleLoader__.load({
         'field.restMinutes.hint': 'minutes',
         'field.extendMinutes': 'Extension length',
         'field.extendMinutes.hint': 'minutes',
-        'field.dailyExtendLimit': 'Extensions per day',
-        'field.dailyExtendLimit.hint': 'times, 0 = unlimited',
-        'field.soloSession': 'One-conversation mode',
-        'field.soloSession.hint': 'limits entering other conversations while one runs',
-        'field.hideOtherSessions': 'Hide other folders and conversations',
-        'field.hideOtherSessions.hint': 'shows only the running conversation',
-        'field.showRings': 'Show the floating rings',
-        'field.repeatUntilActive': 'Repeat the chime while away',
-        'field.repeatUntilActive.hint': 'until you come back',
-        'field.repeatIntervalMs': 'Repeat interval',
-        'field.repeatIntervalMs.hint': 'milliseconds, 500-10000',
-        'field.awayIdleSeconds': 'Away threshold',
-        'field.awayIdleSeconds.hint': 'seconds, 10-3600',
         'field.sound': 'Sound',
-        'field.volume': 'Volume',
-        'field.quietHours': 'Quiet hours',
-        'field.quietHours.hint': 'leave empty to disable',
-        'field.quietHoursStart': 'start',
-        'field.quietHoursEnd': 'end',
-        'field.sampleSeconds': 'Sample interval',
-        'field.sampleSeconds.hint': 'seconds, 3–30',
-        'field.idleThresholdSeconds': 'Idle threshold',
-        'field.idleThresholdSeconds.hint': 'seconds, 0 disables',
         'field.autoPauseSeconds': 'Auto-rest after idle',
         'field.autoPauseSeconds.hint': 'seconds, 0 = off',
-        'field.retentionDays': 'Keep history',
-        'field.retentionDays.hint': 'days',
         'field.trackApps': 'Track per-app usage',
         'field.trackApps.hint': 'records the foreground app name and duration',
         'settings.preview': 'Preview',
-        'settings.volumeValue': '{n}%',
-        'settings.minutesValue': '{n} min',
-        'settings.countValue': '{n}×',
         'settings.hintZeroUnlimited': '0 = unlimited',
         'settings.loading': 'Loading…',
-        'settings.group.privacy': 'Privacy',
-        'settings.note.sampling': 'Sampled only while DSH runs; downtime is not counted.',
-        'settings.sampling.degraded': 'Activity sampling is degraded — data may be incomplete.',
-        'settings.sampling.off': 'Activity sampling is unavailable; limits still work.',
         'settings.appsSampling.off': 'App tracking is currently unavailable (long idle or disabled).',
         'daily.title': 'You have used {h}h {m}m today',
-        'daily.body': 'The daily limit is reached. Take a break, or extend by {n} minutes.',
         'daily.apps': 'App breakdown',
         'daily.extend': 'Use {n} more minutes',
         'daily.extendRemaining': '{n} extension(s) left today',
@@ -344,26 +267,17 @@ window.__ModuleLoader__.load({
         'daily.skip': 'Skip',
         'daily.skipHint': 'Only hides this reminder for today (best effort); tracking and limits are unchanged.',
         'daily.error': 'Something went wrong — try again shortly',
-        'daily.used': 'Used today',
         'today.total': 'Total today',
         'rest.title': 'Resting',
         'rest.body': 'Breathe slowly, stand up, and look into the distance.',
         'rest.auto': 'It clears automatically when the rest ends.',
-        'rest.remaining': 'Remaining',
         'rest.aria': 'Rest countdown {time}',
         'toast.taskCompleted': 'Conversation finished',
         'toast.gentleSwitch': "Finish the current task before switching \u2014 you've got this.",
         'toast.taskCompletedTask': 'Finished: {task}',
         'time.hm': '{h}h {m}m',
         'time.m': '{m}m',
-        'time.none': 'unlimited',
-        'error.generic': 'Something went wrong. Try again.',
-        'error.network': 'Cannot reach the plugin service',
         'error.extendLimit': 'No extensions left today',
-        'error.notLocked': 'The daily limit is not reached',
-        'error.alreadyResting': 'Already resting',
-        'error.assistantOff': 'The assistant is paused',
-        'error.notResting': 'Not resting right now',
         'app.browser': 'Browser',
         'app.qq': 'QQ',
         'app.wechat': 'WeChat',
@@ -770,18 +684,12 @@ window.__ModuleLoader__.load({
 
     const CSS_TEXT = [
       '[data-df-root]{box-sizing:border-box;font-family:inherit}',
-      '.df-frame{box-sizing:border-box;font-family:inherit;color:var(--dsw-alias-label-primary)}',
       /* countdown chip in the conversation header */
-      '.df-dot{width:6px;height:6px;border-radius:50%;background:var(--dsw-alias-brand-primary);flex:0 0 auto}',
-      '.df-dot[data-state="rest"]{background:var(--dsw-alias-state-success-primary)}',
-      '.df-dot[data-state="danger"]{background:var(--dsw-alias-state-error-primary)}',
       '.df-icon{display:block;flex:0 0 auto}',
       /* overlays */
       '.df-overlay{position:absolute;inset:0;z-index:120;display:flex;align-items:center;justify-content:center;box-sizing:border-box;padding:24px;background:var(--dsw-alias-bg-overlay);background:color-mix(in srgb, var(--dsw-alias-bg-overlay) 84%, transparent);backdrop-filter:blur(6px);pointer-events:auto}',
       '.df-card{width:460px;max-width:100%;max-height:100%;overflow:auto;box-sizing:border-box;display:flex;flex-direction:column;gap:14px;padding:24px;border:1px solid var(--dsw-alias-border-l1);border-radius:16px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:13px;line-height:1.5;box-shadow:0 24px 60px color-mix(in srgb, var(--dsw-alias-bg-overlay) 78%, transparent)}',
       '.df-overlay-title{font-size:19px;font-weight:600;margin:0}',
-      '.df-overlay-body{color:var(--dsw-alias-label-secondary);font-size:13px;margin:0}',
-      '.df-overlay-note{color:var(--dsw-alias-label-secondary);font-size:12px;margin:0}',
       '.df-app-row{display:grid;grid-template-columns:minmax(88px,150px) minmax(0,1fr) auto;gap:10px;align-items:center;font-size:13px;min-width:0}',
       '.df-app-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-primary)}',
       '.df-app-bar{position:relative;height:8px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);overflow:hidden;min-width:0}',
@@ -801,14 +709,8 @@ window.__ModuleLoader__.load({
       '.df-muted{color:var(--dsw-alias-label-secondary);font-size:12px;margin:0}',
       /* forced rest screen */
       '.df-rest{position:absolute;inset:0;z-index:130;display:flex;align-items:center;justify-content:center;box-sizing:border-box;padding:24px;background:var(--dsw-alias-bg-base);background:color-mix(in srgb, var(--dsw-alias-bg-base) 97%, var(--dsw-alias-state-success-primary));pointer-events:auto}',
-      '.df-rest-inner{display:flex;flex-direction:column;align-items:center;gap:14px;max-width:520px;text-align:center;color:var(--dsw-alias-label-primary);font-family:inherit}',
-      '.df-rest-orb{width:120px;height:120px;border-radius:50%;border:2px solid var(--dsw-alias-state-success-primary);background:color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent);animation:df-breathe 6s ease-in-out infinite}',
-      '@keyframes df-breathe{0%,100%{transform:scale(.92);opacity:.75}50%{transform:scale(1.04);opacity:1}}',
-      '.df-rest-title{font-size:22px;font-weight:600;margin:0}',
       '.df-rest-time{font-size:56px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:1px;margin:0;color:var(--dsw-alias-state-success-primary)}',
       '.df-rest-body{color:var(--dsw-alias-label-secondary);font-size:14px;margin:0}',
-      '.df-rest-note{color:var(--dsw-alias-label-secondary);font-size:12px;margin:0;max-width:440px}',
-      '.df-rest-card{box-sizing:border-box;display:flex;flex-direction:column;align-items:center;gap:14px;padding:28px 32px;border:1px solid var(--dsw-alias-border-l1);border-radius:20px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 24px 60px color-mix(in srgb, var(--dsw-alias-bg-overlay) 70%, transparent)}',
       '.df-rings-layer{position:absolute;top:min(calc(var(--dsh-frame-top-clearance, 0px) + 96px), calc(100% - 150px));right:16px;z-index:75;display:flex;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none}',
       '@media (max-height: 540px){.df-rings-layer{top:calc(var(--dsh-frame-top-clearance, 0px) + 56px)}}',
       '.df-rings{position:static;display:flex;align-items:center;gap:10px;box-sizing:border-box;padding:9px 11px;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent);backdrop-filter:blur(8px);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:11px;line-height:1.2;cursor:default;pointer-events:auto;box-shadow:0 8px 24px color-mix(in srgb, var(--dsw-alias-bg-overlay) 40%, transparent)}',
@@ -823,11 +725,9 @@ window.__ModuleLoader__.load({
       '.df-ring[data-kind="continuous"] .df-ring-value{stroke:var(--dsw-alias-state-success-primary)}',
       '.df-ring[data-tone="warn"] .df-ring-value{stroke:var(--dsw-alias-state-warn-primary)}',
       '.df-ring[data-tone="danger"] .df-ring-value{stroke:var(--dsw-alias-state-error-primary)}',
-      '.df-ring-label{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;color:var(--dsw-alias-label-secondary)}',
       '.df-rings-text{display:flex;flex-direction:column;gap:1px;white-space:nowrap;max-width:150px}',
       '.df-rings-text b{font-weight:600;font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis}',
       '.df-rings-text span{color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis}',
-      '.df-rings-error{box-sizing:border-box;padding:4px 8px;border:1px solid var(--dsw-alias-state-error-primary);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-state-error-primary);font-family:inherit;font-size:11px;pointer-events:none}',
       '.df-pause{position:absolute;inset:0;z-index:118;display:flex;align-items:center;justify-content:center;box-sizing:border-box;padding:24px;background:color-mix(in srgb, var(--dsw-alias-bg-overlay) 55%, transparent);backdrop-filter:grayscale(1) blur(1px);pointer-events:none}',
       '.df-pause-card{box-sizing:border-box;max-width:420px;display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 20px;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:13px;text-align:center;box-shadow:0 12px 32px color-mix(in srgb, var(--dsw-alias-bg-overlay) 45%, transparent)}',
       '.df-pause-title{font-size:15px;font-weight:600;margin:0}',
@@ -860,7 +760,6 @@ window.__ModuleLoader__.load({
       '.df-progress-fill[data-tone="warn"]{background:var(--dsw-alias-state-warn-primary)}',
       '.df-progress-fill[data-tone="danger"]{background:var(--dsw-alias-state-error-primary)}',
       '.df-progress-fill[data-tone="rest"]{background:var(--dsw-alias-state-success-primary)}',
-      '.df-grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}',
       '.df-kv{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;color:var(--dsw-alias-label-secondary)}',
       '.df-kv b{color:var(--dsw-alias-label-primary);font-weight:600}',
       '.df-usage-empty{color:var(--dsw-alias-label-secondary);font-size:13px;margin:0}',
@@ -877,9 +776,6 @@ window.__ModuleLoader__.load({
       '.df-seg-3{fill:var(--dsw-alias-state-idle-primary)}',
       '.df-seg-4{fill:var(--dsw-alias-label-secondary)}',
       '.df-seg-other{fill:var(--dsw-alias-border-l1)}',
-      '.df-group{padding:14px 0 4px;margin-top:8px;border-top:1px solid var(--dsw-alias-border-l2)}',
-      '.df-group:first-of-type{border-top:0;margin-top:0;padding-top:0}',
-      '.df-group-title{font-size:14px;font-weight:600;margin:0 0 2px}',
       '.df-field{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:10px 0;border-bottom:1px solid var(--dsw-alias-border-l2)}',
       '.df-field:last-child{border-bottom:0}',
       '.df-field-label{display:flex;flex-direction:column;gap:2px;min-width:0}',
@@ -887,9 +783,7 @@ window.__ModuleLoader__.load({
       '.df-field-hint{color:var(--dsw-alias-label-secondary);font-size:12px}',
       '.df-field-control{display:flex;align-items:center;gap:8px;flex:0 0 auto}',
       '[data-df-root] .df-number{box-sizing:border-box;width:92px;height:30px;padding:0 8px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:13px;text-align:right;outline:none}',
-      '[data-df-root] .df-time{box-sizing:border-box;height:30px;padding:0 8px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:13px;outline:none;color-scheme:inherit}',
-      '.df-number:focus-visible,.df-time:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}',
-      '[data-df-root] .df-range{width:140px;accent-color:var(--dsw-alias-brand-primary)}',
+      '.df-number:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}',
       '[data-df-root] .df-switch{position:relative;width:38px;height:22px;flex:0 0 auto;padding:0;border:1px solid var(--dsw-alias-border-l1);border-radius:999px;background:var(--dsw-alias-bg-layer-2);cursor:pointer;transition:background-color .16s ease,border-color .16s ease}',
       '[data-df-root] .df-switch[aria-checked="true"]{background:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary)}',
       '[data-df-root] .df-switch:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}',
@@ -902,7 +796,7 @@ window.__ModuleLoader__.load({
       '[data-df-root] .df-save-state{font-size:12px;color:var(--dsw-alias-label-secondary)}',
       '[data-df-root] .df-save-state[data-kind="error"]{color:var(--dsw-alias-state-error-primary)}',
       '[data-df-root] .df-save-state[data-kind="saved"]{color:var(--dsw-alias-state-success-primary)}',
-      '@media (prefers-reduced-motion: reduce){.df-toast{animation:none}.df-rest-orb{animation:none}.df-progress-fill,.df-switch,.df-switch::after,.df-btn,.df-rings,.df-ring-value{transition:none}}',
+      '@media (prefers-reduced-motion: reduce){.df-toast{animation:none}.df-progress-fill,.df-switch,.df-switch::after,.df-btn,.df-rings,.df-ring-value{transition:none}}',
     ].join('')
 
     /**
@@ -975,31 +869,6 @@ window.__ModuleLoader__.load({
         return String(value).replace(/["\\]/g, function (character) {
           return '\\' + character
         })
-      }
-
-      function cssEscape(value) {
-        const text = String(value)
-        try {
-          if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(text)
-        } catch (error) {
-          /* fall through */
-        }
-        return text.replace(/[^a-zA-Z0-9_-]/g, function (character) {
-          return '\\' + character
-        })
-      }
-
-      function selectAssistantPanel() {
-        try {
-          const layout = ctx && typeof ctx.get === 'function' ? ctx.get('layout') : undefined
-          if (layout && typeof layout.selectPanel === 'function') {
-            layout.selectPanel('focus-assistant')
-            return true
-          }
-        } catch (error) {
-          /* optional affordance */
-        }
-        return false
       }
 
       function selectConversationPanel() {
@@ -1340,10 +1209,6 @@ window.__ModuleLoader__.load({
           return postAction(ROUTES.restFinish, {})
         }
 
-        function pause() {
-          return postAction(ROUTES.pause, {})
-        }
-
         function resume() {
           return postAction(ROUTES.resume, {})
         }
@@ -1396,8 +1261,7 @@ window.__ModuleLoader__.load({
           extend: extend,
           startRest: startRest,
           finishRest: finishRest,
-          pause: pause,
-          resume: resume,
+            resume: resume,
           setAlertHandler: setAlertHandler,
           loadAppsTrend: loadAppsTrend,
           saveSettings: saveSettings,
@@ -2108,19 +1972,6 @@ window.__ModuleLoader__.load({
           borderColor: checked ? 'var(--dsw-alias-brand-primary)' : 'var(--dsw-alias-border-l1)',
           color: 'var(--dsw-alias-label-primary)',
         })
-      }
-
-      function widgetButtonStyle(extra) {
-        return Object.assign({}, BUTTON_BASE_STYLE, {
-          height: '50px',
-          padding: '9px 11px',
-          borderRadius: '14px',
-          gap: '10px',
-          background: 'color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent)',
-          borderColor: 'var(--dsw-alias-border-l1)',
-          color: 'var(--dsw-alias-label-primary)',
-          textAlign: 'left',
-        }, extra || {})
       }
 
       function Styles() {

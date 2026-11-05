@@ -7,9 +7,9 @@ import { execFile, spawn as spawnChild } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-export const SAMPLING = { ok: 'ok', degraded: 'degraded', off: 'off' }
-export const APPS_SAMPLING = { ok: 'ok', off: 'off' }
-export const WIN32_SCRIPT = fileURLToPath(new URL('./win32-idle.ps1', import.meta.url))
+const SAMPLING = { ok: 'ok', degraded: 'degraded', off: 'off' }
+const APPS_SAMPLING = { ok: 'ok', off: 'off' }
+const WIN32_SCRIPT = fileURLToPath(new URL('./win32-idle.ps1', import.meta.url))
 
 const UNAVAILABLE_IDLE = 0xff_ff_ff_ff
 const MAX_BACKOFF_MS = 30_000
@@ -353,7 +353,6 @@ export function createSampler({
     /** Host time of the latest accepted sample (`null` before the first one). */
     lastSampleAt: () => lastSampleAt,
     lastApp: () => lastApp,
-    lastPid: () => lastPid,
     sampleSeconds: () => seconds,
     start() {
       if (active) return

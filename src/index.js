@@ -1,6 +1,6 @@
 /**
- * dsh-deep-focus Host entry (v3): foreground-app usage sampler, tracker, limits/rest
- * state machine and HTTP API. No pomodoro blocks and no tool interception anywhere.
+ * dsh-deep-focus Host entry: foreground-app usage sampler, tracker, limits/rest
+ * state machine and HTTP API. Nothing here intercepts other conversations' work.
  */
 import { createStorage, localDayKey, pluginDataDir } from './host/storage.js'
 import { createSettingsStore } from './host/settings.js'

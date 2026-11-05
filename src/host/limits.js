@@ -8,25 +8,23 @@ import { localDayKey } from './storage.js'
 
 export const LIMITS_FILE = 'limits.json'
 /** `rest-due` fires when continuous usage reaches this share of the limit. */
-export const REST_DUE_RATIO = 0.8
+const REST_DUE_RATIO = 0.8
 /** Activity before this grace window belongs to the click that started a pause. */
 export const PAUSE_ACTIVITY_GRACE_MS = 1500
 /** A rest whose time elapsed still finishes eventually if the user never returns. */
 export const REST_ACTIVITY_WAIT_CAP_MS = 30 * 60_000
 /** After a resume, ignore idle samples long enough for the sampler to produce a fresh one. */
-export const RESUME_GRACE_MIN_MS = 6000
+const RESUME_GRACE_MIN_MS = 6000
 
-export function emptyLimitsState(dayKey) {
+function emptyLimitsState(dayKey) {
   return {
     dayKey,
     resting: false,
     restUntil: null,
-    restStartedAt: null,
     paused: false,
     pausedAt: null,
     pausedReason: null,
     dailyLocked: false,
-    lockedSince: null,
     extendedUntil: null,
     extendCountToday: 0,
   }
@@ -69,7 +67,6 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
       ...state,
       dayKey,
       dailyLocked: false,
-      lockedSince: null,
       extendedUntil: null,
       extendCountToday: 0,
     }
@@ -79,7 +76,7 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
   }
 
   function endRest(early, reason, extra = {}) {
-    state = { ...state, resting: false, restUntil: null, restStartedAt: null }
+    state = { ...state, resting: false, restUntil: null }
     tracker.resetContinuous()
     ring.emit(EVENT.restFinished, { early: early === true, reason, ...extra })
     persist()
@@ -91,7 +88,6 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
     state = {
       ...state,
       resting: true,
-      restStartedAt: at,
       restUntil: at + restMinutes * 60_000,
       paused: false,
       pausedAt: null,
@@ -219,8 +215,8 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
     if (!enabled) {
       if (state.resting) endRest(true, 'assistant-off')
       if (state.paused) state = { ...state, paused: false, pausedAt: null, pausedReason: null }
-      if (state.dailyLocked || state.lockedSince !== null) {
-        state = { ...state, dailyLocked: false, lockedSince: null }
+      if (state.dailyLocked) {
+        state = { ...state, dailyLocked: false }
         changed = true
       }
       restDueEmitted = false
@@ -237,7 +233,7 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
       const grace = state.extendedUntil !== null && at < state.extendedUntil
       if (over && !grace) {
         if (state.dailyLocked !== true) {
-          state = { ...state, dailyLocked: true, lockedSince: state.lockedSince ?? at, extendedUntil: null }
+          state = { ...state, dailyLocked: true, extendedUntil: null }
           ring.emit(EVENT.dailyLocked, {
             dailyUsedMs: Math.round(usage.activeTodayMs),
             limitMs: dailyLimitMs,
@@ -245,7 +241,7 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
           changed = true
         }
       } else if (state.dailyLocked) {
-        state = { ...state, dailyLocked: false, lockedSince: null }
+        state = { ...state, dailyLocked: false }
         changed = true
       }
     }
@@ -269,7 +265,6 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
   }
 
   return {
-    get: () => state,
     getView,
     evaluate,
     applySample,
@@ -313,21 +308,19 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
         dayKey,
         resting,
         restUntil: resting ? restUntil : null,
-        restStartedAt: resting && Number.isFinite(document.restStartedAt) ? document.restStartedAt : null,
         paused,
         pausedAt: paused ? document.pausedAt : null,
         pausedReason: paused
           ? (document.pausedReason === 'idle' ? 'idle' : 'manual')
           : null,
         dailyLocked: document.dailyLocked === true,
-        lockedSince: Number.isFinite(document.lockedSince) ? document.lockedSince : null,
         extendedUntil: Number.isFinite(document.extendedUntil) ? document.extendedUntil : null,
         extendCountToday: Number.isFinite(document.extendCountToday)
           ? Math.max(0, Math.round(document.extendCountToday))
           : 0,
       }
       if (document.dayKey !== dayKey) {
-        state = { ...state, dailyLocked: false, lockedSince: null, extendedUntil: null, extendCountToday: 0 }
+        state = { ...state, dailyLocked: false, extendedUntil: null, extendCountToday: 0 }
       }
       lastActivityAt = null
       lastResumeAt = null
@@ -371,7 +364,6 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
         extendedUntil: at + extendMinutes * 60_000,
         extendCountToday: state.extendCountToday + 1,
         dailyLocked: false,
-        lockedSince: null,
       }
       ring.emit(EVENT.extended, {
         minutes: extendMinutes,
@@ -389,7 +381,7 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
       lastAssistantEnabled = next
       if (!next) {
         if (state.resting) endRest(true, 'assistant-off')
-        state = { ...state, dailyLocked: false, lockedSince: null, paused: false, pausedAt: null, pausedReason: null }
+        state = { ...state, dailyLocked: false, paused: false, pausedAt: null, pausedReason: null }
         restDueEmitted = false
         persist()
         ring.emit(EVENT.assistantOff, {})

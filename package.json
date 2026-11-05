@@ -6,11 +6,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OWNER/dsh-deep-focus.git"
+    "url": "git+https://github.com/1033095780/dsh-deep-focus.git"
   },
-  "homepage": "https://github.com/OWNER/dsh-deep-focus#readme",
+  "homepage": "https://github.com/1033095780/dsh-deep-focus#readme",
   "bugs": {
-    "url": "https://github.com/OWNER/dsh-deep-focus/issues"
+    "url": "https://github.com/1033095780/dsh-deep-focus/issues"
   },
   "main": "src/index.js",
   "exports": {

@@ -60,7 +60,6 @@ export function createTracker({ storage = null, settings = null, now = Date.now 
   let pendingMs = 0
   let pendingApps = new Map()
   let lastFlushAt = now()
-  let lastActive = false
   let flushChain = Promise.resolve()
 
   function config() {
@@ -134,7 +133,6 @@ export function createTracker({ storage = null, settings = null, now = Date.now 
       const counted = options.counted !== false
       const result = applySample(state, { now: at, idleMs, counted }, cfg)
       state = result.state
-      lastActive = result.active
       if (result.deltaMs > 0) {
         pendingMs += result.deltaMs
         if (cfg.trackApps && result.active && typeof sample?.app === 'string') {
@@ -164,7 +162,6 @@ export function createTracker({ storage = null, settings = null, now = Date.now 
         activeTodayMs: state.activeMs,
         continuousMs: state.continuousMs,
         apps,
-        lastActive,
       }
     },
 

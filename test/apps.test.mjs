@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   addAppMs,
-  appEntry,
   appsToRecord,
   appsToRows,
   appsTotal,
@@ -57,8 +56,6 @@ test('friendly names follow the v2 mapping', () => {
   assert.equal(friendlyAppName('sublime_text'), 'sublime_text')
   assert.equal(friendlyAppName('SomeApp.exe'), 'SomeApp')
   assert.equal(friendlyAppName(''), '')
-  assert.deepEqual(appEntry('chrome.exe'), { id: 'chrome', name: '浏览器' })
-  assert.equal(appEntry(''), null)
 })
 
 test('app milliseconds accumulate into a map', () => {

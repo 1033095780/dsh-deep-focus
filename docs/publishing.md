@@ -1,262 +1,124 @@
 # Publishing
 
-How to cut a release of `dsh-deep-focus`: publish to npm with **GitHub OIDC
-(Trusted Publishing, no tokens)**, verify the package, then list it for
-discovery. This document is the release checklist; it is not run by CI.
+How to publish `dsh-deep-focus`. **GitHub Release is the primary channel**; npm is
+optional and only needed if you want `dsh plugin add dsh-deep-focus` to resolve from
+the registry.
 
 ## Package facts
 
 | Field | Value |
 | --- | --- |
-| npm package | `dsh-deep-focus` |
-| Version scheme | Semantic Versioning (the current series is `0.4.z`) |
+| Package | `dsh-deep-focus` |
+| Version series | `0.4.x` (SemVer) |
 | License | MIT |
-| Repository | `https://github.com/<OWNER>/dsh-deep-focus` (placeholder — replace `<OWNER>` everywhere) |
-| Workflow that publishes | `.github/workflows/publish.yml`, triggered by a published GitHub Release |
-| Secrets required | **None** (Trusted Publishing uses the short-lived OIDC token) |
-| Build step | None — `src/` ships as-is |
+| Repository | `https://github.com/1033095780/dsh-deep-focus` (releases: `…/releases`, issues: `…/issues`) |
+| Build step | none — `src/` ships as-is |
+| Secrets | none for GitHub; npm Trusted Publishing uses OIDC, not a token |
 
-## Before the first release
+## 1. GitHub release (primary)
 
-### 1. Add the repository fields to `package.json`
+1. **Bump the version**: `package.json` → `version`, and move the `CHANGELOG.md`
+   `[Unreleased]` entries to `## [0.4.4] - YYYY-MM-DD`.
+2. **Run the gates locally**:
 
-`npm publish --provenance` requires the package manifest to declare where its
-source lives. The manifest in this workspace does not have those fields yet (the
-release kit cannot edit `package.json`), so add them as part of the `0.4.3`
-release commit:
+   ```bash
+   node --check src/index.js src/client.js
+   node --test
+   node scripts/verify.mjs
+   npm pack --dry-run
+   ```
 
-```jsonc
-{
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/<OWNER>/dsh-deep-focus.git"
-  },
-  "homepage": "https://github.com/<OWNER>/dsh-deep-focus#readme",
-  "bugs": "https://github.com/<OWNER>/dsh-deep-focus/issues"
-}
-```
+3. **Commit and tag**:
 
-Without a matching `repository.url`, provenance generation fails after the package
-is already being uploaded; add the fields before tagging.
+   ```bash
+   git add -A
+   git commit -m "release: 0.4.4"
+   git tag v0.4.4
+   git push origin main --tags
+   ```
 
-### 2. Create the public GitHub repository
+4. **Create a GitHub Release** from `v0.4.4`. Users install it with:
 
-- Name it `dsh-deep-focus`, default branch `main`.
-- Push this workspace's commit history; confirm CI is green on the tag.
-- Confirm the npm name is still free: `npm view dsh-deep-focus version`
-  (a `404` means it is available).
+   ```bash
+   dsh plugin --profile desktop add https://github.com/1033095780/dsh-deep-focus
+   ```
 
-### 3. Prepare the npm account
+   (or by pointing the Plugins page at the repository / a local path). The release
+   notes are the `CHANGELOG.md` entry for that version.
 
-- A public npm account with 2FA enabled.
-- Access to the `dsh-deep-focus` package (first publisher becomes the owner).
+5. Verify from a clean profile: install, enable the bundle, check the assistant
+   panel, rings, automatic rest and the daily overlay; confirm no tool call is ever
+   blocked.
 
-### 4. Check the local environment
+## 2. Optional: publish to npm
 
-```bash
-node --version   # >= 20 (CI uses 20 and 22)
-npm --version    # >= 11.5.1 is required by the publish workflow; it upgrades npm itself
-```
+Only needed for registry-based installs (`dsh plugin add dsh-deep-focus`).
 
-## Trusted Publishing setup (one time)
-
-1. **Bootstrap the first version.** npm's Trusted Publisher settings live on the
-   package page, so a brand-new package needs one initial publish. From your
-   machine, on the exact tag you intend to release:
+1. **Bootstrap once** (npm Trusted Publisher settings require an existing package):
 
    ```bash
    npm login
    npm publish --access public
    ```
 
-   (A bootstrap publish does not have provenance. That is fine; subsequent
-   releases from GitHub Actions will. Versions 0.1.0–0.4.2 were never published,
-   so `0.4.3` is the first public version.)
-
-2. Open `https://www.npmjs.com/package/dsh-deep-focus/access` →
-   **Trusted Publisher** → **GitHub Actions** and fill in:
-   - Organization/user: the GitHub account that owns the repository
-   - Repository: `dsh-deep-focus`
-   - Workflow filename: `publish.yml`
-   - Environment: leave empty unless you add one to the workflow.
-
-3. Confirm the workflow's permissions match: `.github/workflows/publish.yml`
-   declares `id-token: write` and `contents: read`, and uses **no** npm token or
-   repository secret.
-
-4. After the first CI release succeeds, remove any local npm token you used for
-   the bootstrap (`npm logout`) so the repository cannot fall back to a
-   long-lived credential.
-
-See the npm documentation for the current rules:
-[Trusted publishing for npm packages](https://docs.npmjs.com/trusted-publishers/).
-
-## Release procedure
-
-1. **Update the version**
-   - `package.json` → `version` (`0.4.3` for this release).
-   - `CHANGELOG.md` → move the `[Unreleased]` entries to
-     `## [0.4.3] - YYYY-MM-DD`.
-   - No dependency or lockfile changes are needed (the plugin has no dependencies).
-
-2. **Run the gates locally**
-
-   ```bash
-   node --check src/index.js src/client.js
-   npm test
-   node scripts/verify.mjs
-   npm pack --dry-run
-   ```
-
-3. **Commit and tag**
-
-   ```bash
-   git add -A
-   git commit -m "release: 0.4.3"
-   git tag v0.4.3
-   git push origin main --tags
-   ```
-
-4. **Create the GitHub Release** from tag `v0.4.3`. Publishing the release (not
-   drafting it) triggers `publish.yml`. The workflow refuses to publish when the
-   tag (`v0.4.3` → `0.4.3`) does not match `package.json`'s version.
-
-5. **Watch the run** in the Actions tab. It re-runs syntax checks, `verify.mjs`
-   and `npm test`, then runs `npm publish --provenance --access public`.
-
-6. **Verify on npm**
-
-   ```bash
-   npm view dsh-deep-focus version dist-tags repository
-   ```
-
-   The package page should show a **Provenance** badge and the released tag's
-   commit.
+2. Configure npm → package page → **Settings → Trusted Publisher → GitHub Actions**
+   with the repository and workflow filename `publish.yml`. The workflow
+   (`.github/workflows/publish.yml`) runs on `release: published`, requests
+   `id-token: write`, checks that the tag matches `package.json`, runs the gates and
+   publishes with `--provenance`. No token or secret is stored in the repository.
+3. The workflow needs npm ≥ 11.5.1 (it installs it) and a `repository.url` in
+   `package.json` for provenance.
+4. Later releases: just publish the GitHub Release — the workflow handles npm.
 
 ## Verification checklist
 
-Before announcing the release:
-
-- [ ] `npm view dsh-deep-focus version` returns the new version.
-- [ ] The npm page shows the provenance badge and the README in English/Chinese.
-- [ ] `npm pack --dry-run` lists: `src/**`, `cordis.patch.yml`, `README.md`,
-      `README.zh.md`, `LICENSE`, `CHANGELOG.md`, `docs/**` — and **no**
-      `node_modules`, tests, `.tmp`, or local data.
-- [ ] Install from npm into a throwaway profile:
-      `dsh plugin --profile scratch add dsh-deep-focus`, then confirm the Plugins
-      page lists the bundle with its icon and localized title/description.
-- [ ] In a clean profile: the **Focus assistant** sidebar entry appears below the
-      Plugins row, the overview shows today's usage and the 7-day trend, and the
-      short settings form saves.
-- [ ] **Floating rings (display-only)**: the two-ring widget appears top-right and
-      tracks today's usage and the continuous timer; it is **not clickable**; both
-      rings hide when the assistant is off.
-- [ ] **Automatic rest**: set `usage.autoPauseSeconds` to a few seconds, stop
-      touching the keyboard/mouse and confirm the gray rest/pause state appears and
-      resumes on input (there must be no click-to-pause path anywhere in the UI).
-- [ ] **Shared today-usage card**: the forced-rest screen and the daily-limit screen
-      both show the same card — title/reason, today's total, per-app breakdown, and
-      that screen's buttons.
-- [ ] **Settings page**: it exposes exactly the seven common controls (daily limit,
-      continuous limit, rest length, extension length, auto-rest seconds, sound,
-      app tracking); advanced knobs are absent from the UI; the save/discard row is
-      right-aligned inside the content column and does not cover fields.
-- [ ] **Solo mode / auto-jump**: start an agent turn in conversation A while you are
-      viewing conversation B; the UI jumps back to A, other conversation rows **and
-      workspace folder rows** are grayed out and cannot be clicked (a click shows the
-      gentle reminder), a non-owner conversation that is somehow visible has veiled
-      content and discouraged sending, folder expanded/collapsed state is untouched,
-      no banner appears, and no tool call is blocked.
-- [ ] **Forced rest**: temporarily set `limits.continuousMinutes` to 1 and confirm
-      the rest screen (with the shared card) appears; while the machine is idle the
-      rest keeps waiting even after its timer; on activity it finishes; 「跳过休息」
-      ends it immediately.
-- [ ] **Rest exclusion**: rest time does not increase today's usage or per-app
-      totals.
-- [ ] **Daily overlay**: temporarily set `limits.dailyMinutes` to 1 and confirm the
-      gray overlay shows the shared today card and **only** two actions: 「再使用
-      20 分钟」 (grants the configured extension, respects a positive
-      `limits.dailyExtendLimit`) and 「跳过」 (dismisses today's reminder without
-      extending).
-- [ ] **Away chime**: with `alerts.repeatUntilActive` on, complete a task while the
-      window is unfocused or the machine is idle past `alerts.awayIdleSeconds`;
-      confirm the chime repeats at `alerts.repeatIntervalMs` until input returns,
-      and that no chime plays while actively watching.
-- [ ] **Disabled/outage**: disable the plugin while the UI is visible; everything it
-      rendered disappears immediately, the sidebar restores, and no stale graying or
-      swallowed clicks remain.
-- [ ] `scripts/verify.mjs` passes on a clean checkout (`git clean -xdf`-safe: it
-      needs no install step).
+- [ ] `npm view dsh-deep-focus version` (npm route) or `dsh plugin add <repo>` works
+      from a clean profile.
+- [ ] Plugins page shows the icon plus localized title/description.
+- [ ] Assistant panel opens; rings show today/continuous progress and are **not
+      clickable**.
+- [ ] Idling for `usage.autoPauseSeconds` grays DSH; input resumes.
+- [ ] Rest screen and daily overlay both show the **same today-usage card**; daily
+      overlay has only 「再使用 20 分钟」 and 「跳过」 (skip does not extend).
+- [ ] Settings page exposes exactly the seven common controls; save/discard is
+      right-aligned.
+- [ ] One-conversation mode jumps back to the running conversation; other rows are
+      grayed and not clickable; nothing is hidden.
+- [ ] Disabling the plugin removes all UI immediately and restores the sidebar.
+- [ ] `git clean -xdf`-safe: `node scripts/verify.mjs` passes without installs.
 
 ## README screenshots
 
-No screenshots are committed yet; the READMEs use a clearly marked placeholder.
-Capture these on DSH **0.2.2-rc.1** on Windows, at a consistent window size
-(1440×900 is fine), with no personal task names, conversation lists, app lists, or
-file paths visible.
+Not committed yet; the READMEs carry a marked placeholder. Capture on DSH
+`0.2.2-rc.1`, Windows, 1440×900, with no personal data visible:
 
-| File | Theme | Content |
-| --- | --- | --- |
-| `docs/images/rings-light.png` | Light | The **display-only** two-ring widget in the top-right corner: today's usage ring + continuous ring, close enough to read the labels. |
-| `docs/images/rings-dark.png` | Dark | The same widget in dark mode (also fine to capture together with a running conversation). |
-| `docs/images/rest-gray-dark.png` | Dark | The automatic rest/pause state: DSH window grayed with the rest note (reached by idling, not by clicking). |
-| `docs/images/rest-card-dark.png` | Dark | The forced-rest screen with the shared today-usage card (title, today's total, per-app rows) and the 「跳过休息」 / “Skip rest” button. |
-| `docs/images/daily-overlay-dark.png` | Dark | The daily gray overlay using the same today-usage card, with only 「再使用 20 分钟」 and 「跳过」 as actions. |
-| `docs/images/assistant-panel-light.png` | Light | The **Focus assistant** page from the sidebar: overview, usage bars, per-app rows, 7-day trend, and the short settings form with its right-aligned save/discard row. |
-| `docs/images/solo-mode-light.png` (optional) | Light | Sidebar while solo mode has auto-jumped to the running conversation and grayed out the other conversations and folders; may also show the veiled non-owner conversation. |
+| File | Content |
+| --- | --- |
+| `docs/images/rings-light.png` | display-only two-ring widget |
+| `docs/images/rest-gray-dark.png` | automatic-rest gray state |
+| `docs/images/rest-card-dark.png` | rest screen with the shared today-usage card + 「跳过休息」 |
+| `docs/images/daily-overlay-dark.png` | daily overlay on the same card (「再使用 20 分钟」/「跳过」) |
+| `docs/images/assistant-panel-light.png` | assistant panel, 7-field settings and right-aligned save row |
 
-There are intentionally **no pomodoro/focus-timer or header-chip screenshots** —
-those features no longer exist in v0.4.
+Save under `docs/images/`, link them from both READMEs, delete the
+`<!-- screenshots:pending -->` marker, and run `node scripts/verify.mjs` (it checks
+local image links).
 
-Steps after capturing:
-
-1. Save the files under `docs/images/` (they ship with the npm package because
-   `docs` is in `package.json` `files`).
-2. Add image links to both READMEs in the screenshot section and delete the
-   `<!-- screenshots:pending -->` marker from each file.
-3. Run `node scripts/verify.mjs` — it then checks that every local image link
-   exists, so a missing file fails the release gate.
-
-## Listing for discovery (awesome-dsh-plugin)
-
-The DSH plugin market reads configured plugin indexes, and the
-`awesome-dsh-plugin` list is the usual discovery path for third-party plugins.
-Open a PR with one entry in the list's Markdown file:
+## Marketplace listing (awesome-dsh-plugin)
 
 ```markdown
-- [dsh-deep-focus](https://github.com/<OWNER>/dsh-deep-focus) — Focus assistant for DeepSeek Harness: display-only two-ring usage widget, idle auto-rest, per-app statistics, a 3-hour daily cap, activity-gated 10-minute rests with skip, one-conversation-at-a-time auto-jump + gray-out (folders and sessions, never blocked), and an away-only repeating completion chime — pure plugin, never blocks tools. Install: `dsh plugin add dsh-deep-focus`.
+- [dsh-deep-focus](https://github.com/1033095780/dsh-deep-focus) — Focus assistant for DeepSeek Harness: display-only two-ring usage widget, idle auto-rest, per-app statistics, a 3-hour daily cap, activity-gated 10-minute rests, one-conversation-at-a-time sidebar — pure plugin, never blocks tools. Install: `dsh plugin add dsh-deep-focus`.
 ```
 
-- **Category recommendation:** `Workflow & Automation` (focus/session guidance).
-  `Notifications` is the fallback if the maintainers prefer a toasts/alerts
-  category.
-- **Do not include** claims the plugin cannot keep: it does not block other
-  applications, does not count while DSH is closed, does not bring DSH to the
-  front, and never blocks tools or other agents.
+- **Category:** `Workflow & Automation` (`Notifications` as fallback).
+- **Do not claim** global blocking, bring-to-front, or counting while DSH is closed.
+- PR checklist: public MIT repo, npm package name matches (if published), README
+  covers install/config/privacy/limitations, `dsh.bundle.patch` + `dsh.client` +
+  `engines.dsh` present, no telemetry.
 
-PR checklist (match the list's contribution rules if they are stricter):
+## Not verified here
 
-- [ ] Repository is public, license is MIT, `main` branch is green.
-- [ ] Package is published on npm with the exact name `dsh-deep-focus`.
-- [ ] README covers install, configuration, data/privacy, known limitations, and
-      the pure-plugin capability boundary.
-- [ ] `package.json` declares `dsh.bundle.patch`, `dsh.client`, `engines.dsh`, and
-      ships `src/locale/*.json` + `src/icon.svg`.
-- [ ] One-line entry follows the list's link format and stays on a single line.
-- [ ] No telemetry and no network access, as documented in `docs/privacy.md`.
-
-## Not verified by this release kit
-
-- **No npm publish was executed** from this workspace (offline release-kit task).
-  The workflow's npm/Trusted-Publishing behavior is configured but unproven until
-  the first tag.
-- **No screenshots** exist yet, so the READMEs carry placeholders instead of image
-  links.
-- **GitHub URLs are placeholders** (`<OWNER>`); replace them when the repository
-  exists.
-- `package.json` still needs the `repository` block described above before a
-  provenance publish can succeed.
-- The desktop-guard boundary is documented but deliberately not implemented;
-  v0.4 is the pure-plugin version only.
-- `SECURITY.md` and issue/PR templates are not part of this release kit; add them
-  before promoting the plugin widely.
+This kit did not publish anything: no npm release and no GitHub Release were run.
+Screenshots do not exist yet. The public repository is
+**https://github.com/1033095780/dsh-deep-focus**; `package.json` still needs its
+`repository.url` updated to that URL before an npm provenance publish.

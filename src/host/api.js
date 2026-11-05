@@ -1,15 +1,15 @@
 /**
- * Same-origin HTTP JSON API v3: state, per-app usage, settings, assistant switch,
- * forced rest controls and the daily extend action. Handlers never throw to the
- * webServer; every failure becomes a JSON error response.
+ * Same-origin HTTP JSON API: state, per-app usage, settings, assistant switch,
+ * pause/resume, forced rest controls and the daily extend action. Handlers never
+ * throw to the webServer; every failure becomes a JSON error response.
  */
 import { API_BASE, ROUTES, isPlainObject } from '../shared/contract.js'
 import { appsToRows, appsTotal } from './apps.js'
 import { shiftDayKey } from './storage.js'
 
-export const BODY_LIMIT_BYTES = 32 * 1024
-export const MAX_APPS_DAYS = 31
-export const TOP_APPS_LIMIT = 8
+const BODY_LIMIT_BYTES = 32 * 1024
+const MAX_APPS_DAYS = 31
+const TOP_APPS_LIMIT = 8
 
 const noop = () => {}
 
@@ -265,7 +265,7 @@ export function createApi({
     }
   }
 
-  async function handleCommand(request, response, statusOk, codeOnFailure) {
+  async function handleCommand(request, response, run) {
     let body
     try {
       body = await readJsonBody(request)
@@ -277,9 +277,9 @@ export function createApi({
       sendJson(response, 400, { ok: false, error: { code: 'bad-json', message: errorMessage('bad-json') } })
       return
     }
-    const result = statusOk(body)
+    const result = run()
     if (!result.ok) {
-      sendJson(response, CONFLICT_STATUS[result.code] ?? codeOnFailure, {
+      sendJson(response, CONFLICT_STATUS[result.code] ?? 409, {
         ok: false,
         error: { code: result.code, message: errorMessage(result.code) },
       })
@@ -344,27 +344,27 @@ export function createApi({
     {
       method: 'POST',
       path: ROUTES.pause,
-      handler: (request, response) => handleCommand(request, response, () => limits.pause(), 409),
+      handler: (request, response) => handleCommand(request, response, () => limits.pause()),
     },
     {
       method: 'POST',
       path: ROUTES.resume,
-      handler: (request, response) => handleCommand(request, response, () => limits.resume(), 409),
+      handler: (request, response) => handleCommand(request, response, () => limits.resume()),
     },
     {
       method: 'POST',
       path: ROUTES.restStart,
-      handler: (request, response) => handleCommand(request, response, () => limits.startRest(), 409),
+      handler: (request, response) => handleCommand(request, response, () => limits.startRest()),
     },
     {
       method: 'POST',
       path: ROUTES.restFinish,
-      handler: (request, response) => handleCommand(request, response, () => limits.finishRest(), 409),
+      handler: (request, response) => handleCommand(request, response, () => limits.finishRest()),
     },
     {
       method: 'POST',
       path: ROUTES.extend,
-      handler: (request, response) => handleCommand(request, response, () => limits.extend(), 409),
+      handler: (request, response) => handleCommand(request, response, () => limits.extend()),
     },
   ]
 
@@ -397,7 +397,7 @@ export function createApi({
     }
   }
 
-  return { buildState, buildApps, handle }
+  return { handle }
 }
 
 /** Register the API route on the Host web server; returns the disposer. */
