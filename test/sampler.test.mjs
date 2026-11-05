@@ -3,23 +3,25 @@ import { EventEmitter } from 'node:events'
 import test from 'node:test'
 import {
   createSampler,
-  parseIdleLine,
   parseIoregIdle,
+  parseSampleLine,
+  parseXdotoolPid,
   parseXprintidle,
   restartDelayMs,
   samplerPlatform,
 } from '../src/host/sampler.js'
 
-test('idle stdout lines are parsed conservatively', () => {
-  assert.equal(parseIdleLine('531'), 531)
-  assert.equal(parseIdleLine(' 62\n'), 62)
-  assert.equal(parseIdleLine('0'), 0)
-  assert.equal(parseIdleLine(''), null)
-  assert.equal(parseIdleLine('abc'), null)
-  assert.equal(parseIdleLine('-1'), null)
-  assert.equal(parseIdleLine('4294967295'), null)
-  assert.equal(parseIdleLine('4294967296'), null)
-  assert.equal(parseIdleLine(undefined), null)
+test('sampler lines carry idle, pid and executable name', () => {
+  assert.deepEqual(parseSampleLine('531|1234|chrome'), { idleMs: 531, pid: 1234, app: 'chrome' })
+  assert.deepEqual(parseSampleLine('531|1234|chrome\r'), { idleMs: 531, pid: 1234, app: 'chrome' })
+  assert.deepEqual(parseSampleLine('62|0|'), { idleMs: 62, pid: null, app: null })
+  assert.deepEqual(parseSampleLine('62||'), { idleMs: 62, pid: null, app: null })
+  // A v1 idle-only line still feeds idle tracking after an upgrade.
+  assert.deepEqual(parseSampleLine('62'), { idleMs: 62, pid: null, app: null })
+  assert.equal(parseSampleLine('4294967295|1|chrome'), null)
+  assert.equal(parseSampleLine('abc|1|chrome'), null)
+  assert.equal(parseSampleLine(''), null)
+  assert.equal(parseSampleLine(undefined), null)
 })
 
 test('platform probe output parsers', () => {
@@ -28,6 +30,9 @@ test('platform probe output parsers', () => {
   assert.equal(parseIoregIdle('nothing'), null)
   assert.equal(parseXprintidle('1234\n'), 1234)
   assert.equal(parseXprintidle('x'), null)
+  assert.equal(parseXdotoolPid('5678\n'), 5678)
+  assert.equal(parseXdotoolPid('0'), null)
+  assert.equal(parseXdotoolPid('id'), null)
 })
 
 test('restart backoff grows and caps', () => {
@@ -72,54 +77,60 @@ function makeFakeSpawn() {
   return { spawn, calls, procs }
 }
 
-test('the Windows sampler spawns craftsmanship-safe powershell and consumes samples', () => {
+test('the Windows sampler streams foreground samples from one powershell child', () => {
   const fake = makeFakeSpawn()
   const samples = []
   const states = []
+  let clock = 1000
   const sampler = createSampler({
     platform: 'win32',
     spawn: fake.spawn,
     scriptPath: 'C:/plugin/win32-idle.ps1',
     sampleSeconds: 5,
-    onSample: (idleMs) => samples.push(idleMs),
+    now: () => clock,
+    onSample: (sample) => samples.push(sample),
     onStateChange: (state) => states.push(state),
   })
   assert.equal(sampler.state(), 'degraded')
+  assert.equal(sampler.appsState(), 'off')
   sampler.start()
   assert.equal(fake.calls.length, 1)
   assert.equal(fake.calls[0].command, 'powershell.exe')
   assert.deepEqual(fake.calls[0].args.slice(0, 5), ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File'])
   assert.equal(fake.calls[0].args[5], 'C:/plugin/win32-idle.ps1')
-  assert.equal(fake.calls[0].options.windowsHide, true)
   assert.equal(fake.calls[0].options.env.DSH_FOCUS_SAMPLE_MS, '5000')
 
-  fake.procs[0].stdout.emit('data', '531\n62\n')
-  assert.deepEqual(samples, [531, 62])
+  fake.procs[0].stdout.emit('data', '531|1234|msedge\n62|1234|\n')
+  assert.deepEqual(samples, [
+    { idleMs: 531, pid: 1234, app: 'msedge' },
+    { idleMs: 62, pid: 1234, app: null },
+  ])
   assert.equal(sampler.state(), 'ok')
-  assert.ok(states.includes('ok'))
+  assert.equal(sampler.appsState(), 'ok')
+  assert.equal(sampler.lastApp(), 'msedge')
 
-  fake.procs[0].stdout.emit('data', '4294967295\n')
-  assert.deepEqual(samples, [531, 62])
+  // Foreground names expire from the app window but idle tracking continues.
+  clock += 60_000
+  fake.procs[0].stdout.emit('data', '100|1234|\n')
+  assert.equal(sampler.appsState(), 'off')
+  assert.equal(sampler.state(), 'ok')
 
-  fake.procs[0].stdout.emit('data', 'not-a-number\n42\n')
-  assert.deepEqual(samples, [531, 62, 42])
+  fake.procs[0].stdout.emit('data', 'not-a-sample\n')
+  assert.equal(samples.length, 3)
 
   sampler.stop()
   assert.equal(fake.procs[0].killed, 1)
   assert.equal(sampler.state(), 'off')
+  assert.equal(sampler.appsState(), 'off')
   // An exit after stop must not restart anything.
   fake.procs[0].emit('exit', 0, null)
   assert.equal(fake.calls.length, 1)
+  assert.ok(states.includes('ok'))
 })
 
 test('a Windows child exit degrades the sampler and schedules a restart', () => {
   const fake = makeFakeSpawn()
-  const sampler = createSampler({
-    platform: 'win32',
-    spawn: fake.spawn,
-    scriptPath: 'x.ps1',
-    onSample: () => {},
-  })
+  const sampler = createSampler({ platform: 'win32', spawn: fake.spawn, scriptPath: 'x.ps1', onSample: () => {} })
   sampler.start()
   fake.procs[0].emit('exit', 1, null)
   assert.equal(sampler.state(), 'degraded')
@@ -145,6 +156,7 @@ test('unsupported platforms report off instead of spawning', () => {
   sampler.start()
   assert.equal(fake.calls.length, 0)
   assert.equal(sampler.state(), 'off')
+  assert.equal(sampler.appsState(), 'off')
 })
 
 test('a spawn error degrades instead of throwing', () => {
@@ -153,5 +165,57 @@ test('a spawn error degrades instead of throwing', () => {
   sampler.start()
   fake.procs[0].emit('error', new Error('ENOENT'))
   assert.equal(sampler.state(), 'degraded')
+  sampler.stop()
+})
+
+function makeExecFile(responses) {
+  const calls = []
+  const execFileFn = (command, args, options, callback) => {
+    calls.push({ command, args })
+    const output = responses[command]
+    if (output === undefined) callback(new Error(`missing ${command}`), '')
+    else callback(null, output)
+  }
+  return { execFileFn, calls }
+}
+
+test('macOS probes combine ioreg idle time with the frontmost app', async () => {
+  const fake = makeExecFile({
+    ioreg: '    | |   "HIDIdleTime" = 5000000000\n',
+    osascript: 'Google Chrome\n',
+  })
+  const samples = []
+  const sampler = createSampler({
+    platform: 'darwin',
+    execFileFn: fake.execFileFn,
+    sampleSeconds: 5,
+    onSample: (sample) => samples.push(sample),
+  })
+  sampler.start()
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  assert.ok(samples.length >= 1)
+  assert.equal(samples[0].idleMs, 5000)
+  assert.equal(samples[0].app, 'Google Chrome')
+  assert.equal(sampler.state(), 'ok')
+  assert.equal(sampler.appsState(), 'ok')
+  sampler.stop()
+  assert.equal(sampler.state(), 'off')
+})
+
+test('linux probes keep idle tracking when the foreground app is unavailable', async () => {
+  const fake = makeExecFile({ xprintidle: '1234\n', xdotool: '999999\n' })
+  const samples = []
+  const sampler = createSampler({
+    platform: 'linux',
+    execFileFn: fake.execFileFn,
+    sampleSeconds: 5,
+    onSample: (sample) => samples.push(sample),
+  })
+  sampler.start()
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  assert.ok(samples.length >= 1)
+  assert.equal(samples[0].idleMs, 1234)
+  assert.ok(samples[0].app === null || typeof samples[0].app === 'string')
+  assert.equal(sampler.state(), 'ok')
   sampler.stop()
 })

@@ -1,7 +1,12 @@
-/** Whole-machine activity tracking: idle samples become active time, per-day buckets and a continuous-work counter. */
+/**
+ * Activity tracking: idle samples become active time plus per-application usage.
+ * Aggregates are flushed once a minute as `{t, activeMs, apps}` lines so a day
+ * stays around 288 records instead of one per sample.
+ */
+import { addAppMs, appsToRecord } from './apps.js'
 import { localDayKey } from './storage.js'
 
-const FLUSH_INTERVAL_MS = 10_000
+export const FLUSH_INTERVAL_MS = 60_000
 
 /** Fresh counter state for one calendar day. */
 export function emptyTrackerState(dayKey) {
@@ -45,13 +50,15 @@ export function applySample(state, sample, config) {
 }
 
 /**
- * Tracker facade: keeps the counters hot and flushes usage deltas to
- * `usage/YYYY-MM-DD.jsonl` in batches so a 5s sampler never writes per sample.
+ * Tracker facade: keeps today's counters and app totals hot for `/state`, and
+ * appends one aggregate line per minute (or on unload / day rollover).
  */
 export function createTracker({ storage = null, settings = null, now = Date.now } = {}) {
   let state = emptyTrackerState(localDayKey(now()))
+  let baseApps = new Map()
   let pendingMs = 0
-  let pendingSince = null
+  let pendingApps = new Map()
+  let lastFlushAt = now()
   let lastActive = false
   let flushChain = Promise.resolve()
 
@@ -62,62 +69,73 @@ export function createTracker({ storage = null, settings = null, now = Date.now 
     return {
       idleThresholdMs: idleThresholdSeconds * 1000,
       maxGapMs: Math.max(10_000, sampleSeconds * 4000),
+      trackApps: usage.trackApps !== false,
     }
+  }
+
+  function writePending(dayKey, at) {
+    if (pendingMs <= 0 && pendingApps.size === 0) return flushChain
+    for (const [id, ms] of pendingApps.entries()) baseApps.set(id, (baseApps.get(id) ?? 0) + ms)
+    const record = { t: at, activeMs: Math.round(pendingMs), apps: appsToRecord(pendingApps) }
+    pendingMs = 0
+    pendingApps = new Map()
+    if (storage !== null) {
+      flushChain = flushChain
+        .then(() => storage.appendJsonl(`usage/${dayKey}.jsonl`, record))
+        .catch(() => {})
+    }
+    return flushChain
   }
 
   function rollDay(at) {
     const dayKey = localDayKey(at)
     if (state.dayKey === dayKey) return false
-    const previousDay = state.dayKey
-    const carried = pendingMs
+    writePending(state.dayKey, at)
+    baseApps = new Map()
     pendingMs = 0
-    pendingSince = null
-    if (carried > 0 && storage !== null) {
-      flushChain = flushChain
-        .then(() => storage.appendJsonl(`usage/${previousDay}.jsonl`, { t: at, day: previousDay, ms: carried }))
-        .catch(() => {})
-    }
+    pendingApps = new Map()
     state = { ...state, dayKey, activeMs: 0, continuousMs: 0, lastTickAt: null }
+    lastFlushAt = at
     return true
   }
 
-  function flush() {
-    rollDay(now())
-    if (pendingMs <= 0 || storage === null) {
-      pendingMs = 0
-      pendingSince = null
-      return flushChain
-    }
-    const record = { t: now(), day: state.dayKey, ms: pendingMs }
-    pendingMs = 0
-    pendingSince = null
-    flushChain = flushChain
-      .then(() => storage.appendJsonl(`usage/${state.dayKey}.jsonl`, record))
-      .catch(() => {})
+  function flush(at = now()) {
+    rollDay(at)
+    writePending(state.dayKey, at)
+    lastFlushAt = at
     return flushChain
   }
 
   return {
-    /** Load today's accumulated active time; call once before sampling starts. */
+    /** Load today's accumulated total and per-app usage; call once before sampling starts. */
     async load() {
       rollDay(now())
-      if (storage === null) return state
-      const activeMs = await storage.readUsageMs(state.dayKey)
-      state = { ...state, activeMs, continuousMs: 0, lastTickAt: null }
+      if (storage === null) {
+        lastFlushAt = now()
+        return state
+      }
+      const usage = await storage.readUsageDay(state.dayKey)
+      state = { ...state, activeMs: usage.activeMs, continuousMs: 0, lastTickAt: null }
+      baseApps = usage.apps
+      lastFlushAt = now()
       return state
     },
 
-    /** Consume one idle sample; returns what the other host modules need this tick. */
-    sample(idleMs, at = now()) {
+    /** Consume one `{idleMs, app}` sample; flushes automatically once a minute. */
+    sample(sample, at = now()) {
       rollDay(at)
-      const result = applySample(state, { now: at, idleMs }, config())
+      const cfg = config()
+      const idleMs = sample?.idleMs
+      const result = applySample(state, { now: at, idleMs }, cfg)
       state = result.state
       lastActive = result.active
       if (result.deltaMs > 0) {
         pendingMs += result.deltaMs
-        if (pendingSince === null) pendingSince = at
-        if (at - pendingSince >= FLUSH_INTERVAL_MS) void flush()
+        if (cfg.trackApps && result.active && typeof sample?.app === 'string') {
+          addAppMs(pendingApps, sample.app, result.deltaMs)
+        }
       }
+      if (at - lastFlushAt >= FLUSH_INTERVAL_MS) void flush(at)
       return {
         active: result.active,
         deltaMs: result.deltaMs,
@@ -133,9 +151,22 @@ export function createTracker({ storage = null, settings = null, now = Date.now 
 
     snapshot(at = now()) {
       rollDay(at)
-      return { dayKey: state.dayKey, activeTodayMs: state.activeMs, continuousMs: state.continuousMs, lastActive }
+      const apps = new Map(baseApps)
+      for (const [id, ms] of pendingApps.entries()) apps.set(id, (apps.get(id) ?? 0) + ms)
+      return {
+        dayKey: state.dayKey,
+        activeTodayMs: state.activeMs,
+        continuousMs: state.continuousMs,
+        apps,
+        lastActive,
+      }
     },
 
+    /** Write any pending aggregate now (also used by the periodic flush timer). */
     flush,
+    flushIfDue(at = now()) {
+      if (at - lastFlushAt >= FLUSH_INTERVAL_MS) return flush(at)
+      return flushChain
+    },
   }
 }

@@ -1,13 +1,7 @@
-/** Runtime settings: deep merge + clamping against the shared contract, and scrypt password storage. */
-import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto'
+/** Runtime settings v2: deep merge + clamping against the shared contract (no secrets). */
 import { DEFAULT_SETTINGS, isPlainObject, mergeSettings } from '../shared/contract.js'
 
 export const SETTINGS_FILE = 'settings.json'
-export const MIN_PASSWORD_LENGTH = 6
-export const MAX_PASSWORD_LENGTH = 256
-
-const SCRYPT_KEYLEN = 64
-const SCRYPT_OPTIONS = { N: 16_384, r: 8, p: 1 }
 
 /** Inclusive integer ranges; anything outside is clamped, non-numbers fall back to the default. */
 const NUMBER_RULES = {
@@ -20,7 +14,6 @@ const NUMBER_RULES = {
   'limits.continuousWorkMinutes': [0, 1_440],
   'limits.sessionMinutes': [0, 1_440],
   'limits.unlockMinutes': [1, 120],
-  'limits.dailyUnlockLimit': [0, 10],
   'usage.sampleSeconds': [3, 30],
   'usage.idleThresholdSeconds': [0, 3_600],
   'usage.retentionDays': [1, 365],
@@ -30,15 +23,11 @@ const BOOLEAN_FIELDS = [
   'focus.autoStartBreak',
   'focus.autoStartNext',
   'focus.autoResumeOnReturn',
-  'limits.strictNoUnlock',
-  'lock.singleConversation',
-  'lock.blockToolsOutsideFocus',
-  'lock.lockSidebarOutsideFocus',
-  'lock.exemptSubagents',
+  'focus.grayOutOtherSessions',
   'alerts.taskDone',
   'alerts.turnDone',
   'alerts.sound',
-  'usage.detectMedia',
+  'usage.trackApps',
 ]
 
 function clampInt(value, min, max, fallback) {
@@ -65,12 +54,6 @@ function quietHourOrNull(value) {
   return match === null ? null : `${match[1]}:${match[2]}`
 }
 
-/** Base64 strings only; anything else means "no password stored". */
-function base64OrNull(value) {
-  if (typeof value !== 'string' || value.length === 0) return null
-  return /^[A-Za-z0-9+/]+={0,2}$/.test(value) ? value : null
-}
-
 function resolvePath(object, path) {
   let cursor = object
   for (const part of path.split('.')) {
@@ -92,7 +75,7 @@ function assignPath(object, path, value) {
 
 /**
  * Coerce a stored or partially supplied settings object into the trusted shape:
- * unknown keys are dropped and every number/boolean is clamped or defaulted.
+ * unknown sections/keys are dropped and every number/boolean is clamped or defaulted.
  */
 export function normalizeSettings(raw) {
   const merged = mergeSettings(DEFAULT_SETTINGS, isPlainObject(raw) ? raw : {})
@@ -110,112 +93,47 @@ export function normalizeSettings(raw) {
   out.alerts.volume = clampFloat(resolvePath(merged, 'alerts.volume'), 0, 1, DEFAULT_SETTINGS.alerts.volume)
   out.alerts.quietHoursStart = quietHourOrNull(resolvePath(merged, 'alerts.quietHoursStart'))
   out.alerts.quietHoursEnd = quietHourOrNull(resolvePath(merged, 'alerts.quietHoursEnd'))
-  const hash = base64OrNull(resolvePath(merged, 'security.passwordHash'))
-  const salt = base64OrNull(resolvePath(merged, 'security.passwordSalt'))
-  out.security = hash !== null && salt !== null
-    ? { passwordHash: hash, passwordSalt: salt }
-    : { passwordHash: null, passwordSalt: null }
   return out
 }
 
-/** Settings safe to expose over the wire: the password hash/salt never leave the Host. */
+/** Settings as they travel over the wire (v2 has nothing to redact, so this is a copy). */
 export function publicSettings(settings) {
   const out = {}
   for (const [section, value] of Object.entries(settings)) {
-    if (section === 'security') continue
     out[section] = isPlainObject(value) ? { ...value } : value
   }
   return out
 }
 
-export function passwordProblem(password) {
-  if (typeof password !== 'string' || password.length === 0) return 'password-missing'
-  if (password.length < MIN_PASSWORD_LENGTH) return 'password-too-short'
-  if (password.length > MAX_PASSWORD_LENGTH) return 'password-too-long'
-  return null
-}
-
-/** scrypt salt + hash, both base64; the plaintext is never persisted. */
-export function hashPassword(password) {
-  return new Promise((resolvePromise, rejectPromise) => {
-    const salt = randomBytes(16)
-    scryptCallback(password, salt, SCRYPT_KEYLEN, SCRYPT_OPTIONS, (error, key) => {
-      if (error) rejectPromise(error)
-      else resolvePromise({ salt: salt.toString('base64'), hash: key.toString('base64') })
-    })
-  })
-}
-
-export function verifyPasswordHash(password, saltBase64, hashBase64) {
-  return new Promise((resolvePromise) => {
-    let expected
-    let salt
-    try {
-      expected = Buffer.from(hashBase64, 'base64')
-      salt = Buffer.from(saltBase64, 'base64')
-    } catch {
-      resolvePromise(false)
-      return
-    }
-    if (expected.length === 0 || salt.length === 0) {
-      resolvePromise(false)
-      return
-    }
-    scryptCallback(password, salt, expected.length, SCRYPT_OPTIONS, (error, key) => {
-      if (error) {
-        resolvePromise(false)
-        return
-      }
-      resolvePromise(key.length === expected.length && timingSafeEqual(key, expected))
-    })
-  })
-}
-
-/**
- * Settings store: the in-memory merged settings plus serialized persistence.
- * `get()` includes the password hash (Host use only); `getPublic()` never does.
- */
+/** Settings store: the in-memory merged settings plus serialized persistence. */
 export function createSettingsStore({ storage = null } = {}) {
   let current = normalizeSettings(undefined)
   let loaded = false
 
   async function persist() {
-    if (storage !== null) await storage.writeJson(SETTINGS_FILE, current, { mode: 0o600 })
+    if (storage !== null) await storage.writeJson(SETTINGS_FILE, current)
   }
 
   return {
     get: () => current,
     getPublic: () => publicSettings(current),
-    hasPassword: () => current.security.passwordHash !== null && current.security.passwordSalt !== null,
     isLoaded: () => loaded,
     async load() {
       const raw = await storage?.readJson(SETTINGS_FILE, null)
-      if (raw !== null && raw !== undefined) current = normalizeSettings(raw)
+      // v2 is a breaking settings shape: never inherit values written for v1.
+      // A v1 daily limit of 480 would silently keep a lock the user never asked
+      // for in v2 (where every limit defaults to off), so a version mismatch
+      // falls back to the v2 defaults; the next write persists the v2 shape.
+      const isV2 = raw !== null && raw !== undefined && raw.version === DEFAULT_SETTINGS.version
+      current = normalizeSettings(isV2 ? raw : undefined)
       loaded = true
       return current
     },
-    /** Replace settings with a merged + clamped version of `partial`; security only changes via setPassword. */
+    /** Replace settings with a merged + clamped version of `partial`; unknown keys vanish. */
     async update(partial) {
-      const patch = isPlainObject(partial) ? { ...partial } : {}
-      delete patch.security
-      current = normalizeSettings(mergeSettings(current, patch))
+      current = normalizeSettings(mergeSettings(current, isPlainObject(partial) ? partial : {}))
       await persist()
       return current
-    },
-    async setPassword(password) {
-      const { salt, hash } = await hashPassword(password)
-      current = normalizeSettings({ ...current, security: { passwordHash: hash, passwordSalt: salt } })
-      await persist()
-      return true
-    },
-    async clearPassword() {
-      current = normalizeSettings({ ...current, security: { passwordHash: null, passwordSalt: null } })
-      await persist()
-      return true
-    },
-    async verifyPassword(password) {
-      if (!this.hasPassword()) return false
-      return verifyPasswordHash(password, current.security.passwordSalt, current.security.passwordHash)
     },
   }
 }

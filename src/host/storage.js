@@ -1,7 +1,8 @@
 /** Local persistence: plugin data directory, atomic JSON files, append-only JSONL and per-file write serialization. */
 import { promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
+import { mergeAppMs } from './apps.js'
 
 /** Resolve the Harness home: explicit DSH_HOME wins, otherwise `<home>/.dsh`. */
 export function resolveDshHome(env = process.env, home = homedir()) {
@@ -69,12 +70,11 @@ export function createStorage({ dir = pluginDataDir() } = {}) {
     return next
   }
 
-  async function atomicWriteJson(absolutePath, value, options) {
-    await ensureDir(join(absolutePath, '..'))
+  async function atomicWriteJson(absolutePath, value) {
+    await ensureDir(dirname(absolutePath))
     const tmp = `${absolutePath}.${process.pid}.${tmpCounter++}.tmp`
     try {
       await fs.writeFile(tmp, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
-      if (options?.mode !== undefined) await fs.chmod(tmp, options.mode).catch(() => {})
       await fs.rename(tmp, absolutePath)
     } catch (error) {
       await fs.rm(tmp, { force: true }).catch(() => {})
@@ -101,11 +101,11 @@ export function createStorage({ dir = pluginDataDir() } = {}) {
       }
     },
 
-    writeJson(relativePath, value, options) {
+    writeJson(relativePath, value) {
       const key = `json:${relativePath}`
       return enqueue(key, async () => {
         await ensureRoot()
-        await atomicWriteJson(absolute(relativePath), value, options)
+        await atomicWriteJson(absolute(relativePath), value)
       })
     },
 
@@ -113,7 +113,7 @@ export function createStorage({ dir = pluginDataDir() } = {}) {
       const key = `jsonl:${relativePath}`
       return enqueue(key, async () => {
         await ensureRoot()
-        await ensureDir(join(absolute(relativePath), '..'))
+        await ensureDir(dirname(absolute(relativePath)))
         await fs.appendFile(absolute(relativePath), `${JSON.stringify(record)}\n`, 'utf8')
       })
     },
@@ -139,6 +139,24 @@ export function createStorage({ dir = pluginDataDir() } = {}) {
       return limit > 0 && records.length > limit ? records.slice(-limit) : records
     },
 
+    /**
+     * Sum one usage day: `{ activeMs, apps: Map<id, ms> }`.
+     * v2 lines are `{t, activeMs, apps}`; v1 lines (`{t, ms}`) are still counted
+     * so an upgraded install keeps its history.
+     */
+    async readUsageDay(dayKey) {
+      const records = await this.readJsonl(`usage/${dayKey}.jsonl`)
+      let activeMs = 0
+      const apps = new Map()
+      for (const record of records) {
+        if (record === null || typeof record !== 'object') continue
+        if (Number.isFinite(record.activeMs) && record.activeMs > 0) activeMs += record.activeMs
+        else if (Number.isFinite(record.ms) && record.ms > 0) activeMs += record.ms
+        mergeAppMs(apps, record.apps)
+      }
+      return { activeMs, apps }
+    },
+
     /** Day keys that have a JSONL file in `subdir` (`usage` or `stats`). */
     async listDayKeys(subdir) {
       let names
@@ -151,18 +169,6 @@ export function createStorage({ dir = pluginDataDir() } = {}) {
         .map((name) => DAY_FILE.exec(name)?.[1])
         .filter((key) => key !== undefined)
         .sort()
-    },
-
-    /** Sum of every `ms` delta recorded for one usage day. */
-    async readUsageMs(dayKey) {
-      const records = await this.readJsonl(`usage/${dayKey}.jsonl`)
-      let total = 0
-      for (const record of records) {
-        if (record !== null && typeof record === 'object' && Number.isFinite(record.ms) && record.ms > 0) {
-          total += record.ms
-        }
-      }
-      return total
     },
 
     /** Delete per-day files older than the retention window (today included). */

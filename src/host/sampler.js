@@ -1,11 +1,14 @@
 /**
- * Whole-machine idle sampler: one long-lived PowerShell child on Windows, one-shot probes elsewhere.
- * Samples are idle milliseconds; the value is never trusted when it is unavailable or malformed.
+ * Whole-machine foreground sampler: idle milliseconds plus the foreground application.
+ * Windows streams lines from one long-lived PowerShell child; macOS/Linux probe
+ * per interval (best effort). A missing foreground name never stops idle tracking.
  */
 import { execFile, spawn as spawnChild } from 'node:child_process'
+import { promises as fs } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 export const SAMPLING = { ok: 'ok', degraded: 'degraded', off: 'off' }
+export const APPS_SAMPLING = { ok: 'ok', off: 'off' }
 export const WIN32_SCRIPT = fileURLToPath(new URL('./win32-idle.ps1', import.meta.url))
 
 const UNAVAILABLE_IDLE = 0xff_ff_ff_ff
@@ -13,14 +16,32 @@ const MAX_BACKOFF_MS = 30_000
 const MAX_START_FAILURES = 4
 const STALE_INTERVALS = 3
 
-/** One stdout line from the Windows sampler -> idle ms, or null for anything unusable. */
-export function parseIdleLine(line) {
-  if (typeof line !== 'string') return null
-  const text = line.trim()
+function parseIdleToken(token) {
+  if (typeof token !== 'string') return null
+  const text = token.trim()
   if (text.length === 0 || !/^\d+$/.test(text)) return null
   const value = Number(text)
   if (!Number.isSafeInteger(value) || value < 0 || value > UNAVAILABLE_IDLE) return null
   return value === UNAVAILABLE_IDLE ? null : value
+}
+
+/**
+ * One stdout line from the Windows sampler -> `{idleMs, pid, app}`.
+ * Format is `idleMs|pid|exeName`; older idle-only lines are still accepted so a
+ * stale script cannot break usage tracking after an upgrade.
+ */
+export function parseSampleLine(line) {
+  if (typeof line !== 'string') return null
+  const text = line.trim()
+  if (text.length === 0) return null
+  const parts = text.split('|')
+  const idleMs = parseIdleToken(parts[0])
+  if (idleMs === null) return null
+  const pidToken = parts.length > 1 ? parts[1].trim() : ''
+  const parsedPid = /^\d+$/.test(pidToken) ? Number(pidToken) : 0
+  const pid = Number.isSafeInteger(parsedPid) && parsedPid > 0 ? parsedPid : null
+  const app = parts.length > 2 ? parts.slice(2).join('|').trim() : ''
+  return { idleMs, pid, app: app.length > 0 ? app : null }
 }
 
 /** `ioreg -c IOHIDSystem` output -> idle ms (HIDIdleTime is nanoseconds). */
@@ -36,10 +57,19 @@ export function parseIoregIdle(text) {
 /** `xprintidle` output (already milliseconds). */
 export function parseXprintidle(text) {
   if (typeof text !== 'string') return null
-  const text2 = text.trim()
-  if (!/^\d+$/.test(text2)) return null
-  const value = Number(text2)
+  const trimmed = text.trim()
+  if (!/^\d+$/.test(trimmed)) return null
+  const value = Number(trimmed)
   return Number.isSafeInteger(value) && value >= 0 ? value : null
+}
+
+/** `xdotool getactivewindow getwindowpid` output -> pid, or null. */
+export function parseXdotoolPid(text) {
+  if (typeof text !== 'string') return null
+  const trimmed = text.trim()
+  if (!/^\d+$/.test(trimmed)) return null
+  const value = Number(trimmed)
+  return Number.isSafeInteger(value) && value > 0 ? value : null
 }
 
 /** Exponential restart backoff: 1s, 2s, 4s ... capped at 30s. */
@@ -58,8 +88,8 @@ export function samplerPlatform(platform = process.platform) {
 const noop = () => {}
 
 /**
- * Create the sampler. `start()`/`stop()` are idempotent; a failed start keeps the
- * plugin usable by reporting `degraded` and, after repeated failures, `off`.
+ * Create the sampler. `start()`/`stop()` are idempotent; failures degrade and
+ * never throw. `onSample` receives `{idleMs, pid, app}` where `app` may be null.
  */
 export function createSampler({
   sampleSeconds = 5,
@@ -81,12 +111,19 @@ export function createSampler({
   let lastStderr = ''
   let lastSampleAt = null
   let lastIdleMs = null
+  let lastPid = null
+  let lastApp = null
+  let lastAppAt = null
   let attempts = 0
   let probeBusy = false
   let probeTimer = null
   let watchdogTimer = null
   let restartTimer = null
   let forceKillTimer = null
+
+  function appWindowMs() {
+    return Math.max(seconds * 3000, 20_000)
+  }
 
   function setState(next, nextDetail) {
     const changed = state !== next || detail !== nextDetail
@@ -95,13 +132,18 @@ export function createSampler({
     if (changed) onStateChange(state, detail)
   }
 
-  function sampleAccepted(idleMs) {
-    lastIdleMs = idleMs
+  function sampleAccepted(sample) {
+    lastIdleMs = sample.idleMs
+    lastPid = sample.pid ?? null
     lastSampleAt = now()
+    if (typeof sample.app === 'string' && sample.app.length > 0) {
+      lastApp = sample.app
+      lastAppAt = now()
+    }
     attempts = 0
     if (state !== SAMPLING.ok) setState(SAMPLING.ok, '')
     try {
-      onSample(idleMs, now())
+      onSample({ idleMs: sample.idleMs, pid: lastPid, app: typeof sample.app === 'string' ? sample.app : null })
     } catch {
       // A consumer failure must not kill the sampler.
     }
@@ -113,8 +155,8 @@ export function createSampler({
     while (index !== -1) {
       const line = stdoutBuffer.slice(0, index)
       stdoutBuffer = stdoutBuffer.slice(index + 1)
-      const idleMs = parseIdleLine(line)
-      if (idleMs !== null) sampleAccepted(idleMs)
+      const sample = parseSampleLine(line)
+      if (sample !== null) sampleAccepted(sample)
       index = stdoutBuffer.indexOf('\n')
     }
     if (stdoutBuffer.length > 4096) stdoutBuffer = ''
@@ -224,31 +266,57 @@ export function createSampler({
     startWatchdog()
   }
 
-  function runProbe() {
+  function execOnce(command, args) {
     return new Promise((resolvePromise) => {
-      const finish = (exitError, stdout) => {
-        if (exitError) {
-          resolvePromise(null)
-          return
-        }
-        resolvePromise(kind === 'macos' ? parseIoregIdle(stdout) : parseXprintidle(stdout))
-      }
-      if (kind === 'macos') {
-        execFileFn('ioreg', ['-c', 'IOHIDSystem'], { timeout: seconds * 2000 }, finish)
-      } else {
-        execFileFn('xprintidle', [], { timeout: seconds * 2000 }, finish)
-      }
+      execFileFn(command, args, { timeout: seconds * 2000 }, (error, stdout) => {
+        resolvePromise(error ? null : String(stdout))
+      })
     })
+  }
+
+  async function readIdleOnce() {
+    if (kind === 'macos') {
+      const output = await execOnce('ioreg', ['-c', 'IOHIDSystem'])
+      return output === null ? null : parseIoregIdle(output)
+    }
+    const output = await execOnce('xprintidle', [])
+    return output === null ? null : parseXprintidle(output)
+  }
+
+  /** Foreground application name, best effort; null means "not available". */
+  async function readForegroundOnce() {
+    if (kind === 'macos') {
+      const output = await execOnce('osascript', [
+        '-e',
+        'tell application "System Events" to get name of first application process whose frontmost is true',
+      ])
+      const name = output === null ? '' : output.trim()
+      return name.length > 0 ? name : null
+    }
+    const output = await execOnce('xdotool', ['getactivewindow', 'getwindowpid'])
+    const pid = output === null ? null : parseXdotoolPid(output)
+    if (pid === null) return null
+    try {
+      const comm = await fs.readFile(`/proc/${pid}/comm`, 'utf8')
+      const name = comm.trim()
+      return name.length > 0 ? name : null
+    } catch {
+      return null
+    }
   }
 
   async function probeTick() {
     if (!active || probeBusy) return
     probeBusy = true
     try {
-      const idleMs = await runProbe()
+      const idleMs = await readIdleOnce()
       if (!active) return
-      if (idleMs !== null) sampleAccepted(idleMs)
-      else scheduleProbeFailure('idle probe returned no usable value')
+      if (idleMs === null) {
+        scheduleProbeFailure('idle probe returned no usable value')
+        return
+      }
+      const app = await readForegroundOnce().catch(() => null)
+      sampleAccepted({ idleMs, pid: null, app })
     } catch (error) {
       scheduleProbeFailure(error instanceof Error ? error.message : String(error))
     } finally {
@@ -277,7 +345,13 @@ export function createSampler({
   return {
     state: () => state,
     detail: () => detail,
+    appsState() {
+      if (!active || state === SAMPLING.off || lastAppAt === null) return APPS_SAMPLING.off
+      return now() - lastAppAt <= appWindowMs() ? APPS_SAMPLING.ok : APPS_SAMPLING.off
+    },
     lastIdleMs: () => lastIdleMs,
+    lastApp: () => lastApp,
+    lastPid: () => lastPid,
     sampleSeconds: () => seconds,
     start() {
       if (active) return

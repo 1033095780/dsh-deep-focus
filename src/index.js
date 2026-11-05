@@ -1,4 +1,7 @@
-/** dsh-deep-focus Host entry: wires the idle sampler, tracker, focus machine, budget lock, tool guard and API. */
+/**
+ * dsh-deep-focus Host entry (v2): foreground-app usage sampler, tracker, focus
+ * machine, budget lock and HTTP API. It never intercepts tool calls or agents.
+ */
 import { createStorage, localDayKey, pluginDataDir } from './host/storage.js'
 import { createSettingsStore } from './host/settings.js'
 import { createSampler } from './host/sampler.js'
@@ -6,11 +9,10 @@ import { createTracker } from './host/tracker.js'
 import { createFocus } from './host/focus.js'
 import { createBudget } from './host/budget.js'
 import { createEventRing, createStatusMap, installHostEventListeners } from './host/events.js'
-import { createGuardView, registerToolGuard } from './host/lock.js'
 import { createApi, registerApi } from './host/api.js'
 
 export const name = 'dsh-deep-focus'
-export const inject = ['tools', 'agents', 'webServer']
+export const inject = ['agents', 'webServer']
 
 const TICK_INTERVAL_MS = 1000
 const BUDGET_INTERVAL_MS = 2000
@@ -51,8 +53,8 @@ function createRuntime(ctx) {
   const focus = createFocus({ storage, settings, ring, now, onStat: recordStat })
   const budget = createBudget({ storage, settings, tracker, focus, ring, now, onStat: recordStat })
 
-  function onSample(idleMs, sampledAt) {
-    const result = tracker.sample(idleMs, sampledAt)
+  function onSample(sample, sampledAt) {
+    const result = tracker.sample(sample, sampledAt)
     focus.applyActivity({ active: result.active, idleMs: result.idleMs }, sampledAt)
     budget.evaluate(sampledAt)
   }
@@ -65,12 +67,12 @@ function createRuntime(ctx) {
       return
     }
     if (state === 'off') {
-      warn(ctx, `activity sampling is off; usage limits will not trigger${suffix}`)
+      warn(ctx, `foreground sampling is off; usage statistics will not advance${suffix}`)
       return
     }
     if (!degradedLogged) {
       degradedLogged = true
-      warn(ctx, `activity sampling is degraded${suffix}`)
+      warn(ctx, `foreground sampling is degraded${suffix}`)
     }
   }
 
@@ -86,7 +88,6 @@ function createRuntime(ctx) {
       let stopped = false
       const disposers = []
       const timers = []
-
       const api = createApi({
         settings,
         tracker,
@@ -107,21 +108,6 @@ function createRuntime(ctx) {
           }
         },
       })
-
-      try {
-        const guardView = createGuardView({
-          settings,
-          statusMap,
-          focus,
-          budget,
-          agents: ctx.agents,
-          getAgentTeams: () => ctx.get('agentTeams'),
-          now,
-        })
-        disposers.push(registerToolGuard({ ctx, getView: guardView }))
-      } catch (error) {
-        warn(ctx, 'tool guard registration failed', error)
-      }
 
       try {
         disposers.push(installHostEventListeners({ ctx, ring, focus, settings, statusMap }))
@@ -150,7 +136,7 @@ function createRuntime(ctx) {
         }
       }, BUDGET_INTERVAL_MS))
       timers.push(setInterval(() => {
-        void tracker.flush()
+        void tracker.flushIfDue()
       }, FLUSH_INTERVAL_MS))
       for (const timer of timers) timer.unref?.()
 

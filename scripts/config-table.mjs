@@ -23,7 +23,7 @@ const README_FILES = { en: 'README.md', zh: 'README.zh.md' }
 /**
  * Documented fields, in reading order. A key missing here fails the coverage
  * check, so a new setting must be described (with its unit) before it ships.
- * `security.*` and the internal `version` field are intentionally not user-facing.
+ * The internal `version` field is intentionally not user-facing.
  */
 const FIELDS = [
   {
@@ -73,65 +73,43 @@ const FIELDS = [
     note: { en: 'Resume a paused block when you are active again.', zh: '回到电脑后自动继续已暂停的时段。' },
   },
   {
+    key: 'focus.grayOutOtherSessions',
+    unit: '',
+    note: {
+      en: 'Gray out other conversations in the sidebar during a focus block; clicking one shows a gentle reminder instead of switching. Never blocks agents or tool calls.',
+      zh: '专注期间把侧栏里的其它会话置灰；点击只会显示一条温柔提示，不会切换会话。绝不拦截 agent 或工具调用。',
+    },
+  },
+  {
     key: 'limits.dailyActiveMinutes',
     unit: 'min',
-    note: { en: 'Daily active-time cap; 0 = unlimited.', zh: '每日活跃时长上限；0 = 不限。' },
+    note: {
+      en: 'Daily active-time cap for the overtime overlay; 0 = off (unlimited).',
+      zh: '触发超时遮罩的每日活跃时长上限；0 = 关闭（不限）。',
+    },
   },
   {
     key: 'limits.continuousWorkMinutes',
     unit: 'min',
-    note: { en: 'Cap on unbroken work before a break; 0 = unlimited.', zh: '连续工作时长上限；0 = 不限。' },
+    note: {
+      en: 'Cap on unbroken work before the overtime overlay; 0 = off (unlimited).',
+      zh: '触发超时遮罩的连续工作时长上限；0 = 关闭（不限）。',
+    },
   },
   {
     key: 'limits.sessionMinutes',
     unit: 'min',
-    note: { en: 'Cap on a single focus block; 0 = unlimited.', zh: '单次专注时长上限；0 = 不限。' },
+    note: {
+      en: 'Cap on a single focus block; 0 = off (unlimited).',
+      zh: '单个专注时段的时长上限；0 = 关闭（不限）。',
+    },
   },
   {
     key: 'limits.unlockMinutes',
     unit: 'min',
-    note: { en: 'Extra app time granted by one password unlock.', zh: '输入一次密码解锁后增加的可用时长。' },
-  },
-  {
-    key: 'limits.dailyUnlockLimit',
-    unit: 'count',
-    note: { en: 'Password unlocks allowed per day; 0 = unlimited.', zh: '每日密码解锁次数；0 = 不限。' },
-  },
-  {
-    key: 'limits.strictNoUnlock',
-    unit: '',
     note: {
-      en: 'Hide the password field: a lock can only be ended by a forced break.',
-      zh: '隐藏密码输入框：锁定后只能通过强制休息解除。',
-    },
-  },
-  {
-    key: 'lock.singleConversation',
-    unit: '',
-    note: {
-      en: 'Keep one conversation active while a focus block or agent turn is running.',
-      zh: '专注时段或 agent 回合进行时，只保留一个会话。',
-    },
-  },
-  {
-    key: 'lock.blockToolsOutsideFocus',
-    unit: '',
-    note: { en: 'The Host refuses tool calls from other conversations.', zh: 'Host 拒绝其它会话的工具调用。' },
-  },
-  {
-    key: 'lock.lockSidebarOutsideFocus',
-    unit: '',
-    note: {
-      en: 'Best effort: dim and block the other conversations in the sidebar.',
-      zh: '尽力而为：置灰并拦截侧栏中的其它会话。',
-    },
-  },
-  {
-    key: 'lock.exemptSubagents',
-    unit: '',
-    note: {
-      en: 'Exempt Agent Teams members from the conversation lock (non-root subagents are always exempt).',
-      zh: '对 Agent Teams 成员豁免会话锁（子代理等非根 agent 始终豁免）。',
+      en: 'Extra time granted by one click on “Use 20 more minutes”.',
+      zh: '点击一次「再使用 20 分钟」增加的时长。',
     },
   },
   {
@@ -170,7 +148,10 @@ const FIELDS = [
   {
     key: 'usage.sampleSeconds',
     unit: 's',
-    note: { en: 'How often the idle sampler reads system activity.', zh: '空闲采样的读取间隔。' },
+    note: {
+      en: 'How often the foreground app and idle time are sampled.',
+      zh: '前台应用与空闲时长的采样间隔。',
+    },
   },
   {
     key: 'usage.idleThresholdSeconds',
@@ -183,11 +164,11 @@ const FIELDS = [
     note: { en: 'Days of local usage history kept.', zh: '本地使用记录保留天数。' },
   },
   {
-    key: 'usage.detectMedia',
+    key: 'usage.trackApps',
     unit: '',
     note: {
-      en: 'Media-playback exemption, reserved for a later release; inert in 0.1.0.',
-      zh: '媒体播放豁免，为后续版本预留；0.1.0 中不生效。',
+      en: 'Record which foreground application is active (app name + duration only; no window titles).',
+      zh: '记录前台应用（只存应用名与时长，不记录窗口标题）。',
     },
   },
 ]
@@ -197,7 +178,6 @@ const UNIT_LABELS = {
   blocks: { en: 'blocks', zh: '轮' },
   s: { en: 's', zh: '秒' },
   days: { en: 'days', zh: '天' },
-  count: { en: 'count', zh: '次' },
   ratio: { en: '0–1', zh: '0–1' },
   clock: { en: 'HH:MM', zh: 'HH:MM' },
   '': { en: '—', zh: '—' },
@@ -209,8 +189,8 @@ const COLUMNS = {
 }
 
 const FOOTER = {
-  en: '> `security.*` keys are managed by the plugin (a salted scrypt hash of the unlock password) and are never returned by the settings API. Times are minutes unless the unit says otherwise; `0` disables a limit.',
-  zh: '> `security.*` 由插件内部管理（解锁密码的加盐 scrypt 哈希），设置接口永远不会返回。未特别注明时时间单位为分钟；`0` 表示关闭该限制。',
+  en: '> Times are minutes unless the unit says otherwise. `0` disables a limit: the three overtime limits default to `0`, so a fresh install never shows the overtime overlay. The plugin never blocks tool calls or other conversations — focus mode is sidebar guidance only.',
+  zh: '> 未特别注明时时间单位为分钟。`0` 表示关闭该限制：三个超时上限默认都是 `0`，因此刚安装时不会出现超时遮罩。插件绝不拦截工具调用或其它会话——专注模式只在侧栏做视觉引导。',
 }
 
 function loadDefaults() {
@@ -247,9 +227,7 @@ function leafKeys(object, prefix = '') {
 /** Fails when contract.js gains/loses a setting that this table does not describe. */
 function assertCoverage() {
   const documented = new Set(FIELDS.map((field) => field.key))
-  const actual = new Set(
-    leafKeys(DEFAULTS).filter((key) => key !== 'version' && !key.startsWith('security.')),
-  )
+  const actual = new Set(leafKeys(DEFAULTS).filter((key) => key !== 'version'))
   const undocumented = [...actual].filter((key) => !documented.has(key))
   const stale = [...documented].filter((key) => !actual.has(key))
   if (undocumented.length || stale.length) {

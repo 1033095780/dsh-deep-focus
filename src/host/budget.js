@@ -1,6 +1,7 @@
 /**
- * Budget evaluation and lock state: daily active, continuous work and single-focus caps.
- * An unlock (password or rest) grants a grace window instead of lowering the counters.
+ * Budget evaluation v2: daily active / continuous work / single-focus caps.
+ * Limits default to 0 (off); an unlock is one click for `limits.unlockMinutes`
+ * (or `{mode:'rest'}`, which additionally ends the continuous-work run).
  */
 import { EVENT, LOCK_REASON } from '../shared/contract.js'
 import { localDayKey } from './storage.js'
@@ -11,7 +12,6 @@ const WARN_RATIO = 0.8
 export function emptyBudgetState(dayKey) {
   return {
     dayKey,
-    unlockCountToday: 0,
     reason: null,
     since: null,
     unlockUntil: null,
@@ -34,9 +34,9 @@ const noop = () => {}
 export function createBudget({ settings, tracker, focus, ring, storage = null, now = Date.now, onStat = noop } = {}) {
   let state = emptyBudgetState(localDayKey(now()))
   let writeChain = Promise.resolve()
-  // Whether the previous evaluation observed an active grace window; the
-  // expiry transition (and its single "locked" event) must survive a sparse
-  // evaluation cadence, so it cannot be derived from the current clock alone.
+  // Whether the previous evaluation observed an active grace window; the expiry
+  // transition (and its single "locked" event) must survive a sparse evaluation
+  // cadence, so it cannot be derived from the current clock alone.
   let graceObserved = false
 
   function persist() {
@@ -55,25 +55,17 @@ export function createBudget({ settings, tracker, focus, ring, storage = null, n
     return state.unlockUntil !== null && at < state.unlockUntil
   }
 
-  function canUnlock(at) {
-    if (state.reason === null || inGrace(at)) return false
-    const s = settings.get()
-    if (s.limits.strictNoUnlock) return false
-    if (!settings.hasPassword()) return false
-    const limit = s.limits.dailyUnlockLimit
-    return limit <= 0 || state.unlockCountToday < limit
-  }
-
   function getView(at = now()) {
     const grace = inGrace(at)
+    const locked = state.reason !== null && !grace
     return {
-      locked: state.reason !== null && !grace,
+      locked,
       reason: state.reason,
       since: state.since,
       unlockUntil: state.unlockUntil,
-      unlockCountToday: state.unlockCountToday,
-      canUnlock: canUnlock(at),
-      strict: settings.get().limits.strictNoUnlock === true,
+      unlockMinutes: Math.max(1, Math.round(settings.get().limits.unlockMinutes)),
+      canUnlock: locked,
+      strict: false,
     }
   }
 
@@ -82,13 +74,12 @@ export function createBudget({ settings, tracker, focus, ring, storage = null, n
     const minutes = Math.max(1, Math.round(s.limits.unlockMinutes))
     state = { ...state, unlockUntil: at + minutes * 60_000 }
     graceObserved = true
-    if (mode === 'password') state.unlockCountToday += 1
     onStat({ kind: 'unlock', mode })
     ring.emit(EVENT.unlocked, { mode, minutes })
     persist()
   }
 
-  function warnThreshold(counterMs, limitMinutes, warnedFlag, kind, at) {
+  function warnThreshold(counterMs, limitMinutes, warnedFlag, kind) {
     if (state[warnedFlag] || limitMinutes <= 0) return false
     const limitMs = limitMinutes * 60_000
     if (counterMs < limitMs * WARN_RATIO) return false
@@ -106,11 +97,11 @@ export function createBudget({ settings, tracker, focus, ring, storage = null, n
       const dayKey = localDayKey(now())
       if (document === null || document === undefined || typeof document !== 'object') {
         state = emptyBudgetState(dayKey)
+        graceObserved = false
         return state
       }
       const restored = {
         dayKey,
-        unlockCountToday: Number.isFinite(document.unlockCountToday) ? Math.max(0, Math.round(document.unlockCountToday)) : 0,
         reason: Object.values(LOCK_REASON).includes(document.reason) ? document.reason : null,
         since: Number.isFinite(document.since) ? document.since : null,
         unlockUntil: Number.isFinite(document.unlockUntil) ? document.unlockUntil : null,
@@ -131,8 +122,8 @@ export function createBudget({ settings, tracker, focus, ring, storage = null, n
       const reason = limitReason({ limits: s.limits, usage, focus: focusView })
       const wasInGrace = graceObserved
       let changed = false
-      if (warnThreshold(usage.activeTodayMs, s.limits.dailyActiveMinutes, 'warnedDaily', LOCK_REASON.daily, at)) changed = true
-      if (warnThreshold(usage.continuousMs, s.limits.continuousWorkMinutes, 'warnedContinuous', LOCK_REASON.continuous, at)) changed = true
+      if (warnThreshold(usage.activeTodayMs, s.limits.dailyActiveMinutes, 'warnedDaily', LOCK_REASON.daily)) changed = true
+      if (warnThreshold(usage.continuousMs, s.limits.continuousWorkMinutes, 'warnedContinuous', LOCK_REASON.continuous)) changed = true
       if (reason !== null) {
         if (state.reason === null) {
           state = { ...state, reason, since: at, unlockUntil: null }
@@ -157,29 +148,13 @@ export function createBudget({ settings, tracker, focus, ring, storage = null, n
       return getView(at)
     },
 
-    /** Password unlock: grants `unlockMinutes`, counted against the daily limit. */
-    async unlock({ password } = {}) {
-      const at = now()
-      const view = getView(at)
-      if (!view.locked) return { ok: false, code: 'not-locked' }
-      const s = settings.get()
-      if (s.limits.strictNoUnlock) return { ok: false, code: 'strict' }
-      if (!settings.hasPassword()) return { ok: false, code: 'no-password' }
-      if (typeof password !== 'string' || password.length === 0) return { ok: false, code: 'missing-password' }
-      const limit = s.limits.dailyUnlockLimit
-      if (limit > 0 && state.unlockCountToday >= limit) return { ok: false, code: 'limit-reached' }
-      const valid = await settings.verifyPassword(password)
-      if (!valid) return { ok: false, code: 'bad-password' }
-      grant(at, 'password')
-      return { ok: true, view: getView(at) }
-    },
-
-    /** "Rest" escape: clears the continuous-work run and grants the grace window in every mode. */
-    restUnlock() {
+    /** One click for another `unlockMinutes`; `mode:'rest'` also ends the continuous run. */
+    unlock({ mode = 'click' } = {}) {
       const at = now()
       if (!getView(at).locked) return { ok: false, code: 'not-locked' }
-      tracker.resetContinuous()
-      grant(at, 'rest')
+      const rest = mode === 'rest'
+      if (rest) tracker.resetContinuous()
+      grant(at, rest ? 'rest' : 'click')
       return { ok: true, view: getView(at) }
     },
 

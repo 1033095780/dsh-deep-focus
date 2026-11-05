@@ -59,13 +59,32 @@ test('storage round-trips JSON atomically and lists day files', async () => {
     assert.deepEqual(await storage.readJson('settings.json'), { hello: 'world' })
     assert.deepEqual(await fs.readdir(dir), ['settings.json'])
 
-    await storage.appendJsonl('usage/2026-11-05.jsonl', { t: 1, ms: 5000 })
-    await storage.appendJsonl('usage/2026-11-05.jsonl', { t: 2, ms: 7000 })
+    await storage.appendJsonl('usage/2026-11-05.jsonl', { t: 1, activeMs: 5000, apps: { chrome: 5000 } })
     await storage.appendJsonl('stats/2026-11-05.jsonl', { t: 1, kind: 'focus', ms: 1000 })
-    assert.equal(await storage.readUsageMs('2026-11-05'), 12_000)
-    assert.equal((await storage.readJsonl('usage/2026-11-05.jsonl', { limit: 1 })).length, 1)
     assert.deepEqual(await storage.listDayKeys('usage'), ['2026-11-05'])
     assert.deepEqual(await storage.listDayKeys('nope'), [])
+    assert.equal((await storage.readJsonl('usage/2026-11-05.jsonl', { limit: 1 })).length, 1)
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('readUsageDay sums active time and merges per-app usage across lines', async () => {
+  const dir = await fs.mkdtemp(join(tmpdir(), 'dsh-focus-'))
+  try {
+    const storage = createStorage({ dir })
+    await storage.appendJsonl('usage/2026-11-05.jsonl', { t: 1, activeMs: 5000, apps: { chrome: 3000, code: 2000 } })
+    await storage.appendJsonl('usage/2026-11-05.jsonl', { t: 2, activeMs: 7000, apps: { chrome: 4000 } })
+    // A v1 line is still counted so upgraded installs keep their history.
+    await storage.appendJsonl('usage/2026-11-05.jsonl', { t: 3, day: '2026-11-05', ms: 1000 })
+    // A line carrying both shapes counts once: `activeMs` wins over `ms`.
+    await storage.appendJsonl('usage/2026-11-05.jsonl', { t: 4, activeMs: 2000, ms: 2000 })
+    const usage = await storage.readUsageDay('2026-11-05')
+    assert.equal(usage.activeMs, 15_000)
+    assert.equal(usage.apps.get('chrome'), 7000)
+    assert.equal(usage.apps.get('code'), 2000)
+    assert.equal(usage.apps.size, 2)
+    assert.deepEqual(await storage.readUsageDay('2026-01-01'), { activeMs: 0, apps: new Map() })
   } finally {
     await fs.rm(dir, { recursive: true, force: true })
   }
@@ -76,11 +95,11 @@ test('storage serializes concurrent writes to one file', async () => {
   try {
     const storage = createStorage({ dir })
     await Promise.all(
-      Array.from({ length: 20 }, (_, index) => storage.appendJsonl('usage/2026-11-05.jsonl', { t: index, ms: 1 })),
+      Array.from({ length: 20 }, (_, index) => storage.appendJsonl('usage/2026-11-05.jsonl', { t: index, activeMs: 1 })),
     )
     const records = await storage.readJsonl('usage/2026-11-05.jsonl')
     assert.equal(records.length, 20)
-    assert.equal(await storage.readUsageMs('2026-11-05'), 20)
+    assert.equal((await storage.readUsageDay('2026-11-05')).activeMs, 20)
   } finally {
     await fs.rm(dir, { recursive: true, force: true })
   }
@@ -90,9 +109,9 @@ test('storage prunes day files outside the retention window', async () => {
   const dir = await fs.mkdtemp(join(tmpdir(), 'dsh-focus-'))
   try {
     const storage = createStorage({ dir })
-    await storage.appendJsonl('usage/2026-10-01.jsonl', { ms: 1 })
-    await storage.appendJsonl('usage/2026-11-01.jsonl', { ms: 1 })
-    await storage.appendJsonl('usage/2026-11-05.jsonl', { ms: 1 })
+    await storage.appendJsonl('usage/2026-10-01.jsonl', { activeMs: 1 })
+    await storage.appendJsonl('usage/2026-11-01.jsonl', { activeMs: 1 })
+    await storage.appendJsonl('usage/2026-11-05.jsonl', { activeMs: 1 })
     await storage.appendJsonl('stats/2026-10-01.jsonl', { kind: 'focus', ms: 1 })
     const removed = await storage.prune({ retentionDays: 7, dayKey: '2026-11-05' })
     assert.equal(removed, 2)

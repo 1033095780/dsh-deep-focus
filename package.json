@@ -1,7 +1,7 @@
 {
   "name": "dsh-deep-focus",
-  "version": "0.1.0",
-  "description": "Deep focus guard for DeepSeek Harness: pomodoro timer, single-conversation lock, whole-machine activity tracking, and an overtime lock with password unlock.",
+  "version": "0.2.0",
+  "description": "Deep focus for DeepSeek Harness: pomodoro blocks, a gentle one-conversation focus mode, and per-application usage statistics (DSH, browsers, chat apps, editors). Limits are off by default; when enabled, overtime unlocks with one click for another 20 minutes.",
   "type": "module",
   "license": "MIT",
   "repository": {

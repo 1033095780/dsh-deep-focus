@@ -1,13 +1,15 @@
 /**
- * Same-origin HTTP JSON API: state polling, stats, settings, focus commands and unlock.
- * Handlers never throw to the webServer; every failure becomes a JSON error response.
+ * Same-origin HTTP JSON API v2: state, stats, per-app usage, settings, focus
+ * commands and one-click unlock. Handlers never throw to the webServer.
  */
 import { API_BASE, ROUTES, isPlainObject } from '../shared/contract.js'
+import { appsToRows, appsTotal } from './apps.js'
 import { localDayKey, shiftDayKey } from './storage.js'
-import { passwordProblem } from './settings.js'
 
 export const BODY_LIMIT_BYTES = 32 * 1024
 export const MAX_STATS_DAYS = 90
+export const MAX_APPS_DAYS = 31
+export const TOP_APPS_LIMIT = 8
 
 const noop = () => {}
 
@@ -92,25 +94,16 @@ function errorPayload(error) {
   return { ok: false, error: { code, message: error instanceof Error ? error.message : String(error) } }
 }
 
-const UNLOCK_ERROR_STATUS = {
-  'bad-password': 403,
-  'no-password': 403,
-  strict: 403,
-  'missing-password': 400,
-  'limit-reached': 409,
-  'not-locked': 409,
-}
-
 function errorMessage(code) {
   const messages = {
     'already-running': 'A focus session is already running.',
     'not-running': 'No focus session is running.',
     'not-paused': 'The focus session is not paused.',
+    'not-locked': 'The app is not locked.',
     'untrusted-origin': 'This request came from an untrusted origin and was refused.',
     'body-too-large': 'The request body is too large.',
     'bad-json': 'The request body is not valid JSON.',
     'invalid-settings': 'The settings payload must be a JSON object.',
-    'bad-current-password': 'The current unlock password is wrong.',
     'not-found': 'Unknown deep-focus API path.',
   }
   return messages[code] ?? code
@@ -145,6 +138,22 @@ export function createApi({
     }
   }
 
+  function appsSampling(current) {
+    if (current.usage.trackApps !== true) return 'off'
+    if (sampler.state() === 'off') return 'off'
+    return sampler.appsState() === 'ok' ? 'ok' : 'off'
+  }
+
+  /** Today lives in memory until the next minute flush; read it from the tracker so pages are immediate. */
+  function liveUsage(at) {
+    try {
+      const snapshot = tracker.snapshot(at)
+      return { dayKey: snapshot.dayKey, activeTodayMs: snapshot.activeTodayMs, apps: snapshot.apps }
+    } catch {
+      return { dayKey: localDayKey(at), activeTodayMs: 0, apps: new Map() }
+    }
+  }
+
   function buildState() {
     const at = now()
     // Keep the lock fresh even if a poll arrives between budget timer ticks.
@@ -154,7 +163,7 @@ export function createApi({
     const usage = tracker.snapshot(at)
     const lock = budget.getView(at)
     // Optional hint for the browser: a bound session with no live agent cannot
-    // hold the conversation lock, so the UI must not dim every other session.
+    // hold the UI focus mode, so the sidebar must not stay grayed out.
     let sessionLive = null
     if (typeof focusView.sessionId === 'string' && focusView.sessionId.length > 0) {
       try {
@@ -163,6 +172,7 @@ export function createApi({
         sessionLive = null
       }
     }
+    const appRows = appsToRows(usage.apps)
     return {
       now: at,
       focus: { ...focusView, sessionLive },
@@ -170,18 +180,14 @@ export function createApi({
         activeTodayMs: usage.activeTodayMs,
         continuousMs: usage.continuousMs,
         sampling: sampler.state(),
+        appsSampling: appsSampling(current),
         dayKey: usage.dayKey,
-        samplerDetail: sampler.detail() || null,
       },
-      lock: {
-        locked: lock.locked,
-        reason: lock.reason,
-        since: lock.since,
-        unlockUntil: lock.unlockUntil,
-        unlockCountToday: lock.unlockCountToday,
-        canUnlock: lock.canUnlock,
-        strict: lock.strict,
+      appsToday: {
+        totalMs: Math.round(appsTotal(usage.apps)),
+        top: appRows.slice(0, TOP_APPS_LIMIT),
       },
+      lock,
       alerts: {
         sound: current.alerts.sound,
         volume: current.alerts.volume,
@@ -198,11 +204,14 @@ export function createApi({
     const parsed = Number(requestedDays)
     const days = Number.isFinite(parsed) ? Math.min(MAX_STATS_DAYS, Math.max(1, Math.round(parsed))) : 7
     const at = now()
-    const todayKey = localDayKey(at)
+    const live = liveUsage(at)
+    const todayKey = live.dayKey
     const rows = []
     for (let offset = days - 1; offset >= 0; offset -= 1) {
       const day = shiftDayKey(todayKey, -offset)
-      const activeMs = storage === null ? 0 : await storage.readUsageMs(day)
+      const usage = day === todayKey
+        ? { activeMs: live.activeTodayMs }
+        : storage === null ? { activeMs: 0 } : await storage.readUsageDay(day)
       const records = storage === null ? [] : await storage.readJsonl(`stats/${day}.jsonl`)
       let focusMs = 0
       let breakCount = 0
@@ -215,7 +224,7 @@ export function createApi({
         else if (record.kind === 'pomodoro') pomodoros += 1
         else if (record.kind === 'unlock') unlocks += 1
       }
-      rows.push({ day, activeMs, focusMs, breakCount, pomodoros, unlocks })
+      rows.push({ day, activeMs: Math.round(usage.activeMs), focusMs, breakCount, pomodoros, unlocks })
     }
     return {
       ok: true,
@@ -224,6 +233,30 @@ export function createApi({
       today: rows[rows.length - 1],
       totalActiveMs: rows.reduce((sum, row) => sum + row.activeMs, 0),
       totalFocusMs: rows.reduce((sum, row) => sum + row.focusMs, 0),
+    }
+  }
+
+  async function buildApps(requestedDays) {
+    const parsed = Number(requestedDays)
+    const days = Number.isFinite(parsed) ? Math.min(MAX_APPS_DAYS, Math.max(1, Math.round(parsed))) : 7
+    const at = now()
+    const live = liveUsage(at)
+    const todayKey = live.dayKey
+    const rows = []
+    for (let offset = days - 1; offset >= 0; offset -= 1) {
+      const day = shiftDayKey(todayKey, -offset)
+      const usage = day === todayKey
+        ? { activeMs: live.activeTodayMs, apps: live.apps }
+        : storage === null ? { activeMs: 0, apps: new Map() } : await storage.readUsageDay(day)
+      rows.push({ day, activeMs: Math.round(usage.activeMs), apps: appsToRows(usage.apps) })
+    }
+    const today = rows[rows.length - 1]
+    return {
+      ok: true,
+      retentionDays: settings.get().usage.retentionDays,
+      days: rows,
+      today,
+      top: today.apps.slice(0, TOP_APPS_LIMIT),
     }
   }
 
@@ -261,9 +294,6 @@ export function createApi({
     }
     if (action === 'stop' || action === 'complete') tracker.resetContinuous()
     budget.evaluate(now())
-    // Ending focus is the documented "rest" escape: it releases an active
-    // budget lock even in strict mode, because the user stopped working.
-    if ((action === 'stop' || action === 'complete') && budget.getView(now()).locked) budget.restUnlock()
     sendJson(response, 200, { ok: true, state: buildState() })
   }
 
@@ -275,39 +305,13 @@ export function createApi({
       sendJson(response, ERROR_STATUS[error.code] ?? 400, errorPayload(error))
       return
     }
-    if (!isPlainObject(body)) {
+    if (!isPlainObject(body) || (body.settings !== undefined && !isPlainObject(body.settings))) {
       sendJson(response, 400, { ok: false, error: { code: 'invalid-settings', message: errorMessage('invalid-settings') } })
       return
     }
-    const wantsPassword = body.password !== undefined
-    const wantsClear = body.clearPassword === true
-    if (wantsPassword || wantsClear) {
-      if (settings.hasPassword()) {
-        const currentPassword = typeof body.currentPassword === 'string' ? body.currentPassword : ''
-        if (!(await settings.verifyPassword(currentPassword))) {
-          sendJson(response, 403, { ok: false, error: { code: 'bad-current-password', message: errorMessage('bad-current-password') } })
-          return
-        }
-      }
-    }
-    if (wantsPassword) {
-      const problem = passwordProblem(body.password)
-      if (problem !== null) {
-        sendJson(response, 400, { ok: false, error: { code: problem, message: problem } })
-        return
-      }
-      await settings.setPassword(body.password)
-    }
-    if (wantsClear) await settings.clearPassword()
-    if (body.settings !== undefined) {
-      if (!isPlainObject(body.settings)) {
-        sendJson(response, 400, { ok: false, error: { code: 'invalid-settings', message: errorMessage('invalid-settings') } })
-        return
-      }
-      await settings.update(body.settings)
-    }
+    if (body.settings !== undefined) await settings.update(body.settings)
     onChange(settings.get())
-    sendJson(response, 200, { ok: true, settings: settings.getPublic(), hasPassword: settings.hasPassword() })
+    sendJson(response, 200, { ok: true, settings: settings.getPublic() })
   }
 
   async function handleUnlock(request, response) {
@@ -322,14 +326,9 @@ export function createApi({
       sendJson(response, 400, { ok: false, error: { code: 'bad-json', message: errorMessage('bad-json') } })
       return
     }
-    const result = body.rest === true
-      ? budget.restUnlock()
-      : await budget.unlock({ password: typeof body.password === 'string' ? body.password : undefined })
+    const result = budget.unlock({ mode: body.mode === 'rest' ? 'rest' : 'click' })
     if (!result.ok) {
-      sendJson(response, UNLOCK_ERROR_STATUS[result.code] ?? 409, {
-        ok: false,
-        error: { code: result.code, message: errorMessage(result.code) },
-      })
+      sendJson(response, 409, { ok: false, error: { code: result.code, message: errorMessage(result.code) } })
       return
     }
     budget.evaluate(now())
@@ -349,12 +348,13 @@ export function createApi({
     },
     {
       method: 'GET',
+      path: ROUTES.apps,
+      handler: async (request, response, url) => sendJson(response, 200, await buildApps(url.searchParams.get('days'))),
+    },
+    {
+      method: 'GET',
       path: ROUTES.settings,
-      handler: (request, response) => sendJson(response, 200, {
-        ok: true,
-        settings: settings.getPublic(),
-        hasPassword: settings.hasPassword(),
-      }),
+      handler: (request, response) => sendJson(response, 200, { ok: true, settings: settings.getPublic() }),
     },
     { method: 'POST', path: ROUTES.settings, handler: handleSettingsWrite },
     { method: 'POST', path: ROUTES.focusStart, handler: (request, response) => handleStateCommand(request, response, 'start') },
@@ -394,7 +394,7 @@ export function createApi({
     }
   }
 
-  return { buildState, buildStats, handle }
+  return { buildState, buildStats, buildApps, handle }
 }
 
 /** Register the API route on the Host web server; returns the disposer. */

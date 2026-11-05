@@ -9,7 +9,7 @@ discovery. This document is the release checklist; it is not run by CI.
 | Field | Value |
 | --- | --- |
 | npm package | `dsh-deep-focus` |
-| Version scheme | Semantic Versioning (`0.y.z` for the first public series) |
+| Version scheme | Semantic Versioning (the current series is `0.2.z`) |
 | License | MIT |
 | Repository | `https://github.com/<OWNER>/dsh-deep-focus` (placeholder — replace `<OWNER>` everywhere) |
 | Workflow that publishes | `.github/workflows/publish.yml`, triggered by a published GitHub Release |
@@ -21,9 +21,9 @@ discovery. This document is the release checklist; it is not run by CI.
 ### 1. Add the repository fields to `package.json`
 
 `npm publish --provenance` requires the package manifest to declare where its
-source lives. The manifest in this workspace does not have those fields yet
-(the release kit cannot edit `package.json`), so add them as part of the release
-commit:
+source lives. The manifest in this workspace does not have those fields yet (the
+release kit cannot edit `package.json`), so add them as part of the `0.2.0`
+release commit:
 
 ```jsonc
 {
@@ -70,7 +70,8 @@ npm --version    # >= 11.5.1 is required by the publish workflow; it upgrades np
    ```
 
    (A bootstrap publish does not have provenance. That is fine; subsequent
-   releases from GitHub Actions will.)
+   releases from GitHub Actions will. `0.1.0` was never published, so `0.2.0` is
+   the first public version.)
 
 2. Open `https://www.npmjs.com/package/dsh-deep-focus/access` →
    **Trusted Publisher** → **GitHub Actions** and fill in:
@@ -93,8 +94,9 @@ See the npm documentation for the current rules:
 ## Release procedure
 
 1. **Update the version**
-   - `package.json` → `version` (e.g. `0.1.0`).
-   - `CHANGELOG.md` → move `[Unreleased]` entries to `## [0.1.0] - YYYY-MM-DD`.
+   - `package.json` → `version` (`0.2.0` for this rewrite).
+   - `CHANGELOG.md` → move the `[Unreleased]` entries to
+     `## [0.2.0] - YYYY-MM-DD`.
    - No dependency or lockfile changes are needed (the plugin has no dependencies).
 
 2. **Run the gates locally**
@@ -110,14 +112,14 @@ See the npm documentation for the current rules:
 
    ```bash
    git add -A
-   git commit -m "release: 0.1.0"
-   git tag v0.1.0
+   git commit -m "release: 0.2.0"
+   git tag v0.2.0
    git push origin main --tags
    ```
 
-4. **Create the GitHub Release** from tag `v0.1.0`. Publishing the release (not
+4. **Create the GitHub Release** from tag `v0.2.0`. Publishing the release (not
    drafting it) triggers `publish.yml`. The workflow refuses to publish when the
-   tag (`v0.1.0` → `0.1.0`) does not match `package.json`'s version.
+   tag (`v0.2.0` → `0.2.0`) does not match `package.json`'s version.
 
 5. **Watch the run** in the Actions tab. It re-runs syntax checks, `verify.mjs`
    and `npm test`, then runs `npm publish --provenance --access public`.
@@ -146,26 +148,35 @@ Before announcing the release:
 - [ ] In a clean profile: the composer pill appears, the panel starts a 1-minute
       block, the completion toast and chime fire, the settings page saves, and the
       7-day chart renders.
-- [ ] Lock test: set `limits.dailyActiveMinutes` to 1 (or use a 1-minute session
-      limit), trigger the lock, confirm tool calls are refused in other
-      conversations, and confirm password unlock grants 20 minutes.
+- [ ] **Focus mode**: with a block running, other sidebar conversations are grayed
+      and a click shows the gentle reminder without switching; the focused
+      conversation stays usable.
+- [ ] **Usage panel**: the sidebar entry appears below the Plugins row, today's
+      per-app times list correctly, and the 7-day trend loads.
+- [ ] **Overtime**: set `limits.sessionMinutes` to 1, confirm the overlay appears,
+      click “Use 20 more minutes” and verify `limits.unlockMinutes` of grace, then
+      confirm “Take a break” clears it. Confirm no password is requested.
+- [ ] **No blocking**: during a focus block, start an agent turn in another
+      conversation and confirm it runs without any tool refusal.
 - [ ] `scripts/verify.mjs` passes on a clean checkout (`git clean -xdf`-safe: it
       needs no install step).
+- [ ] Disable the plugin while a block runs: the UI disappears immediately and the
+      sidebar returns to normal.
 
 ## README screenshots
 
 No screenshots are committed yet; the READMEs use a clearly marked placeholder.
 Capture these on DSH **0.2.2-rc.1** on Windows, at a consistent window size
-(1440×900 is fine), with no personal task names, conversation lists, or file
-paths visible.
+(1440×900 is fine), with no personal task names, conversation lists, app lists, or
+file paths visible.
 
 | File | Theme | Content |
 | --- | --- | --- |
 | `docs/images/pill-idle-light.png` | Light | Composer toolbar pill at rest (play glyph + "Focus"/「专注」). |
-| `docs/images/panel-running-dark.png` | Dark | Focus panel open bottom-right, a 25-minute block running with the progress ring and today's mini stats. |
-| `docs/images/lock-overlay-dark.png` | Dark | Full-screen lock overlay with the reason, today's usage, password field and the forced-break action. |
-| `docs/images/settings-stats-light.png` | Light | Settings → Deep focus section: grouped settings plus the 7-day bar chart. |
-| `docs/images/sidebar-lock-light.png` (optional) | Light | Sidebar while locked: non-owner conversations dimmed, owner conversation reachable. |
+| `docs/images/focus-mode-dark.png` | Dark | A focus block running: sidebar with the other conversations grayed out, focus panel open, owner conversation readable. |
+| `docs/images/usage-panel-light.png` | Light | The **Usage** panel from the sidebar below the Plugins row: today's total, per-app bars, 7-day trend. |
+| `docs/images/panel-running-dark.png` | Dark | Focus panel bottom-right with the progress ring, presets and today's mini stats (including the top app). |
+| `docs/images/overtime-overlay-dark.png` | Dark | The gentle overtime overlay: reason, today's usage, 「再使用 20 分钟」 / “Use 20 more minutes” and 「休息一下」 / “Take a break” — **no password field**. |
 | `docs/images/toast-completed-dark.png` (optional) | Dark | Completion toast (and break countdown if visible) at the end of a block. |
 
 Steps after capturing:
@@ -174,7 +185,7 @@ Steps after capturing:
    `docs` is in `package.json` `files`).
 2. Add image links to both READMEs in the screenshot section and delete the
    `<!-- screenshots:pending -->` marker from each file.
-3. Run `node scripts/verify.mjs` — it now checks that every local image link
+3. Run `node scripts/verify.mjs` — it then checks that every local image link
    exists, so a missing file fails the release gate.
 
 ## Listing for discovery (awesome-dsh-plugin)
@@ -184,15 +195,15 @@ The DSH plugin market reads configured plugin indexes, and the
 Open a PR with one entry in the list's Markdown file:
 
 ```markdown
-- [dsh-deep-focus](https://github.com/<OWNER>/dsh-deep-focus) — Pomodoro focus blocks, a one-conversation lock, whole-machine activity tracking while DSH runs, and an overtime lock you unlock with your password for another 20 minutes. Install: `dsh plugin add dsh-deep-focus`.
+- [dsh-deep-focus](https://github.com/<OWNER>/dsh-deep-focus) — Gentle focus for DeepSeek Harness: pomodoro blocks, a soft one-conversation-at-a-time sidebar reminder (never blocks tools), per-app usage statistics, and an optional one-click “use 20 more minutes” overtime nudge. Install: `dsh plugin add dsh-deep-focus`.
 ```
 
-- **Category recommendation:** `Workflow & Automation` (focus/session control).
+- **Category recommendation:** `Workflow & Automation` (focus/session guidance).
   `Notifications` is the fallback if the maintainers prefer a toasts/alerts
   category.
-- **Do not include** marketing claims the plugin cannot keep: it does not block
-  the OS, does not track time while DSH is closed, and the lock is not a security
-  boundary.
+- **Do not include** claims the plugin cannot keep: it does not block tools or
+  other agents, does not track time while DSH is closed, and the overtime overlay
+  is a nudge, not enforcement.
 
 PR checklist (match the list's contribution rules if they are stricter):
 

@@ -1,9 +1,14 @@
 /**
- * Shared wire contract between the Host half and the browser half.
+ * Shared wire contract (v2) between the Host half and the browser half.
  *
- * The Host imports this module directly. The browser half is a single
- * self-contained bundle (no build step), so it keeps a small copy of the
- * route/event constants — keep them in sync when changing anything here.
+ * v2 changed the product shape after user feedback:
+ * - no tool blocking anywhere (nothing may interrupt other conversations' work)
+ * - focus mode only grays the sidebar and shows a gentle toast on click
+ * - usage is tracked per foreground application (dsh / browsers / QQ / ...)
+ * - overtime unlock is a single click for another 20 minutes (no password)
+ *
+ * The browser half is one self-contained bundle (no build step), so it keeps a
+ * small copy of the route/event constants — keep them in sync when changing.
  */
 
 /** Prefix every browser -> host call uses; registered by src/host/api.js. */
@@ -12,6 +17,7 @@ export const API_BASE = '/plugins/dsh-deep-focus/api'
 export const ROUTES = {
   state: `${API_BASE}/state`,
   stats: `${API_BASE}/stats`,
+  apps: `${API_BASE}/apps`,
   settings: `${API_BASE}/settings`,
   focusStart: `${API_BASE}/focus/start`,
   focusPause: `${API_BASE}/focus/pause`,
@@ -40,7 +46,7 @@ export const EVENT = {
   limitWarning: 'limit-warning',
 }
 
-/** Why the app is locked. */
+/** Why the app shows the overtime overlay. */
 export const LOCK_REASON = {
   daily: 'daily',
   continuous: 'continuous',
@@ -49,14 +55,13 @@ export const LOCK_REASON = {
 }
 
 /**
- * Settings shape, also the deep-merge target. Every field has a working
- * default: the plugin must be useful on first install with no configuration.
+ * Settings shape, also the deep-merge target. All limits default to `0` (off):
+ * the plugin must never lock the user out of the box.
  *
- * Times are minutes unless the field name says otherwise. `0` disables a
- * limit (`dailyActiveMinutes: 0` = no daily cap).
+ * Times are minutes unless the field name says otherwise.
  */
 export const DEFAULT_SETTINGS = {
-  version: 1,
+  version: 2,
   focus: {
     workMinutes: 25,
     breakMinutes: 5,
@@ -66,20 +71,13 @@ export const DEFAULT_SETTINGS = {
     autoStartNext: false,
     idlePauseSeconds: 120,
     autoResumeOnReturn: true,
+    grayOutOtherSessions: true,
   },
   limits: {
-    dailyActiveMinutes: 480,
-    continuousWorkMinutes: 90,
-    sessionMinutes: 90,
+    dailyActiveMinutes: 0,
+    continuousWorkMinutes: 0,
+    sessionMinutes: 0,
     unlockMinutes: 20,
-    dailyUnlockLimit: 0,
-    strictNoUnlock: false,
-  },
-  lock: {
-    singleConversation: true,
-    blockToolsOutsideFocus: true,
-    lockSidebarOutsideFocus: true,
-    exemptSubagents: true,
   },
   alerts: {
     taskDone: true,
@@ -93,11 +91,7 @@ export const DEFAULT_SETTINGS = {
     sampleSeconds: 5,
     idleThresholdSeconds: 60,
     retentionDays: 30,
-    detectMedia: false,
-  },
-  security: {
-    passwordHash: null,
-    passwordSalt: null,
+    trackApps: true,
   },
 }
 
@@ -134,9 +128,4 @@ export function mergeSettings(base, patch) {
     }
   }
   return out
-}
-
-/** Human-readable reason text is localized in the browser half; the wire keeps keys. */
-export function isLocked(lock) {
-  return Boolean(lock && lock.locked)
 }

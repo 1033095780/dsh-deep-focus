@@ -5,31 +5,27 @@ import { createEventRing } from '../src/host/events.js'
 import { normalizeSettings } from '../src/host/settings.js'
 import { EVENT, LOCK_REASON } from '../src/shared/contract.js'
 
-test('limitReason selects the first limit over budget', () => {
+test('limitReason selects the first limit over budget and ignores disabled limits', () => {
   const limits = normalizeSettings({}).limits
   const usage = { activeTodayMs: 0, continuousMs: 0 }
   const focus = { phase: 'idle', elapsedMs: 0 }
   assert.equal(limitReason({ limits, usage, focus }), null)
-  assert.equal(limitReason({ limits, usage: { ...usage, activeTodayMs: limits.dailyActiveMinutes * 60_000 }, focus }), LOCK_REASON.daily)
-  assert.equal(limitReason({ limits, usage: { ...usage, continuousMs: limits.continuousWorkMinutes * 60_000 }, focus }), LOCK_REASON.continuous)
-  assert.equal(limitReason({ limits, usage, focus: { phase: 'work', elapsedMs: limits.sessionMinutes * 60_000 } }), LOCK_REASON.session)
-  assert.equal(limitReason({ limits: { dailyActiveMinutes: 0, continuousWorkMinutes: 0, sessionMinutes: 0 }, usage: { activeTodayMs: 10 ** 9, continuousMs: 10 ** 9 }, focus: { phase: 'work', elapsedMs: 10 ** 9 } }), null)
+  const enabled = { ...limits, dailyActiveMinutes: 10, continuousWorkMinutes: 20, sessionMinutes: 30 }
+  assert.equal(limitReason({ limits: enabled, usage: { ...usage, activeTodayMs: 10 * 60_000 }, focus }), LOCK_REASON.daily)
+  assert.equal(limitReason({ limits: enabled, usage: { ...usage, continuousMs: 20 * 60_000 }, focus }), LOCK_REASON.continuous)
+  assert.equal(limitReason({ limits: enabled, usage, focus: { phase: 'work', elapsedMs: 30 * 60_000 } }), LOCK_REASON.session)
+  assert.equal(limitReason({ limits: enabled, usage: { activeTodayMs: 10 ** 9, continuousMs: 10 ** 9 }, focus: { phase: 'work', elapsedMs: 10 ** 9 } }) !== null, true)
 })
 
 function makeBudget({ limits = {}, nowValue = 0 } = {}) {
   let clock = nowValue
-  let hasPassword = false
-  let password = null
   let settingsValue = normalizeSettings({ limits })
-  const settings = {
-    get: () => settingsValue,
-    hasPassword: () => hasPassword,
-    verifyPassword: async (candidate) => candidate === password,
-  }
+  const settings = { get: () => settingsValue }
   const usage = { activeTodayMs: 0, continuousMs: 0 }
+  const resets = []
   const tracker = {
     snapshot: () => usage,
-    resetContinuous: () => { usage.continuousMs = 0 },
+    resetContinuous: () => { usage.continuousMs = 0; resets.push(true) },
   }
   const focus = { view: { phase: 'idle', elapsedMs: 0 }, getView: () => focus.view }
   const ring = createEventRing({ now: () => clock })
@@ -49,77 +45,81 @@ function makeBudget({ limits = {}, nowValue = 0 } = {}) {
     stats,
     usage,
     focus,
+    resets,
     setClock(value) { clock = value },
     get clock() { return clock },
     setSettings(patch) { settingsValue = normalizeSettings({ limits: { ...settingsValue.limits, ...patch } }) },
-    setPassword(value) { password = value; hasPassword = value !== null },
     events: () => ring.list().map((event) => event.kind),
   }
 }
 
-test('nothing is locked below every limit', () => {
+test('all limits default to off', () => {
   const env = makeBudget()
+  env.usage.activeTodayMs = 10 ** 9
+  env.usage.continuousMs = 10 ** 9
   const view = env.budget.evaluate(0)
   assert.equal(view.locked, false)
-  assert.equal(view.reason, null)
+  assert.equal(view.strict, false)
+  assert.equal(view.unlockMinutes, 20)
   assert.equal(view.canUnlock, false)
 })
 
-test('the daily cap locks the app and emits exactly one locked event', () => {
-  const env = makeBudget()
-  env.usage.activeTodayMs = normalizeSettings({}).limits.dailyActiveMinutes * 60_000
-  let view = env.budget.evaluate(1000)
+test('the daily cap locks once and exposes the v2 lock shape', () => {
+  const env = makeBudget({ limits: { dailyActiveMinutes: 1 } })
+  env.usage.activeTodayMs = 60_000
+  const view = env.budget.evaluate(1000)
+  assert.deepEqual(Object.keys(view).sort(), ['canUnlock', 'locked', 'reason', 'since', 'strict', 'unlockMinutes', 'unlockUntil'])
   assert.equal(view.locked, true)
   assert.equal(view.reason, LOCK_REASON.daily)
-  assert.equal(env.events().filter((kind) => kind === EVENT.locked).length, 1)
-  view = env.budget.evaluate(2000)
-  assert.equal(view.locked, true)
+  assert.equal(view.since, 1000)
+  assert.equal(view.unlockUntil, null)
+  assert.equal(view.canUnlock, true)
+  assert.equal(view.strict, false)
+  assert.equal(view.unlockMinutes, 20)
+  env.budget.evaluate(2000)
   assert.equal(env.events().filter((kind) => kind === EVENT.locked).length, 1)
 })
 
 test('an over-limit warning fires before the hard lock', () => {
-  const env = makeBudget()
-  const limits = normalizeSettings({}).limits
-  env.usage.activeTodayMs = Math.ceil(limits.dailyActiveMinutes * 60_000 * 0.85)
+  const env = makeBudget({ limits: { dailyActiveMinutes: 100 } })
+  env.usage.activeTodayMs = 85 * 60_000
   const view = env.budget.evaluate(0)
   assert.equal(view.locked, false)
   assert.equal(env.events().filter((kind) => kind === EVENT.limitWarning).length, 1)
 })
 
 test('continuous and session limits lock independently', () => {
-  const env = makeBudget()
-  const limits = normalizeSettings({}).limits
-  env.usage.continuousMs = limits.continuousWorkMinutes * 60_000
+  const env = makeBudget({ limits: { continuousWorkMinutes: 90, sessionMinutes: 90 } })
+  env.usage.continuousMs = 90 * 60_000
   assert.equal(env.budget.evaluate(0).reason, LOCK_REASON.continuous)
   env.usage.continuousMs = 0
-  env.focus.view = { phase: 'work', elapsedMs: limits.sessionMinutes * 60_000 }
+  env.focus.view = { phase: 'work', elapsedMs: 90 * 60_000 }
   assert.equal(env.budget.evaluate(1000).reason, LOCK_REASON.session)
 })
 
-test('a password unlock grants the grace window and counts once', async () => {
-  const env = makeBudget()
-  env.setPassword('secret123')
-  env.usage.activeTodayMs = normalizeSettings({}).limits.dailyActiveMinutes * 60_000
+test('one click grants unlockMinutes and clears the lock', () => {
+  const env = makeBudget({ limits: { dailyActiveMinutes: 1 } })
+  env.usage.activeTodayMs = 60_000
+  env.setClock(1000)
   env.budget.evaluate(1000)
-  assert.equal(env.budget.getView(1000).canUnlock, true)
-  assert.deepEqual(await env.budget.unlock({ password: 'wrong' }), { ok: false, code: 'bad-password' })
-  const unlocked = await env.budget.unlock({ password: 'secret123' })
-  assert.equal(unlocked.ok, true)
+  const result = env.budget.unlock({ mode: 'click' })
+  assert.equal(result.ok, true)
   const view = env.budget.getView(1000)
   assert.equal(view.locked, false)
   assert.equal(view.reason, LOCK_REASON.daily)
-  assert.equal(view.unlockCountToday, 1)
-  assert.ok(view.unlockUntil > 1000)
-  assert.ok(env.events().includes(EVENT.unlocked))
-  assert.ok(env.stats.some((record) => record.kind === 'unlock' && record.mode === 'password'))
+  assert.equal(view.unlockUntil, 1000 + 20 * 60_000)
+  const event = env.ring.list().at(-1)
+  assert.equal(event.kind, EVENT.unlocked)
+  assert.equal(event.meta.mode, 'click')
+  assert.equal(event.meta.minutes, 20)
+  assert.ok(env.stats.some((record) => record.kind === 'unlock' && record.mode === 'click'))
 })
 
-test('the grace window expires and the app re-locks with a new event', async () => {
-  const env = makeBudget()
-  env.setPassword('secret123')
-  env.usage.activeTodayMs = normalizeSettings({}).limits.dailyActiveMinutes * 60_000
+test('the grace window expires and the app re-locks with a new event', () => {
+  const env = makeBudget({ limits: { dailyActiveMinutes: 1 } })
+  env.usage.activeTodayMs = 60_000
   env.budget.evaluate(1000)
-  await env.budget.unlock({ password: 'secret123' })
+  env.budget.unlock({ mode: 'click' })
   const unlockUntil = env.budget.getView(1000).unlockUntil
   env.setClock(unlockUntil + 1000)
   const view = env.budget.evaluate(unlockUntil + 1000)
@@ -127,55 +127,45 @@ test('the grace window expires and the app re-locks with a new event', async () 
   assert.equal(env.events().filter((kind) => kind === EVENT.locked).length, 2)
 })
 
-test('the daily unlock limit is enforced', async () => {
-  const env = makeBudget({ limits: { dailyUnlockLimit: 1 } })
-  env.setPassword('secret123')
-  env.usage.activeTodayMs = normalizeSettings({}).limits.dailyActiveMinutes * 60_000
-  env.budget.evaluate(1000)
-  await env.budget.unlock({ password: 'secret123' })
-  const unlockUntil = env.budget.getView(1000).unlockUntil
-  env.setClock(unlockUntil + 1000)
-  env.budget.evaluate(unlockUntil + 1000)
-  assert.equal(env.budget.getView(unlockUntil + 1000).canUnlock, false)
-  assert.deepEqual(await env.budget.unlock({ password: 'secret123' }), { ok: false, code: 'limit-reached' })
-})
-
-test('strict mode refuses password unlocks but allows resting', async () => {
-  const env = makeBudget({ limits: { strictNoUnlock: true } })
-  env.setPassword('secret123')
-  env.usage.continuousMs = normalizeSettings({}).limits.continuousWorkMinutes * 60_000
-  const locked = env.budget.evaluate(1000)
-  assert.equal(locked.locked, true)
-  assert.equal(locked.strict, true)
-  assert.equal(locked.canUnlock, false)
-  assert.deepEqual(await env.budget.unlock({ password: 'secret123' }), { ok: false, code: 'strict' })
-  const rest = env.budget.restUnlock()
-  assert.equal(rest.ok, true)
-  assert.equal(env.budget.getView(1000).locked, false)
-  assert.equal(env.usage.continuousMs, 0)
-  assert.equal(env.budget.evaluate(1000).locked, false)
-})
-
-test('unlocking needs a configured password', async () => {
-  const env = makeBudget()
-  env.usage.activeTodayMs = normalizeSettings({}).limits.dailyActiveMinutes * 60_000
+test('rest unlocks and also ends the continuous-work run', () => {
+  const env = makeBudget({ limits: { continuousWorkMinutes: 90 } })
+  env.usage.continuousMs = 90 * 60_000
   env.budget.evaluate(0)
-  assert.equal(env.budget.getView(0).canUnlock, false)
-  assert.deepEqual(await env.budget.unlock({ password: 'x' }), { ok: false, code: 'no-password' })
-})
-
-test('resting clears a continuous lock without a password', () => {
-  const env = makeBudget()
-  env.usage.continuousMs = normalizeSettings({}).limits.continuousWorkMinutes * 60_000
-  env.budget.evaluate(0)
-  const rest = env.budget.restUnlock()
-  assert.equal(rest.ok, true)
+  assert.equal(env.budget.getView(0).locked, true)
+  const result = env.budget.unlock({ mode: 'rest' })
+  assert.equal(result.ok, true)
+  assert.equal(env.resets.length, 1)
   assert.equal(env.usage.continuousMs, 0)
+  assert.equal(env.ring.list().at(-1).meta.mode, 'rest')
+  // With the counter reset, the lock does not come back after the grace window.
   assert.equal(env.budget.evaluate(0).locked, false)
 })
 
-test('unlock is rejected when nothing is locked', async () => {
+test('the unlock duration follows the settings', () => {
+  const env = makeBudget({ limits: { dailyActiveMinutes: 1, unlockMinutes: 5 } })
+  env.usage.activeTodayMs = 60_000
+  env.setClock(1000)
+  env.budget.evaluate(1000)
+  assert.equal(env.budget.getView(1000).unlockMinutes, 5)
+  env.budget.unlock({ mode: 'click' })
+  assert.equal(env.budget.getView(1000).unlockUntil, 1000 + 5 * 60_000)
+})
+
+test('unlock is rejected when nothing is locked', () => {
   const env = makeBudget()
-  assert.deepEqual(await env.budget.unlock({ password: 'x' }), { ok: false, code: 'not-locked' })
-  assert.deepEqual(env.budget.restUnlock(), { ok: false, code: 'not-locked' })
+  assert.deepEqual(env.budget.unlock({ mode: 'click' }), { ok: false, code: 'not-locked' })
+})
+
+test('a day rollover clears the lock', () => {
+  const start = new Date(2026, 10, 5, 23, 0, 0).getTime()
+  const env = makeBudget({ limits: { dailyActiveMinutes: 1 }, nowValue: start })
+  env.usage.activeTodayMs = 10 ** 9
+  assert.equal(env.budget.evaluate(start).locked, true)
+  env.setClock(start + 2 * 3_600_000)
+  // A new day starts with today's counters at zero.
+  env.usage.activeTodayMs = 0
+  const view = env.budget.evaluate(start + 2 * 3_600_000)
+  assert.equal(view.locked, false)
+  assert.equal(view.reason, null)
+  assert.equal(view.since, null)
 })

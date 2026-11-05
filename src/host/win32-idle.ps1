@@ -1,10 +1,12 @@
-# dsh-deep-focus: write the whole-machine idle time in milliseconds, one sample per interval.
+# dsh-deep-focus: emit "<idleMs>|<foreground pid>|<process name>" once per sample interval.
 # ASCII only: Windows PowerShell 5.1 reads BOM-less files as ANSI, so no non-ASCII characters here.
 $ErrorActionPreference = 'Stop'
 
-Add-Type -Namespace DshDeepFocus -Name IdleTime -MemberDefinition @"
+Add-Type -Namespace DshDeepFocus -Name Foreground -MemberDefinition @"
 [DllImport("user32.dll")] public static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);
 [DllImport("kernel32.dll")] public static extern ulong GetTickCount64();
+[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 public struct LASTINPUTINFO { public uint cbSize; public uint dwTime; }
 public static ulong IdleMs() {
   LASTINPUTINFO lii = new LASTINPUTINFO();
@@ -25,8 +27,17 @@ if ($env:DSH_FOCUS_SAMPLE_MS) {
 }
 
 while ($true) {
-  $idle = [DshDeepFocus.IdleTime]::IdleMs()
-  [Console]::Out.WriteLine([string]$idle)
+  $idle = [DshDeepFocus.Foreground]::IdleMs()
+  $hwnd = [DshDeepFocus.Foreground]::GetForegroundWindow()
+  $fgPid = [uint32]0
+  $exe = ''
+  if ($hwnd -ne [IntPtr]::Zero) {
+    try { [void][DshDeepFocus.Foreground]::GetWindowThreadProcessId($hwnd, [ref]$fgPid) } catch { $fgPid = [uint32]0 }
+    if ($fgPid -gt 0) {
+      try { $exe = [System.Diagnostics.Process]::GetProcessById([int]$fgPid).ProcessName } catch { $exe = '' }
+    }
+  }
+  [Console]::Out.WriteLine(([string]$idle) + '|' + ([string]$fgPid) + '|' + $exe)
   [Console]::Out.Flush()
   Start-Sleep -Milliseconds $sampleMs
 }

@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * Offline packaging smoke test for dsh-deep-focus.
+ * Offline packaging smoke test for dsh-deep-focus v0.2.
  *
  * Plain `node scripts/verify.mjs` — no install step, no network. It exits
  * non-zero when the published package would be broken: missing entry points,
  * unparsable JSON/XML, locale drift, a contract that no longer matches what the
- * README documents, or source files importing something the DSH runtime cannot
- * resolve.
+ * README documents, a reintroduced v0.1 concept (tool blocking, passwords), or
+ * source files importing something the DSH runtime cannot resolve.
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -21,6 +21,7 @@ const REQUIRED_FILES = [
   'CHANGELOG.md',
   '.gitignore',
   'cordis.patch.yml',
+  'src/host/apps.js',
   'docs/design.md',
   'docs/privacy.md',
   'docs/publishing.md',
@@ -322,7 +323,7 @@ check('icon is valid SVG', () => {
   return iconPath
 })
 
-check('contract.js is importable and sane', async () => {
+check('contract.js is a sane v2 contract', async () => {
   const contractPath = abs('src/shared/contract.js')
   if (!existsSync(contractPath)) fail('src/shared/contract.js is missing')
   let contract
@@ -333,9 +334,12 @@ check('contract.js is importable and sane', async () => {
   }
   const defaults = contract.DEFAULT_SETTINGS
   if (!isPlainObject(defaults)) fail('contract.js does not export DEFAULT_SETTINGS')
-  if (defaults.version !== 1) fail(`DEFAULT_SETTINGS.version is ${defaults.version}, expected 1`)
-  for (const section of ['focus', 'limits', 'lock', 'alerts', 'usage', 'security']) {
+  if (defaults.version !== 2) fail(`DEFAULT_SETTINGS.version is ${defaults.version}, expected 2 (v0.2 contract)`)
+  for (const section of ['focus', 'limits', 'alerts', 'usage']) {
     if (!isPlainObject(defaults[section])) fail(`DEFAULT_SETTINGS.${section} is missing`)
+  }
+  for (const removed of ['lock', 'security']) {
+    if (removed in defaults) fail(`DEFAULT_SETTINGS.${removed} must not exist in the v0.2 contract`)
   }
   const numericKeys = [
     'focus.workMinutes',
@@ -347,7 +351,6 @@ check('contract.js is importable and sane', async () => {
     'limits.continuousWorkMinutes',
     'limits.sessionMinutes',
     'limits.unlockMinutes',
-    'limits.dailyUnlockLimit',
     'usage.sampleSeconds',
     'usage.idleThresholdSeconds',
     'usage.retentionDays',
@@ -359,6 +362,10 @@ check('contract.js is importable and sane', async () => {
   for (const key of ['focus.workMinutes', 'focus.breakMinutes', 'usage.sampleSeconds', 'usage.idleThresholdSeconds']) {
     if (getPath(defaults, key) < 1) fail(`DEFAULT_SETTINGS.${key} must be at least 1`)
   }
+  for (const key of ['limits.dailyActiveMinutes', 'limits.continuousWorkMinutes', 'limits.sessionMinutes']) {
+    if (getPath(defaults, key) !== 0) fail(`DEFAULT_SETTINGS.${key} must default to 0 (off): v0.2 never locks on first install`)
+  }
+  if (defaults.limits.unlockMinutes < 1) fail('limits.unlockMinutes must grant some time')
   const volume = defaults.alerts.volume
   if (typeof volume !== 'number' || volume < 0 || volume > 1) fail('alerts.volume must be a number between 0 and 1')
   for (const key of ['quietHoursStart', 'quietHoursEnd']) {
@@ -371,33 +378,67 @@ check('contract.js is importable and sane', async () => {
     'focus.autoStartBreak',
     'focus.autoStartNext',
     'focus.autoResumeOnReturn',
-    'limits.strictNoUnlock',
-    'lock.singleConversation',
-    'lock.blockToolsOutsideFocus',
-    'lock.lockSidebarOutsideFocus',
-    'lock.exemptSubagents',
+    'focus.grayOutOtherSessions',
     'alerts.taskDone',
     'alerts.turnDone',
     'alerts.sound',
-    'usage.detectMedia',
+    'usage.trackApps',
   ]
   for (const key of booleanKeys) {
     if (typeof getPath(defaults, key) !== 'boolean') fail(`DEFAULT_SETTINGS.${key} must be a boolean`)
   }
-  if (defaults.security.passwordHash !== null || defaults.security.passwordSalt !== null) {
-    fail('security defaults must start empty (passwordHash/passwordSalt = null)')
+  for (const removedKey of ['dailyUnlockLimit', 'strictNoUnlock']) {
+    if (removedKey in defaults.limits) fail(`DEFAULT_SETTINGS.limits.${removedKey} was removed in v0.2`)
+  }
+  if ('detectMedia' in defaults.usage) fail('DEFAULT_SETTINGS.usage.detectMedia was removed in v0.2')
+  const serializedDefaults = JSON.stringify(defaults).toLowerCase()
+  if (serializedDefaults.includes('password') || serializedDefaults.includes('security')) {
+    fail('DEFAULT_SETTINGS must not contain password/security fields in v0.2')
   }
   if (typeof contract.API_BASE !== 'string' || !/^\/[\w/-]+\/api$/.test(contract.API_BASE)) {
     fail(`contract.API_BASE looks wrong: ${contract.API_BASE}`)
   }
   if (!isPlainObject(contract.ROUTES)) fail('contract.js does not export ROUTES')
+  if (typeof contract.ROUTES.apps !== 'string') fail('contract.js ROUTES.apps is missing (v0.2 usage API)')
   for (const route of Object.values(contract.ROUTES)) {
     if (typeof route !== 'string' || !route.startsWith(contract.API_BASE)) fail(`ROUTES entry does not live under API_BASE: ${route}`)
   }
   for (const group of ['PHASE', 'EVENT', 'LOCK_REASON']) {
     if (!isPlainObject(contract[group]) || Object.keys(contract[group]).length === 0) fail(`contract.js does not export ${group}`)
   }
-  return `${numericKeys.length} numeric + ${Object.keys(contract.ROUTES).length} routes`
+  return `v${defaults.version}: ${numericKeys.length} numeric, ${Object.keys(contract.ROUTES).length} routes`
+})
+
+check('v0.2 ships no tool blocking', () => {
+  if (existsSync(abs('src/host/lock.js'))) fail('src/host/lock.js still exists; v0.2 deleted the tool guard')
+  const sourceFiles = walkFiles(abs('src')).filter((file) => file.endsWith('.js'))
+  const problems = []
+  for (const file of sourceFiles) {
+    const relativeFile = file.slice(ROOT.length + 1).split('\\').join('/')
+    const code = stripComments(readFileSync(file, 'utf8'))
+    if (/\btools\s*\.\s*guard\s*\(/.test(code)) problems.push(`${relativeFile}: registers ctx.tools.guard`)
+    if (/\bregisterToolGuard\b|\bdecideToolDenial\b|\bdenialReason\b/.test(code)) {
+      problems.push(`${relativeFile}: contains v1 tool-denial logic`)
+    }
+  }
+  const index = stripComments(readText('src/index.js'))
+  const injectMatch = index.match(/export\s+const\s+inject\s*=\s*\[([\s\S]*?)\]/)
+  if (injectMatch !== null && /['"]tools['"]/.test(injectMatch[1])) fail("src/index.js still injects 'tools'")
+  if (problems.length) fail(problems.join('; '))
+  return 'no tool guard, no tools injection'
+})
+
+check('v0.2 has no password support', () => {
+  const problems = []
+  for (const file of walkFiles(abs('src')).filter((entry) => entry.endsWith('.js'))) {
+    const relativeFile = file.slice(ROOT.length + 1).split('\\').join('/')
+    const code = stripComments(readFileSync(file, 'utf8'))
+    if (/\bscrypt\b|\bpasswordHash\b|\bpasswordSalt\b|\bverifyPassword\b|\bsetPassword\b|\bclearPassword\b/.test(code)) {
+      problems.push(relativeFile)
+    }
+  }
+  if (problems.length) fail(`password code still present in: ${problems.join(', ')}`)
+  return 'no password code anywhere in src'
 })
 
 check('README settings tables match contract.js', async () => {
@@ -408,6 +449,41 @@ check('README settings tables match contract.js', async () => {
     fail(`scripts/config-table.mjs cannot be imported: ${error.message}`)
   }
   return module.checkConfigTables()
+})
+
+check('READMEs describe the v0.2 product', () => {
+  const en = readText('README.md')
+  const zh = readText('README.zh.md')
+  if (!/never (?:blocks?|interrupts?|refuses?)[^.]{0,120}(?:tool|conversation|agent)/is.test(en)) {
+    fail('README.md must state that the plugin never blocks tool calls or other conversations')
+  }
+  if (!/绝不(?:拦截|拒绝)/.test(zh)) fail('README.zh.md must state 绝不拦截 / 绝不拒绝 (no tool blocking)')
+  if (!/per-app|foreground application/i.test(en)) fail('README.md must document per-application usage tracking')
+  if (!/usage/i.test(en) || !/sidebar/i.test(en)) fail('README.md must document the sidebar Usage panel')
+  if (!/使用统计/.test(zh) || !/侧栏/.test(zh)) fail('README.zh.md must document 侧栏「使用统计」')
+  if (!/(?:use |another )?20 more minutes/i.test(en)) fail('README.md must document the click-to-continue “Use 20 more minutes” action')
+  if (!/再使用 20 分钟/.test(zh)) fail('README.zh.md must document 「再使用 20 分钟」')
+  const forbidden = [
+    /enter (?:your |the )?password/i,
+    /type (?:your |the )?password/i,
+    /unlock password/i,
+    /password field/i,
+    /密码解锁/,
+    /输入(?:解锁)?密码/,
+    /tool calls are refused/i,
+    /工具调用被拒绝/,
+  ]
+  for (const pattern of forbidden) {
+    if (pattern.test(en) || pattern.test(zh)) fail(`README still advertises a removed v0.1 concept: ${pattern}`)
+  }
+  return 'no tool blocking, per-app usage, sidebar panel, click-to-continue'
+})
+
+check('package version is the v0.2 series', () => {
+  if (!/^0\.2\.\d+$/.test(pkg.version)) {
+    fail(`package.json version is "${pkg.version}"; the release kit documents v0.2.x`)
+  }
+  return pkg.version
 })
 
 check('required files exist', () => {
@@ -425,6 +501,9 @@ check('LICENSE and CHANGELOG', () => {
   const changelog = readText('CHANGELOG.md')
   if (!changelog.includes('## [Unreleased]')) fail('CHANGELOG.md has no [Unreleased] section')
   if (!changelog.includes(`## [${pkg.version}]`)) fail(`CHANGELOG.md has no entry for version ${pkg.version}`)
+  for (const heading of ['### Added', '### Changed', '### Removed']) {
+    if (!changelog.includes(heading)) fail(`CHANGELOG.md v0.2 entry is missing "${heading}"`)
+  }
   return `MIT, changelog covers ${pkg.version}`
 })
 
@@ -463,7 +542,7 @@ check('source imports are resolvable', () => {
 check('source entry exports', () => {
   const index = readText('src/index.js')
   if (!/\bexport\s+(?:async\s+)?function\s+apply\b|\bexport\s+(?:const|let)\s+apply\b/.test(index)) {
-    fail('src/index.js must export apply(ctx, config)')
+    fail('src/index.js must export apply(ctx)')
   }
   if (!/\binject\b/.test(index)) fail('src/index.js must declare the services it injects')
   const client = readText('src/client.js')
@@ -478,7 +557,7 @@ check('source entry exports', () => {
 
 check('tests exist', () => {
   const testDirectory = abs('test')
-  if (!existsSync(testDirectory)) fail('test/ is missing; CI runs "npm test" (node --test test/)')
+  if (!existsSync(testDirectory)) fail('test/ is missing; CI runs "npm test" (node --test)')
   const testFiles = walkFiles(testDirectory).filter((file) => file.endsWith('.test.mjs') || file.endsWith('.test.js'))
   if (testFiles.length === 0) fail('test/ contains no *.test.mjs files')
   return `${testFiles.length} test file(s)`
@@ -524,7 +603,7 @@ check('publish workflow uses OIDC only', () => {
   return 'OIDC publish, CI on Node 20/22'
 })
 
-check('runtime data directory is documented', () => {
+check('privacy docs match the v0.2 data collection', () => {
   const combined = readText('README.md') + readText('README.zh.md') + readText('docs/privacy.md')
   if (!combined.includes('$DSH_HOME/plugin-data/dsh-deep-focus')) {
     fail('READMEs and docs/privacy.md must document $DSH_HOME/plugin-data/dsh-deep-focus')
@@ -532,10 +611,10 @@ check('runtime data directory is documented', () => {
   if (!/no network|不联网|never makes a network/i.test(combined)) {
     fail('READMEs or docs/privacy.md must state that the plugin never uses the network')
   }
-  if (!/restart|重启/i.test(combined)) {
-    fail('READMEs or docs/privacy.md must state that restarting DSH bypasses the lock')
-  }
-  return 'documented'
+  if (!/foreground|前台/.test(combined)) fail('docs must describe foreground-application sampling')
+  if (!/window title|窗口标题/.test(combined)) fail('docs must state that window titles are not recorded')
+  if (!/app name|应用名/.test(combined)) fail('docs must state that only app names and durations are stored')
+  return 'foreground apps, names + durations only, local'
 })
 
 // --- runner -----------------------------------------------------------------
