@@ -25,7 +25,7 @@ closed. A companion desktop guard is a possible later phase and is not included.
 | `src/host/limits.js` | Daily cap, continuous cap, forced rest, idle pause, extension window. |
 | `src/host/events.js` | Event ring, agent status map, completion alerts. |
 | `src/host/api.js` | Same-origin JSON API. |
-| `src/client.js` | Browser half: assistant panel, display-only rings, overlays, sidebar graying. |
+| `src/client.js` | Browser half: assistant panel, interactive two-ring widget, overlays, sidebar graying. |
 | `src/shared/contract.js` | Wire contract: routes, events, `DEFAULT_SETTINGS` (version 4). |
 | `scripts/verify.mjs` / `scripts/e2e.mjs` | Offline packaging checks / live HTTP smoke. |
 
@@ -83,8 +83,8 @@ never accumulate. One aggregate line per minute: `{ t, activeMs, apps: { key: ms
   resume) ignored — so a single high sample cannot flash the overlay
   (`pausedReason: "idle"`, `paused` event). Activity after the 1.5 s grace resumes
   it (`resumed`); `POST /resume` force-resumes. In the UI only the automatic path
-  is used — the rings are display-only — and the pause card is shown only after the
-  paused state has held ~0.6 s.
+  is used — the rings also offer the same manual pause — and the pause card is shown
+  only after the paused state has held ~0.6 s.
 - **Rollover:** at local midnight the lock, extension window/count and due flags
   reset. Turning the assistant off ends a rest and clears lock/pause
   (`assistant-off`).
@@ -134,8 +134,8 @@ newest running root — so exactly one conversation is pinned.
 | --- | --- | --- |
 | `sidebar.panellist` | `focus-assistant` | assistant entry below Plugins |
 | `main` (keyed) | `focus-assistant` | overview, 7-day trend, 8-field settings (incl. the one-conversation switch), enable/pause, right-aligned save row |
-| `shell.overlay` | `dsh-deep-focus-rings` | display-only two-ring widget (not clickable); each ring shows its value inside (today minutes, continuous mm:ss) and the continuous clock is interpolated to tick once per second |
-| `shell.overlay` | `dsh-deep-focus-pause-gray` | auto/manual pause: the shared today-usage card with 「已暂停计时 · 动一下鼠标或键盘继续」 (no actions) |
+| `shell.overlay` | `dsh-deep-focus-rings` | interactive two-ring **button**: each ring shows its value inside (today minutes, continuous mm:ss) and the continuous clock is interpolated to tick once per second (frozen while paused/resting/locked). Click → `POST /pause`; click while paused → `POST /resume`; an in-flight lock ignores double-clicks and shows a pressed/disabled state. Keyboard accessible (`role="button"`, `tabIndex`, Enter/Space) with aria-labels 「暂停计时」/「继续计时」 (“Pause timer”/“Resume timer”). |
+| `shell.overlay` | `dsh-deep-focus-pause-gray` | auto/manual pause: the shared today-usage card with 「已暂停计时 · 动一下鼠标或键盘继续」 (no actions, `pointer-events: none` so clicks pass through to the rings) |
 | `shell.overlay` | `dsh-deep-focus-rest` | forced-rest screen using the shared today-usage card + 「跳过休息」 |
 | `shell.overlay` | `dsh-deep-focus-daily-lock` | daily overlay on the same card: 「再使用 20 分钟」/「跳过」 |
 | `shell.overlay` | `dsh-deep-focus-focus-veil` | veil over a visible non-owner conversation |

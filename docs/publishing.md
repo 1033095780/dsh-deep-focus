@@ -77,11 +77,12 @@ Only needed for registry-based installs (`dsh plugin add dsh-deep-focus`).
 - [ ] Plugins page shows the icon plus localized title/description.
 - [ ] Assistant panel opens; rings show today/continuous progress **with the value
       inside each ring**, the continuous clock ticks every second, and the widget is
-      not clickable.
+      a **button**: click it → pause; click again while paused → resume (in-flight
+      clicks are ignored, aria-label switches between Pause/Resume timer).
 - [ ] Idling for `usage.autoPauseSeconds` shows the shared today-usage card with
       「已暂停计时」 only after sustained idle (a single stale sample or a brief pause
-      in input must not flash it); input resumes. There is no separate gray-only
-      pause layer.
+      in input must not flash it); input resumes, and clicking the rings works as a
+      manual pause too. There is no separate gray-only pause layer.
 - [ ] Rest screen and daily overlay both show the **same today-usage card**; daily
       overlay has only 「再使用 20 分钟」 and 「跳过」 (skip does not extend). With DSH
       hidden, hitting the cap tries `window.focus()` + one system notification (best
@@ -108,7 +109,7 @@ Not committed yet; the READMEs carry a marked placeholder. Capture on DSH
 
 | File | Content |
 | --- | --- |
-| `docs/images/rings-light.png` | display-only two-ring widget |
+| `docs/images/rings-light.png` | interactive two-ring widget (values inside; click = pause/resume) |
 | `docs/images/rest-gray-dark.png` | automatic-rest gray state |
 | `docs/images/rest-card-dark.png` | rest screen with the shared today-usage card + 「跳过休息」 |
 | `docs/images/daily-overlay-dark.png` | daily overlay on the same card (「再使用 20 分钟」/「跳过」) |
@@ -121,7 +122,7 @@ local image links).
 ## Marketplace listing (awesome-dsh-plugin)
 
 ```markdown
-- [dsh-deep-focus](https://github.com/1033095780/dsh-deep-focus) — Focus assistant for DeepSeek Harness: display-only two-ring usage widget, idle auto-rest, per-app statistics, a 3-hour daily cap, activity-gated 10-minute rests, one-conversation-at-a-time sidebar — pure plugin, never blocks tools. Install: `dsh plugin add dsh-deep-focus`.
+- [dsh-deep-focus](https://github.com/1033095780/dsh-deep-focus) — Focus assistant for DeepSeek Harness: click-to-pause two-ring usage widget, idle auto-rest, per-app statistics, a 3-hour daily cap, activity-gated 10-minute rests, one-conversation-at-a-time sidebar — pure plugin, never blocks tools. Install: `dsh plugin add dsh-deep-focus`.
 ```
 
 - **Category:** `Workflow & Automation` (`Notifications` as fallback).

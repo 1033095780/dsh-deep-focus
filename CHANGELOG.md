@@ -21,6 +21,19 @@ were never published.
   gray for ~1.5 s" behaviour never took effect in the real page. The cleanup now runs
   only on unmount, so the previous owner survives transient empty running sets.
 
+## [0.4.10] - 2026-11-05
+
+Patch release. Versions 0.1.0–0.4.9 were never published.
+
+### Added
+
+- **Click the two-ring widget to pause or resume**: the card is an interactive
+  button again (`POST /pause`, and `POST /resume` while paused) with an in-flight
+  guard against double-clicks, a pressed/disabled state, keyboard support
+  (Enter/Space) and 「暂停计时」/「继续计时」 aria labels. The automatic sustained-idle
+  pause and the smooth 1 s ring clock stay exactly as they were; both paths lead to
+  the same shared pause card, and mouse/keyboard activity or a second click resumes.
+
 ## [0.4.8] - 2026-11-05
 
 Patch release. Versions 0.1.0–0.4.7 were never published.

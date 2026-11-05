@@ -68,9 +68,10 @@ window.__ModuleLoader__.load({
     const NS = 'deepFocus'
     const I18N = {
       zh: {
-        'rings.aria': '今日已用 {today}，连续 {continuous}',
         'rings.today': '今日',
         'rings.minUnit': '分',
+        'rings.pauseAria': '暂停计时',
+        'rings.resumeAria': '继续计时',
         'rings.continuousUnit': '',
         'rings.continuous': '连续',
         'rings.busy': '正在暂停…',
@@ -191,9 +192,10 @@ window.__ModuleLoader__.load({
         'wd.6': '周六',
       },
       en: {
-        'rings.aria': 'Used {today} today, continuous {continuous}',
         'rings.today': 'Today',
         'rings.minUnit': 'min',
+        'rings.pauseAria': 'Pause timer',
+        'rings.resumeAria': 'Resume timer',
         'rings.continuousUnit': '',
         'rings.continuous': 'Continuous',
         'rings.busy': 'Pausing…',
@@ -725,7 +727,11 @@ window.__ModuleLoader__.load({
       '.df-rest-body{color:var(--dsw-alias-label-secondary);font-size:14px;margin:0}',
       '.df-rings-layer{position:absolute;top:min(calc(var(--dsh-frame-top-clearance, 0px) + 96px), calc(100% - 150px));right:16px;z-index:75;display:flex;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none}',
       '@media (max-height: 540px){.df-rings-layer{top:calc(var(--dsh-frame-top-clearance, 0px) + 56px)}}',
-      '.df-rings{position:static;display:flex;align-items:center;gap:10px;box-sizing:border-box;padding:9px 11px;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent);backdrop-filter:blur(8px);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:11px;line-height:1.2;cursor:default;pointer-events:auto;box-shadow:0 8px 24px color-mix(in srgb, var(--dsw-alias-bg-overlay) 40%, transparent)}',
+      '.df-rings{position:static;display:flex;align-items:center;gap:10px;box-sizing:border-box;padding:9px 11px;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent);backdrop-filter:blur(8px);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:11px;line-height:1.2;cursor:pointer;pointer-events:auto;box-shadow:0 8px 24px color-mix(in srgb, var(--dsw-alias-bg-overlay) 40%, transparent);transition:border-color .16s ease,transform .12s ease,opacity .16s ease}',
+      '.df-rings:hover{border-color:var(--dsw-alias-border-l2)}',
+      '.df-rings:active{transform:scale(.97)}',
+      '.df-rings:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}',
+      '.df-rings[data-busy="true"]{opacity:.72;cursor:default}',
       '.df-ring{position:relative;width:34px;height:34px;flex:0 0 auto}',
       '.df-ring svg{display:block;width:34px;height:34px;transform:rotate(-90deg)}',
       '.df-ring-track{stroke:var(--dsw-alias-border-l1);fill:none}',
@@ -1227,6 +1233,10 @@ window.__ModuleLoader__.load({
           return postAction(ROUTES.restFinish, {})
         }
 
+        function pause() {
+          return postAction(ROUTES.pause, {})
+        }
+
         function resume() {
           return postAction(ROUTES.resume, {})
         }
@@ -1275,7 +1285,8 @@ window.__ModuleLoader__.load({
           extend: extend,
           startRest: startRest,
           finishRest: finishRest,
-            resume: resume,
+            pause: pause,
+        resume: resume,
             loadAppsTrend: loadAppsTrend,
           saveSettings: saveSettings,
           pushToast: pushToast,
@@ -2515,6 +2526,28 @@ window.__ModuleLoader__.load({
         const tickPair = React.useState(0)
         const tickAt = tickPair[0]
         const setTickAt = tickPair[1]
+
+        const busyPair = React.useState(false)
+        const busy = busyPair[0]
+        const setBusy = busyPair[1]
+        const busyRef = React.useRef(false)
+        const pausedNow = limit.paused === true
+
+        async function togglePause(event) {
+          if (event && typeof event.preventDefault === 'function') event.preventDefault()
+          if (busyRef.current) return
+          busyRef.current = true
+          setBusy(true)
+          try {
+            if (pausedNow) await store.resume()
+            else await store.pause()
+          } catch (error) {
+            /* the next state poll reconciles */
+          } finally {
+            busyRef.current = false
+            setBusy(false)
+          }
+        }
         React.useEffect(
           function () {
             if (!clockActive) return undefined
@@ -2561,25 +2594,29 @@ window.__ModuleLoader__.load({
             'div',
             { className: 'df-rings-layer', 'data-df-root': 'rings-layer' },
             h(
-              'div',
+              'button',
               {
+                type: 'button',
                 className: 'df-rings',
                 'data-df-root': 'rings',
                 'data-dsh-deep-focus-root': 'rings',
-                role: 'img',
-                'aria-label': t('rings.aria', {
-                  today: fmtDuration(t, dailyUsed),
-                  continuous: continuousLimit > 0 ? fmtClock(continuousUsed) : '—',
-                }),
+                'data-busy': busy ? 'true' : undefined,
+                'data-paused': pausedNow ? 'true' : undefined,
+                disabled: busy,
+                'aria-label': pausedNow ? t('rings.resumeAria') : t('rings.pauseAria'),
+                'aria-pressed': pausedNow ? 'true' : undefined,
                 title: summary,
+                onClick: togglePause,
                 style: {
                   appearance: 'none',
+                  WebkitAppearance: 'none',
                   borderStyle: 'solid',
                   borderColor: 'var(--dsw-alias-border-l1)',
                   color: 'var(--dsw-alias-label-primary)',
                   font: 'inherit',
                   background: 'color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent)',
-                  cursor: 'default',
+                  cursor: busy ? 'default' : 'pointer',
+                  textAlign: 'left',
                 },
               },
               h(
@@ -2771,7 +2808,22 @@ window.__ModuleLoader__.load({
             const graceUntil =
               pausedAt === null ? Date.now() + 1500 : pausedAt + 1500 - numberOr(snapshot.clockOffset, 0)
             let used = false
-            const onActivity = function () {
+            const isOwnRingTarget = function (target) {
+              let element = target
+              for (let depth = 0; element && depth < 12; depth += 1, element = element.parentElement) {
+                if (
+                  element &&
+                  typeof element.getAttribute === 'function' &&
+                  element.getAttribute('data-dsh-deep-focus-root') === 'rings'
+                ) {
+                  return true
+                }
+              }
+              return false
+            }
+            const onActivity = function (event) {
+              // The ring button itself toggles pause/resume; let that click through.
+              if (event && event.type === 'pointerdown' && isOwnRingTarget(event.target)) return
               if (used || Date.now() < graceUntil) return
               used = true
               setResuming(true)

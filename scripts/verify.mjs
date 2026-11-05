@@ -348,9 +348,10 @@ check('READMEs describe the current product', () => {
     [/(?:3 hours|180 minutes)/i, 'the 3-hour daily cap'],
     [/30 (?:continuous )?minutes/i, 'the 30-minute continuous cap'],
     [/10-minute (?:forced )?rest/i, 'the 10-minute forced rest'],
-    [/display[- ]only/i, 'the display-only rings'],
     [/(?:value inside|values? inside each ring|number in the middle)/i, 'the in-ring values'],
     [/(?:once per second|every second)/i, 'the smooth continuous clock'],
+    [/click(?:ing)? the (?:rings|widget|card)/i, 'click-to-pause on the rings'],
+    [/(?:click again|click it again|second click)/i, 'click-again-to-resume'],
     [/sustained idle|two consecutive/i, 'the sustained-idle auto-pause rule'],
     [/held ~1\.5 s|~1\.5 s/i, 'the sidebar gray hysteresis'],
     [/auto(?:matic)?[- ]?(?:rest|pause)|pauses? only after sustained/i, 'the automatic idle rest'],
@@ -390,9 +391,10 @@ check('READMEs describe the current product', () => {
     [/(?:3 小时|180 分钟)/, 'the 3-hour daily cap'],
     [/30 分钟/, 'the 30-minute continuous cap'],
     [/10 分钟/, 'the 10-minute forced rest'],
-    [/仅显示|只显示/, 'the display-only rings'],
     [/(?:中间显示数值|数值)/, 'the in-ring values'],
     [/(?:每秒平滑走动|每秒走)/, 'the smooth continuous clock'],
+    [/点击(?:卡片|双环|小组件)/, 'click-to-pause on the rings'],
+    [/(?:再点一次|再点击|点击.*继续)/, 'click-again-to-resume'],
     [/持续空闲|连续两个新鲜采样/, 'the sustained-idle auto-pause rule'],
     [/(?:约 )?1\.5 秒/, 'the sidebar gray hysteresis'],
     [/自动休息|自动暂停/, 'the automatic idle rest'],
@@ -428,8 +430,9 @@ check('READMEs describe the current product', () => {
   const forbidden = [
     /25\s*[\/:]\s*5/,
     /pomodoro timer/i,
-    /click(?:ing)? the (?:widget|rings)[^.\n]{0,80}(?:pause|gray)/i,
-    /点击[^。\n]{0,20}双环[^。\n]{0,20}(?:暂停|变灰)/,
+    /display[- ]only/i,
+    /仅显示/,
+    /your own \(root\) conversation's turn/i,
     /你的（root）会话整轮完成|your own \(root\) conversation's turn/i,
     /countdown chip/i,
     /seven (?:common )?(?:settings|controls)/i,
@@ -461,8 +464,8 @@ check('LICENSE and CHANGELOG', () => {
   if (!changelog.includes('## [Unreleased]')) fail('CHANGELOG.md has no [Unreleased] section')
   const entry = new RegExp(`^## \\[${pkg.version.replace(/\./g, '\\.')}\\] - \\d{4}-\\d{2}-\\d{2}$`, 'm')
   if (!entry.test(changelog)) fail(`CHANGELOG.md needs a dated "[${pkg.version}] - YYYY-MM-DD" entry`)
-  if (pkg.version === '0.4.8' && !changelog.includes('## [0.4.8] - 2026-11-05')) {
-    fail('CHANGELOG.md must date the 0.4.8 entry 2026-11-05')
+  if (pkg.version === '0.4.10' && !changelog.includes('## [0.4.10] - 2026-11-05')) {
+    fail('CHANGELOG.md must date the 0.4.10 entry 2026-11-05')
   }
   for (const heading of ['### Added', '### Changed', '### Fixed']) {
     if (!changelog.includes(heading)) fail(`CHANGELOG.md entry is missing "${heading}"`)
