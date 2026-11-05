@@ -164,6 +164,16 @@ test('idle beyond autoPauseSeconds auto-pauses through the sampler path', async 
   assert.equal(env.limits.getView(env.clock).paused, false)
   assert.equal(env.limits.getView(env.clock).pausedReason, null)
   assert.ok(env.kinds().includes(EVENT.resumed))
+  // The idle value that caused the pause is older than the resume: ticking with it
+  // must not flap straight back into the paused state.
+  const staleIdleAt = env.clock - 20_000
+  for (const offset of [1000, 2000, 3000]) {
+    env.limits.evaluate(env.clock + offset, { idleMs: 186_484, sampleAt: staleIdleAt })
+    assert.equal(env.limits.getView(env.clock + offset).paused, false, `tick +${offset}`)
+  }
+  // A genuinely fresh high-idle sample after the grace pauses again.
+  env.limits.evaluate(env.clock + 20_000, { idleMs: 186_484, sampleAt: env.clock + 20_000 })
+  assert.equal(env.limits.getView(env.clock + 20_000).paused, true)
 })
 
 test('a manually paused session still auto-resumes after activity', async () => {

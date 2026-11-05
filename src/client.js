@@ -3105,7 +3105,9 @@ window.__ModuleLoader__.load({
           if (!assistantOn) return t('hub.status.offNote')
           if (resting) return t('hub.status.resting', { time: fmtClock(restRemaining) })
           const parts = []
-          if (limit.paused === true) parts.push(t('rings.paused'))
+          if (limit.paused === true) {
+            parts.push(limit.pausedReason === 'idle' ? t('pause.autoTitle') : t('pause.title'))
+          }
           parts.push(
             dailyLimit > 0
               ? t('hub.status.daily', { used: fmtDuration(t, dailyUsed), limit: fmtDuration(t, dailyLimit) })

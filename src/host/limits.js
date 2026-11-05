@@ -13,6 +13,8 @@ export const REST_DUE_RATIO = 0.8
 export const PAUSE_ACTIVITY_GRACE_MS = 1500
 /** A rest whose time elapsed still finishes eventually if the user never returns. */
 export const REST_ACTIVITY_WAIT_CAP_MS = 30 * 60_000
+/** After a resume, ignore idle samples long enough for the sampler to produce a fresh one. */
+export const RESUME_GRACE_MIN_MS = 6000
 
 export function emptyLimitsState(dayKey) {
   return {
@@ -35,6 +37,10 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
   let writeChain = Promise.resolve()
   let restDueEmitted = false
   let lastActivityAt = null
+  // Auto-pause provenance: the idle value that paused us must be newer than the
+  // latest resume, and a short grace window waits for the sampler to catch up.
+  let lastResumeAt = null
+  let resumeGraceUntil = 0
   let lastAssistantEnabled = settings.get().assistant.enabled === true
 
   function persist() {
@@ -99,9 +105,19 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
 
   function resumeInternal(at, reason) {
     state = { ...state, paused: false, pausedAt: null, pausedReason: null }
+    // A stale sample may still carry the pre-resume idle value; ignore auto-pause
+    // until the sampler has had time to produce a newer one.
+    lastResumeAt = at
+    resumeGraceUntil = at + resumeGraceMs()
     ring.emit(EVENT.resumed, { reason })
     persist()
     return getView(at)
+  }
+
+  function resumeGraceMs() {
+    const usage = settings.get().usage
+    const sampleSeconds = Number.isFinite(usage.sampleSeconds) ? usage.sampleSeconds : 5
+    return Math.max(2 * sampleSeconds * 1000, RESUME_GRACE_MIN_MS)
   }
 
   /** Enter the paused state; `reason` is 'manual' (widget) or 'idle' (auto-pause). */
@@ -113,14 +129,21 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
     return getView(at)
   }
 
-  /** Auto-pause once the machine has been idle long enough (0 disables it). */
-  function maybeAutoPause(idleMs, at) {
+  /**
+   * Auto-pause once the machine has been idle long enough (0 disables it).
+   * `sampleAt` is when the idle value was sampled: a value older than the last
+   * resume must never pause again, otherwise every resume flaps straight back.
+   */
+  function maybeAutoPause(idleMs, at, sampleAt) {
     if (state.paused || state.resting) return
     const s = settings.get()
     if (s.assistant.enabled !== true) return
     const seconds = Number.isFinite(s.usage.autoPauseSeconds) ? s.usage.autoPauseSeconds : 60
     if (seconds <= 0) return
     if (!Number.isFinite(idleMs) || idleMs < seconds * 1000) return
+    if (at < resumeGraceUntil) return
+    if (!Number.isFinite(sampleAt)) return
+    if (lastResumeAt !== null && sampleAt <= lastResumeAt) return
     pauseInternal(at, 'idle')
   }
 
@@ -166,13 +189,14 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
     if (state.resting && state.restUntil !== null && at >= state.restUntil && active) {
       endRest(false, 'elapsed-and-active')
     }
-    maybeAutoPause(sample?.idleMs, at)
+    maybeAutoPause(sample?.idleMs, at, at)
     return getView(at)
   }
 
   /**
    * One evaluation tick: finish an elapsed rest (or its wait cap), then enforce.
-   * `options.idleMs` lets the 1s tick auto-pause using the latest sampler value.
+   * `options.idleMs`/`options.sampleAt` let the 1s tick auto-pause using the
+   * latest sampler value — only when that sample is newer than the last resume.
    */
   function evaluate(at = now(), options = {}) {
     rollDay(at)
@@ -204,7 +228,7 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
       return getView(at)
     }
 
-    maybeAutoPause(options.idleMs, at)
+    maybeAutoPause(options.idleMs, at, options.sampleAt)
 
     // The daily cap is evaluated first so a lock never stacks a forced rest on top.
     if (!state.resting && !state.paused) {
@@ -306,6 +330,8 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
         state = { ...state, dailyLocked: false, lockedSince: null, extendedUntil: null, extendCountToday: 0 }
       }
       lastActivityAt = null
+      lastResumeAt = null
+      resumeGraceUntil = 0
       lastAssistantEnabled = settings.get().assistant.enabled === true
       return state
     },

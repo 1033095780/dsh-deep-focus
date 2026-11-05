@@ -350,6 +350,8 @@ export function createSampler({
       return now() - lastAppAt <= appWindowMs() ? APPS_SAMPLING.ok : APPS_SAMPLING.off
     },
     lastIdleMs: () => lastIdleMs,
+    /** Host time of the latest accepted sample (`null` before the first one). */
+    lastSampleAt: () => lastSampleAt,
     lastApp: () => lastApp,
     lastPid: () => lastPid,
     sampleSeconds: () => seconds,

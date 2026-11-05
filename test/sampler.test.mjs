@@ -93,6 +93,7 @@ test('the Windows sampler streams foreground samples from one powershell child',
   })
   assert.equal(sampler.state(), 'degraded')
   assert.equal(sampler.appsState(), 'off')
+  assert.equal(sampler.lastSampleAt(), null)
   sampler.start()
   assert.equal(fake.calls.length, 1)
   assert.equal(fake.calls[0].command, 'powershell.exe')
@@ -108,6 +109,8 @@ test('the Windows sampler streams foreground samples from one powershell child',
   assert.equal(sampler.state(), 'ok')
   assert.equal(sampler.appsState(), 'ok')
   assert.equal(sampler.lastApp(), 'msedge')
+  // Exposes when the latest accepted sample arrived (used by the auto-pause gate).
+  assert.equal(sampler.lastSampleAt(), 1000)
 
   // Foreground names expire from the app window but idle tracking continues.
   clock += 60_000

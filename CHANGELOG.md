@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.4.4] - Unreleased
+
+A stability release on top of 0.4.3. Versions 0.1.0–0.4.3 were never published.
+
+### Added
+
+- `scripts/e2e.mjs` — a live end-to-end suite against the running plugin's HTTP API
+  (contract shape, `/apps`, removed routes, idle auto-pause, resume stability,
+  pause/resume, rest start/skip, extend, settings round-trip, assistant toggle,
+  bad requests). 29 checks, restores any setting it changes.
+
+### Fixed
+
+- **Auto-pause flapping after you come back.** The 1-second enforcement tick could
+  read the stale idle sample taken *before* the resume (often 100 s+) and pause
+  again one second later. Auto-pause now requires a sample strictly newer than the
+  latest resume (`sampleAt > lastResumeAt`) and a resume grace window of
+  `max(2 × sample interval, 6 s)`; manual pause still applies immediately and
+  `autoPauseSeconds: 0` still disables auto-pause entirely.
+
 ## [0.4.3] - Unreleased
 
 A UX simplification release on top of 0.4.2. Versions 0.1.0–0.4.2 were never
