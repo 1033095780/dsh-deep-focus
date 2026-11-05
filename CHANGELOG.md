@@ -51,6 +51,14 @@ were never published.
   gray for ~1.5 s" behaviour never took effect in the real page. The cleanup now runs
   only on unmount, so the previous owner survives transient empty running sets.
 
+## [0.4.18] - 2026-11-05
+
+### Fixed
+
+- Today's minutes never move backwards within a day (a new day resets them), and the
+  continuous ring shows real time even when the continuous limit is disabled (it used
+  to show a dash).
+
 ## [0.4.17] - 2026-11-05
 
 Patch release. Versions 0.1.0–0.4.15 were never published.
@@ -100,10 +108,7 @@ Patch release. Versions 0.1.0–0.4.13 were never published.
 
 ### Fixed
 
-- **Ring widget alignment**: the two rings are now equal-width columns with centered
-  values and captions (今日已用 / 连续使用), the continuous mm:ss is clearly readable
-  inside the ring, and the card padding/baseline are balanced. The glass card,
-  top-right position, click-to-pause button and smooth 1 s clock are unchanged.
+- **Ring widget alignment**: equal-width columns, values and captions centered, continuous mm:ss readable inside the ring.
 
 ## [0.4.10] - 2026-11-05
 

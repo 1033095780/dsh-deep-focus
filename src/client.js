@@ -2604,7 +2604,8 @@ window.__ModuleLoader__.load({
             shownDaily = dailyUsed
             shownDayKeyRef.current = dayKey
           } else if (dailyUsed >= shownDaily) shownDaily = dailyUsed
-          else if (dailyUsed < shownDaily - 60000) shownDaily = dailyUsed
+          // Within a day the today-minutes value only ever moves forward; a new
+          // dayKey above resets it. No backward snap for small/large corrections.
         }
         shownContinuousRef.current = shownContinuous
         shownDailyRef.current = shownDaily
@@ -2626,10 +2627,11 @@ window.__ModuleLoader__.load({
               ? 'warn'
               : 'normal'
         const todayMinutes = fmtRingMinutes(dailyShown)
-        const continuousClock = continuousLimit > 0 ? fmtRingClock(continuousUsed) : '—'
+        // With the continuous limit disabled the ring still shows unbounded mm:ss / h:mm.
+        const continuousClock = fmtRingClock(continuousUsed)
         const summary = t('rings.summary', {
           today: fmtDuration(t, dailyUsed),
-          continuous: continuousLimit > 0 ? fmtRingClock(continuousUsed) : '—',
+          continuous: fmtRingClock(continuousUsed),
         })
 
         return h(
