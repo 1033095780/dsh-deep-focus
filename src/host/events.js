@@ -25,19 +25,33 @@ export function createEventRing({ size = EVENT_RING_SIZE, now = Date.now } = {})
   }
 }
 
-/** Live `agent/status` snapshot, keyed by session id. */
-export function createStatusMap() {
+/**
+ * Live agent status keyed by session id. A running entry also remembers when that
+ * run started, so the single-conversation mode can pick the newest conversation.
+ */
+export function createStatusMap({ now = Date.now } = {}) {
+  // id -> run start timestamp while running, null when idle.
   const running = new Map()
   return {
-    set(id, isRunning) {
+    set(id, isRunning, at = now()) {
       if (typeof id !== 'string' || id.length === 0) return
-      running.set(id, isRunning === true)
+      running.set(id, isRunning === true ? (Number.isFinite(at) ? at : now()) : null)
     },
     delete(id) {
       running.delete(id)
     },
-    isRunning: (id) => running.get(id) === true,
-    runningIds: () => [...running.entries()].filter(([, isRunning]) => isRunning).map(([id]) => id),
+    isRunning(id) {
+      const value = running.get(id)
+      return value !== null && value !== undefined
+    },
+    /** When the current run started, or null when this id is not running. */
+    startedAt(id) {
+      const value = running.get(id)
+      return value === null || value === undefined ? null : value
+    },
+    runningIds: () => [...running.entries()]
+      .filter(([, value]) => value !== null && value !== undefined)
+      .map(([id]) => id),
   }
 }
 
@@ -68,14 +82,14 @@ export function installHostEventListeners({ ctx, ring, statusMap, isRootSession 
   // arrives with its current running state; upsert it.
   disposers.push(ctx.on('api-session/added', (summary) => {
     if (typeof summary?.sessionId !== 'string' || summary.sessionId.length === 0) return
-    statusMap.set(summary.sessionId, summary.running === true)
+    statusMap.set(summary.sessionId, summary.running === true, summary.updatedAt)
   }))
 
   // Durable turn boundaries double as a status source (and carry the completion alert).
   disposers.push(ctx.on('session/event', (session, event) => {
     const sessionId = session?.id
     if (typeof sessionId === 'string' && sessionId.length > 0) {
-      if (event?.type === 'turn/start') statusMap.set(sessionId, true)
+      if (event?.type === 'turn/start') statusMap.set(sessionId, true, event.time)
       else if (event?.type === 'turn/end') statusMap.set(sessionId, false)
     }
     if (event?.type !== 'turn/end') return

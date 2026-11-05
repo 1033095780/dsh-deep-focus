@@ -199,6 +199,24 @@ export function createApi({
     }
   }
 
+  /**
+   * The single conversation the one-conversation mode pins to: the running root
+   * whose turn started most recently (stable tie-break by session id).
+   */
+  function primaryRootSession(running) {
+    let primary = null
+    let newest = Number.NEGATIVE_INFINITY
+    for (const id of running) {
+      const at = typeof statusMap.startedAt === 'function' ? statusMap.startedAt(id) : null
+      const stamp = Number.isFinite(at) ? at : Number.NEGATIVE_INFINITY
+      if (primary === null || stamp > newest || (stamp === newest && id < primary)) {
+        newest = stamp
+        primary = id
+      }
+    }
+    return primary
+  }
+
   /** Today lives in memory until the next minute flush; read it from the tracker so pages are immediate. */
   function liveUsage(at) {
     try {
@@ -241,7 +259,7 @@ export function createApi({
       limit: limits.getView(at),
       settings: settings.getPublic(),
       sessions,
-      solo: { active: running.length > 0, sessions: running },
+      solo: { active: running.length > 0, sessions: running, primary: primaryRootSession(running) },
       events: ring.list(),
     }
   }

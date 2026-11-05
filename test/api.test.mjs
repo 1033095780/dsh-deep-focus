@@ -59,6 +59,7 @@ async function makeFixture({
   sessionsStore = null,
   turnBoundaryOf = null,
   idleMs = null,
+  runningAt = {},
 } = {}) {
   let clock = new Date(2026, 10, 5, 10, 0, 0).getTime()
   const now = () => clock
@@ -67,8 +68,8 @@ async function makeFixture({
   if (settingsPatch !== null) await settings.update(settingsPatch)
   const tracker = createTracker({ storage: null, settings, now })
   const ring = createEventRing({ now })
-  const statusMap = createStatusMap()
-  for (const id of running) statusMap.set(id, true)
+  const statusMap = createStatusMap({ now: () => clock })
+  for (const id of running) statusMap.set(id, true, runningAt[id] ?? clock)
   const agents = {
     roots: () => roots.map((id) => ({ id })),
     list: () => [...roots.map((id) => ({ id })), { id: 'subagent-1' }, { id: 'teammate-1' }],
@@ -191,14 +192,61 @@ test('GET /state returns the v4 contract shape with root-only sessions and solo'
     { id: 'root-1', running: false },
     { id: 'root-2', running: true },
   ])
-  assert.deepEqual(state.solo, { active: true, sessions: ['root-2'] })
+  assert.deepEqual(state.solo, { active: true, sessions: ['root-2'], primary: 'root-2' })
   assert.deepEqual(state.events, [])
 })
 
 test('solo is inactive when no root agent runs', async () => {
   const fixture = await makeFixture()
   const state = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
-  assert.deepEqual(state.solo, { active: false, sessions: [] })
+  assert.deepEqual(Object.keys(state.solo).sort(), ['active', 'primary', 'sessions'])
+  assert.deepEqual(state.solo, { active: false, sessions: [], primary: null })
+})
+
+test('solo.primary pins the most recently started root conversation', async () => {
+  const fixture = await makeFixture({
+    running: ['root-1', 'root-2'],
+    runningAt: { 'root-1': 1000, 'root-2': 2000 },
+  })
+  const readState = async () => (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+  let state = await readState()
+  assert.deepEqual(state.solo, { active: true, sessions: ['root-1', 'root-2'], primary: 'root-2' })
+
+  // A newer turn/start on root-1 (through the real event bridge) moves the pin.
+  const handlers = new Map()
+  const ctx = {
+    on(name, listener) {
+      handlers.set(name, listener)
+      return () => handlers.delete(name)
+    },
+  }
+  const dispose = installHostEventListeners({
+    ctx,
+    ring: fixture.ring,
+    statusMap: fixture.statusMap,
+    isRootSession: () => true,
+  })
+  handlers.get('session/event')({ id: 'root-1' }, { type: 'turn/start', time: 3000, data: { turn: 1 } })
+  state = await readState()
+  assert.deepEqual(state.solo.sessions, ['root-1', 'root-2'])
+  assert.equal(state.solo.primary, 'root-1')
+
+  // Ending root-1's turn leaves root-2 as the only candidate again.
+  handlers.get('session/event')({ id: 'root-1' }, { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
+  state = await readState()
+  assert.deepEqual(state.solo, { active: true, sessions: ['root-2'], primary: 'root-2' })
+  dispose()
+})
+
+test('solo.primary ignores a down-graded stale running root', async () => {
+  const fixture = await makeFixture({
+    running: ['root-1', 'root-2'],
+    runningAt: { 'root-1': 1000, 'root-2': 2000 },
+    sessionsStore: { get: (id) => ({ id }) },
+    turnBoundaryOf: (session) => ({ openTurnStartSeq: session.id === 'root-2' ? 5 : null }),
+  })
+  const state = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+  assert.deepEqual(state.solo, { active: true, sessions: ['root-2'], primary: 'root-2' })
 })
 
 test('appsSampling reflects the sampler and the trackApps setting', async () => {
@@ -548,18 +596,18 @@ test('solo follows the real event bridge status map', async () => {
   // The root-level feed is what actually reaches an unscoped plugin context.
   handlers.get('api-session/status')('root-2', true)
   let state = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
-  assert.deepEqual(state.solo, { active: true, sessions: ['root-2'] })
+  assert.deepEqual(state.solo, { active: true, sessions: ['root-2'], primary: 'root-2' })
   assert.equal(state.sessions.find((session) => session.id === 'root-2').running, true)
 
   handlers.get('api-session/status')('root-2', false)
   state = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
-  assert.deepEqual(state.solo, { active: false, sessions: [] })
+  assert.deepEqual(state.solo, { active: false, sessions: [], primary: null })
   assert.equal(state.sessions.find((session) => session.id === 'root-2').running, false)
 
   // Durable turn boundaries work as an independent fallback source.
   handlers.get('session/event')({ id: 'root-1' }, { type: 'turn/start', data: { turn: 1 } })
   state = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
-  assert.deepEqual(state.solo, { active: true, sessions: ['root-1'] })
+  assert.deepEqual(state.solo, { active: true, sessions: ['root-1'], primary: 'root-1' })
   dispose()
 })
 
@@ -572,7 +620,7 @@ test('/state recovers a running root session missed during a reload', async () =
   const state = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
   assert.equal(state.sessions.find((session) => session.id === 'root-1').running, true)
   assert.equal(state.sessions.find((session) => session.id === 'root-2').running, false)
-  assert.deepEqual(state.solo, { active: true, sessions: ['root-1'] })
+  assert.deepEqual(state.solo, { active: true, sessions: ['root-1'], primary: 'root-1' })
 })
 
 test('/state downgrades a stale running flag when the durable turn is closed', async () => {
@@ -583,11 +631,11 @@ test('/state downgrades a stale running flag when the durable turn is closed', a
   })
   const state = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
   assert.equal(state.sessions.find((session) => session.id === 'root-2').running, false)
-  assert.deepEqual(state.solo, { active: false, sessions: [] })
+  assert.deepEqual(state.solo, { active: false, sessions: [], primary: null })
   // The corrected flag is written back so later polls agree as well.
   assert.equal(fixture.statusMap.isRunning('root-2'), false)
   const again = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
-  assert.deepEqual(again.solo, { active: false, sessions: [] })
+  assert.deepEqual(again.solo, { active: false, sessions: [], primary: null })
 })
 
 test('/state does not invent a running session when its turn is closed', async () => {
@@ -596,7 +644,7 @@ test('/state does not invent a running session when its turn is closed', async (
     turnBoundaryOf: () => ({ openTurnStartSeq: null }),
   })
   const state = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
-  assert.deepEqual(state.solo, { active: false, sessions: [] })
+  assert.deepEqual(state.solo, { active: false, sessions: [], primary: null })
 })
 
 test('a broken session lookup never breaks GET /state', async () => {
@@ -608,7 +656,7 @@ test('a broken session lookup never breaks GET /state', async () => {
   })
   const result = await call(fixture.api, makeRequest({ url: ROUTES.state }))
   assert.equal(result.status, 200)
-  assert.deepEqual(result.json.solo, { active: false, sessions: [] })
+  assert.deepEqual(result.json.solo, { active: false, sessions: [], primary: null })
 })
 
 test('GET /apps keeps the v2 aggregation shape and live today data', async () => {

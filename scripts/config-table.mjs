@@ -78,16 +78,16 @@ const FIELDS = [
     key: 'assistant.soloSession',
     unit: '',
     note: {
-      en: 'One conversation at a time in the UI while a root conversation is running.',
-      zh: '有根会话在运行时，UI 上一次只保留一个会话。',
+      en: 'Pin the UI to one primary conversation while a root conversation is running.',
+      zh: '有根会话在运行时把 UI 固定到唯一主会话。',
     },
   },
   {
     key: 'assistant.hideOtherSessions',
     unit: '',
     note: {
-      en: 'Gray out other conversations and workspace folders while one is running (visible but not clickable).',
-      zh: '有会话在运行时把其它会话与工作区文件夹置灰（仍可见但不可点击）。',
+      en: 'Gray out the other conversation and workspace folder rows while a primary conversation runs (visible but not clickable).',
+      zh: '有主会话在运行时把其它会话与工作区文件夹行置灰（可见但不可点击）。',
     },
   },
   {

@@ -1502,6 +1502,7 @@ window.__ModuleLoader__.load({
         let styleElement = null
         let running = false
         let clientRunningIds = null
+        let clientCurrentId = null
         let lastBlockedAt = 0
 
         function activeState() {
@@ -1518,11 +1519,21 @@ window.__ModuleLoader__.load({
           } else if (state.solo && state.solo.active === true && Array.isArray(state.solo.sessions)) {
             ids = state.solo.sessions
           }
-          if (!Array.isArray(ids) || ids.length === 0) return null
-          const clean = ids.filter(function (id) {
-            return typeof id === 'string' && id.length > 0
-          })
-          return clean.length > 0 ? clean : null
+          const clean = Array.isArray(ids)
+            ? ids.filter(function (id) {
+                return typeof id === 'string' && id.length > 0
+              })
+            : []
+
+          // v0.4.6: exactly ONE owner. The Host's solo.primary wins; otherwise a
+          // single running root, then the visible conversation if it is running.
+          const solo = state.solo && typeof state.solo === 'object' ? state.solo : null
+          const hostPrimary = solo ? solo.primary || solo.primarySession : null
+          let owner = null
+          if (typeof hostPrimary === 'string' && hostPrimary.length > 0) owner = hostPrimary
+          else if (clean.length === 1) owner = clean[0]
+          else if (clientCurrentId !== null && clean.indexOf(clientCurrentId) >= 0) owner = clientCurrentId
+          return owner === null ? null : [owner]
         }
 
         function stateNow() {
@@ -1730,16 +1741,21 @@ window.__ModuleLoader__.load({
           }
         }
 
-        function setClientRunning(ids) {
+        function setClientRunning(ids, currentSessionId) {
           const next = Array.isArray(ids)
             ? ids.filter(function (id) {
                 return typeof id === 'string' && id.length > 0
               })
             : null
-          const nextSignature = next === null ? '\u0000' : next.join('|')
-          const previousSignature = clientRunningIds === null ? '\u0000' : clientRunningIds.join('|')
+          const nextCurrent = typeof currentSessionId === 'string' && currentSessionId.length > 0 ? currentSessionId : null
+          const nextSignature = (next === null ? '\u0000' : next.join('|')) + '#' + (nextCurrent === null ? '' : nextCurrent)
+          const previousSignature =
+            (clientRunningIds === null ? '\u0000' : clientRunningIds.join('|')) +
+            '#' +
+            (clientCurrentId === null ? '' : clientCurrentId)
           if (nextSignature === previousSignature) return
           clientRunningIds = next
+          clientCurrentId = nextCurrent
           sync()
         }
 
@@ -1785,10 +1801,9 @@ window.__ModuleLoader__.load({
         }
       })()
 
-      /* ── Focus guard: pin the UI to the running conversation ────── */
-      // When solo is active and the main view shows a different conversation, jump
-      // once to the running one; if the jump is impossible the veil stays as the
-      // gentle fallback. Never loops or fights the user.
+      /* ── Focus guard: pin the UI to the solo primary conversation ── */
+      // When solo is active and the main view is not the primary conversation,
+      // jump once to it; the veil is the fallback. Never loops or fights the user.
 
       const focusGuard = (function createFocusGuard() {
         let currentSessionId = null
@@ -1815,15 +1830,10 @@ window.__ModuleLoader__.load({
         }
 
         function currentOwners() {
-          if (runningIds.length > 0) return runningIds
-          const state = store.get().state
-          const solo = state && state.solo ? state.solo : null
-          if (solo && solo.active === true && Array.isArray(solo.sessions)) {
-            return solo.sessions.filter(function (id) {
-              return typeof id === 'string' && id.length > 0
-            })
-          }
-          return []
+          // Solo mode resolves exactly one owner (solo.primary -> single running
+          // root -> visible running conversation -> none).
+          if (!soloHider.isActive()) return []
+          return Array.from(soloHider.getOwners())
         }
 
         function switchTo(target) {
@@ -1860,13 +1870,7 @@ window.__ModuleLoader__.load({
             return false
           }
           const owners = currentOwners()
-          // Multiple agents running at once: never fight over the main view.
-          // The sidebar stays grayed; a new attempt is allowed once exactly one
-          // running root remains (lastAttemptKey is re-armed here).
-          if (owners.length !== 1) {
-            lastAttemptKey = ''
-            return false
-          }
+          if (owners.length === 0) return false
           if (currentSessionId === null) return false
           if (owners.indexOf(currentSessionId) >= 0) return false
           const key = owners.join('|') + '|' + currentSessionId
@@ -1904,9 +1908,7 @@ window.__ModuleLoader__.load({
           return {
             currentSessionId: currentSessionId,
             owners: owners,
-            veilNeeded: Boolean(
-              active && owners.length === 1 && currentSessionId !== null && owners.indexOf(currentSessionId) < 0,
-            ),
+            veilNeeded: Boolean(active && currentSessionId !== null && owners.indexOf(currentSessionId) < 0),
             soloActive: active,
           }
         }
@@ -2372,12 +2374,12 @@ window.__ModuleLoader__.load({
         const signature = runningIds === null ? ' ' : runningIds.join('|')
         React.useEffect(
           function () {
-            soloHider.setClientRunning(runningIds)
+            soloHider.setClientRunning(runningIds, currentSessionId)
             return function () {
-              soloHider.setClientRunning(null)
+              soloHider.setClientRunning(null, null)
             }
           },
-          [signature],
+          [signature, currentSessionId],
         )
         React.useEffect(
           function () {

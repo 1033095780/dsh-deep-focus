@@ -8,7 +8,7 @@ explains the shape and the contract.
 The plugin runs inside DSH and only enforces inside DSH. It measures whole-machine
 active time while DSH runs, keeps a daily cap (180 min), forces a rest after 30
 continuous minutes (10 min, activity-gated), auto-rests after 60 s idle, and keeps
-one conversation at a time in the sidebar (auto-jump + gray-out, UI only). It never
+one conversation at a time in the sidebar (a single primary conversation pinned: auto-jump + gray-out, UI only). It never
 blocks tools, other agents, or other applications; it cannot count while DSH is
 closed. A companion desktop guard is a possible later phase and is not included.
 
@@ -108,14 +108,20 @@ Base `/plugins/dsh-deep-focus/api`, same-origin only, `cache-control: no-store`,
 
 `/state`: `{ now, usage:{activeTodayMs, continuousMs, sampling, appsSampling,
 dayKey, idleMs, away}, appsToday:{totalMs, top}, limit, settings, sessions:[{id,
-running}] (root conversations only), solo:{active, sessions}, events }`. Events:
+running}] (root conversations only), solo:{active, primary, sessions}, events }`
+where `solo.primary` is the running root session whose turn started most recently
+(or `null` when none runs), `solo.sessions` lists all running root ids and
+`solo.active` stays true when any root runs. Events:
 `task-completed, paused, resumed, rest-due, rest-started, rest-finished,
 daily-locked, extended, assistant-off, assistant-on`. Building the snapshot
 re-evaluates limits first; missed running flags are reconciled from the durable
 session log. `task-completed` is emitted only for a **root conversation's** turn
 end (`turn/end` completed); subagent/teammate sessions are filtered out by an
 `isRootSession` predicate, so background work never rings the chime. Goal
-completions still emit it (goals belong to root sessions).
+completions still emit it (goals belong to root sessions). `events.js` also tracks
+each root session's **last turn start** (from `turn/start` events, with the running
+status feed as a fallback); the API uses that timestamp to pick `solo.primary` — the
+newest running root — so exactly one conversation is pinned.
 
 ## Browser half
 
@@ -133,12 +139,17 @@ completions still emit it (goals belong to root sessions).
 One shared `TodayUsageCard` renders title/reason, today's total, per-app rows and
 the screen's buttons for both the rest and daily screens.
 
-One conversation at a time is style-only: while a root agent runs the client
-auto-jumps once to that conversation, adds one `<style>` + `data-dsh-focus-solo`
-attribute dimming other session **and workspace** rows (`opacity`, no hiding) and
-blocks their clicks with a gentle reminder; a capture-phase click/keydown guard
-covers keyboard paths. Nothing is hidden, so folder expand/collapse state is never
-touched. On solo end/outage/cleanup the style and attribute are removed.
+One conversation at a time is style-only and pins to **one primary conversation**:
+the host records each root session's last turn start and exposes the newest one as
+`solo.primary`. The client uses only that session as the owner (fallbacks: the
+single running root, then the visible running conversation; no owner → nothing is
+grayed). It auto-jumps once to the primary, adds one `<style>` +
+`data-dsh-focus-solo` attribute dimming **all** other session and workspace rows
+(`opacity`, no hiding) and blocks their clicks with a gentle reminder — including
+other running conversations; a capture-phase click/keydown guard covers keyboard
+paths. A visible non-primary conversation gets the veil. Nothing is hidden, so
+folder expand/collapse state is never touched. On solo end/outage/cleanup the style
+and attribute are removed.
 
 Polling is 1 s visible / 5 s hidden with one store and an in-flight guard; after two
 failed polls (or a 404) the client hides its UI, restores sidebar styles and keeps

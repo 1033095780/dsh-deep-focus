@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.4.6] - 2026-11-05
+
+Patch release. Versions 0.1.0–0.4.5 were never published.
+
+### Fixed
+
+- **One-conversation mode now pins to exactly one primary conversation.** It uses
+  the running root conversation whose turn started most recently; every other
+  conversation — **including other running ones** — is grayed and non-clickable, and
+  the UI auto-jumps to the primary. This fixes the case where two conversations
+  could be visible/normal at the same time.
+
+### Added
+
+- `/state.solo` now exposes `primary` (the primary session id, or `null`) alongside
+  `active` and `sessions`.
+
 ## [0.4.5] - 2026-11-05
 
 Patch release before the first public GitHub release. Versions 0.1.0–0.4.4 were

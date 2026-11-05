@@ -352,6 +352,9 @@ check('READMEs describe the current product', () => {
     [/automatic rest/i, 'the automatic idle rest'],
     [/usage\.autoPauseSeconds/i, 'the autoPauseSeconds setting'],
     [/jump(?:s)? back|auto-jump/i, 'the auto-jump behaviour'],
+    [/(?:single primary|one primary|primary conversation)/i, 'the single-primary pinning'],
+    [/most recent(?:ly)?|newest/i, 'the newest-turn primary rule'],
+    [/including other running|other running conversations/i, 'graying other running conversations'],
     [/(?:today[- ]usage|shared .{0,20}card|same .{0,20}card)/i, 'the shared today-usage card'],
     [/gray(?:s|ed)? out|dim(?:s|med)?/i, 'the grayed sidebar rows'],
     [/not clickable|non-clickable|cannot be clicked/i, 'the non-clickable sidebar rows'],
@@ -381,6 +384,9 @@ check('READMEs describe the current product', () => {
     [/自动休息/, 'the automatic idle rest'],
     [/usage\.autoPauseSeconds/, 'the autoPauseSeconds setting'],
     [/自动跳回|跳回/, 'the auto-jump behaviour'],
+    [/(?:唯一.*主会话|主会话（primary）|primary)/, 'the single-primary pinning'],
+    [/最近开始运行|最近.*开始/, 'the newest-turn primary rule'],
+    [/包括正在运行的其它会话|其它正在运行的/, 'graying other running conversations'],
     [/(?:今日用量|共用|同一张)/, 'the shared today-usage card'],
     [/置灰|变灰/, 'the grayed sidebar rows'],
     [/不可点|无法点击|不可点击/, 'the non-clickable sidebar rows'],
@@ -434,8 +440,8 @@ check('LICENSE and CHANGELOG', () => {
   if (!changelog.includes('## [Unreleased]')) fail('CHANGELOG.md has no [Unreleased] section')
   const entry = new RegExp(`^## \\[${pkg.version.replace(/\./g, '\\.')}\\] - \\d{4}-\\d{2}-\\d{2}$`, 'm')
   if (!entry.test(changelog)) fail(`CHANGELOG.md needs a dated "[${pkg.version}] - YYYY-MM-DD" entry`)
-  if (pkg.version === '0.4.5' && !changelog.includes('## [0.4.5] - 2026-11-05')) {
-    fail('CHANGELOG.md must date the 0.4.5 entry 2026-11-05')
+  if (pkg.version === '0.4.6' && !changelog.includes('## [0.4.6] - 2026-11-05')) {
+    fail('CHANGELOG.md must date the 0.4.6 entry 2026-11-05')
   }
   for (const heading of ['### Added', '### Changed', '### Fixed']) {
     if (!changelog.includes(heading)) fail(`CHANGELOG.md entry is missing "${heading}"`)

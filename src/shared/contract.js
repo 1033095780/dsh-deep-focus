@@ -44,8 +44,7 @@ export const EVENT = {
 }
 
 export const DEFAULT_SETTINGS = {
-  version: 4,
-  limits: {
+  version: 4,  limits: {
     dailyMinutes: 180,
     continuousMinutes: 30,
     restMinutes: 10,

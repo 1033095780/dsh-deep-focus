@@ -36,6 +36,9 @@ test('the status map tracks running agents', () => {
   statusMap.set('c', true)
   assert.equal(statusMap.isRunning('a'), true)
   assert.deepEqual(statusMap.runningIds(), ['a', 'c'])
+  assert.equal(statusMap.startedAt('a') !== null, true)
+  statusMap.set('a', true, 4242)
+  assert.equal(statusMap.startedAt('a'), 4242)
   statusMap.delete('a')
   assert.equal(statusMap.isRunning('a'), false)
   statusMap.set(undefined, true)
@@ -100,6 +103,7 @@ test('api-session/status is the primary running-state source', () => {
   const harness = makeHarness()
   harness.handlers.get('api-session/status')('session-a', true)
   assert.equal(harness.statusMap.isRunning('session-a'), true)
+  assert.equal(Number.isFinite(harness.statusMap.startedAt('session-a')), true)
   harness.handlers.get('api-session/status')('session-a', false)
   assert.equal(harness.statusMap.isRunning('session-a'), false)
   harness.handlers.get('api-session/status')('', true)
@@ -118,15 +122,17 @@ test('api-session/added upserts the current running state', () => {
 
 test('durable turn boundaries update the running state independently', () => {
   const harness = makeHarness()
-  harness.handlers.get('session/event')({ id: 'session-b' }, { type: 'turn/start', data: { turn: 1 } })
+  harness.handlers.get('session/event')({ id: 'session-b' }, { type: 'turn/start', time: 500, data: { turn: 1 } })
   assert.equal(harness.statusMap.isRunning('session-b'), true)
+  assert.equal(harness.statusMap.startedAt('session-b'), 500)
   harness.handlers.get('session/event')({ id: 'session-b' }, { type: 'turn/end', data: { turn: 1, reason: { kind: 'blocked' } } })
   assert.equal(harness.statusMap.isRunning('session-b'), false)
   assert.equal(harness.ring.list().length, 0)
 
   // A completed root turn clears its status and emits the completion alert.
-  harness.handlers.get('session/event')({ id: 'root-1' }, { type: 'turn/start', data: { turn: 2 } })
+  harness.handlers.get('session/event')({ id: 'root-1' }, { type: 'turn/start', time: 900, data: { turn: 2 } })
   assert.equal(harness.statusMap.isRunning('root-1'), true)
+  assert.equal(harness.statusMap.startedAt('root-1'), 900)
   harness.handlers.get('session/event')({ id: 'root-1' }, { type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } })
   assert.equal(harness.statusMap.isRunning('root-1'), false)
   assert.equal(harness.lastEvent().kind, EVENT.taskCompleted)

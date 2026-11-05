@@ -12,7 +12,7 @@ English | [简体中文](README.zh.md)
 | Automatic rest | After `usage.autoPauseSeconds` idle (default 60 s) DSH grays; keyboard/mouse resumes. |
 | Daily cap | Whole-machine active time while DSH runs; at 180 min a gray “today usage” overlay appears. |
 | Continuous cap | 30 continuous minutes → a 10-minute rest; rest time is not counted. |
-| One conversation at a time | The UI jumps back to the running conversation; other session/folder rows are grayed and not clickable (veil fallback), nothing is hidden. |
+| One conversation at a time | Pins the UI to exactly **one primary conversation** — the running conversation whose turn started most recently. Every other row (including **other running conversations**) is grayed and not clickable; the UI auto-jumps to the primary. Nothing is hidden. |
 | Away chime | Rings only when **your own (root) conversation's** turn finishes while you are away; background subagent/teammate turns stay silent. It repeats until you touch the keyboard/mouse, capped at ~2 minutes. |
 | Shared usage card | Rest and daily screens use the same card: title, today's total, per-app breakdown, actions. |
 | Per-app statistics + assistant panel | Sidebar hub with overview, 7-day trend, short settings and an enable/pause switch. |
@@ -46,7 +46,7 @@ No build step and no runtime dependencies. Disabling or uninstalling removes all
 - **Daily cap:** default `limits.dailyMinutes` 180. At the cap the shared “today usage” card appears; 「再使用 20 分钟」 grants `limits.extendMinutes` (20) immediately, unlimited per day by default (`limits.dailyExtendLimit` 0 = unlimited, a positive value caps it). 「跳过」 only dismisses today's reminder in this browser, it never extends.
 - **Continuous rest:** at `limits.continuousMinutes` (30) a rest of `limits.restMinutes` (10) starts; it ends only when its time elapsed **and** you are back, or via 「跳过休息」. Rest time is excluded from the daily total.
 - **Automatic rest:** after `usage.autoPauseSeconds` (60, `0` = off) without input the assistant enters the same gray rest state; activity resumes it. The rings are display-only; the pause/resume endpoints exist for the API but are not used by the UI.
-- **One conversation at a time:** while a root conversation's agent runs, the UI jumps back to it; other conversation/folder rows are grayed and non-clickable, a visible non-owner conversation is veiled and sending is discouraged. Background agents keep running; no tool call is blocked.
+- **One conversation at a time:** exactly one **primary conversation** is active — the running root conversation whose turn started most recently (`/state.solo.primary`). The UI auto-jumps to it; every other conversation and folder row, **including other running conversations**, is grayed and non-clickable, and a visible non-primary conversation gets the veil. Background agents keep running; no tool call is blocked, and nothing is hidden.
 - **Away chime:** it rings only when **your own (root) conversation's whole turn** finishes and you are away — the window is unfocused/hidden or the machine has been idle for `alerts.awayIdleSeconds`. Background subagent/teammate turns never ring. It repeats every `alerts.repeatIntervalMs` until you move the mouse or type, with a hard cap of ~2 minutes (`alerts.repeatUntilActive` disables the repeat).
 - **Assistant off:** statistics only — no rings, rest or overlays.
 
@@ -67,8 +67,8 @@ The assistant page exposes exactly eight settings: daily limit, continuous limit
 | `limits.extendMinutes` | 20 | min | Extra usage granted by one click on “Use 20 more minutes”. |
 | `limits.dailyExtendLimit` | 0 | count | Extensions per day; 0 = unlimited, a positive value is the daily maximum. |
 | `assistant.enabled` | On | — | Track and enforce the rules; off = keep statistics only (nothing enforces). |
-| `assistant.soloSession` | On | — | One conversation at a time in the UI while a root conversation is running. |
-| `assistant.hideOtherSessions` | On | — | Gray out other conversations and workspace folders while one is running (visible but not clickable). |
+| `assistant.soloSession` | On | — | Pin the UI to one primary conversation while a root conversation is running. |
+| `assistant.hideOtherSessions` | On | — | Gray out the other conversation and workspace folder rows while a primary conversation runs (visible but not clickable). |
 | `assistant.showRings` | On | — | Show the floating top-right widget with the two usage rings. |
 | `alerts.sound` | On | — | Play the short chime for rest, pause and completion alerts. |
 | `alerts.volume` | 0.6 | 0–1 | Chime volume. |
