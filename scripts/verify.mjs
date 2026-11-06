@@ -354,6 +354,10 @@ check('READMEs describe the current product', () => {
     [/Enter\/Space\/Escape|Enter, Space|Enter \/ Space \/ Escape/i, 'the keyboard resume shortcuts'],
     [/(?:blocking (?:lock|card)|content is not interactive|not clickable|no hover)/i, 'the blocking pause lock'],
     [/automatic idle pause|idle auto-pause|auto-?pause/i, 'the automatic idle pause'],
+    [/(?:immediately|at once)[^.]{0,60}(?:pause card|paused card|shown)|click[^.]{0,60}(?:immediately|at once)/i, 'the immediate manual pause card'],
+    [/0\.6 s[^.]{0,50}(?:automatic|only)/i, 'the 0.6 s guard only for the automatic pause'],
+    [/(?:inside DSH|in DSH)[^.]{0,100}(?:posts?|resumes?)|posts? `?\/resume`?/i, 'the instant in-DSH resume'],
+    [/(?:other application|another app|outside DSH)[^.]{0,100}(?:5 s|five seconds)/i, 'external activity resumes within ~5 s'],
     [/any pause[^.]{0,80}resumes?|(?:manual|automatic)[^.]{0,80}resume[^.]{0,80}activity|activity[^.]{0,60}resume/i, 'pause resumes on keyboard/mouse activity'],
     [/system-wide|another application|other application/i, 'system-wide activity resumption'],
     [/two equal columns|equal columns|equal-width columns/i, 'the equal-column ring layout'],
@@ -406,6 +410,11 @@ check('READMEs describe the current product', () => {
     [/Enter\/Space\/Escape|Enter、Space、Escape/, 'the keyboard resume shortcuts'],
     [/不可交互|阻断/, 'the blocking pause lock'],
     [/自动(?:空闲)?暂停/, 'the automatic idle pause'],
+    [/立即(?:显示|出现)|点击[^。]{0,30}立即/, 'the immediate manual pause card'],
+    [/0\.6 秒[^。]{0,40}(?:自动|仅)/, 'the 0.6 s guard only for the automatic pause'],
+    [/(?:DSH 内)[^。]{0,80}\/resume|第一次输入/, 'the instant in-DSH resume'],
+    [/其它软件|其他软件|DSH 外/, 'external activity detection'],
+    [/(?:约|最长约) ?5 秒/, 'external activity resumes within ~5 s'],
     [/任何暂停|(?:手动|自动)[^。]{0,40}暂停[^。]{0,60}恢复/, 'pause resumes on keyboard/mouse activity'],
     [/整机|其它软件|其他软件/, 'system-wide activity resumption'],
     [/两等宽列|等宽.*列/, 'the equal-column ring layout'],
@@ -483,8 +492,8 @@ check('LICENSE and CHANGELOG', () => {
   if (!changelog.includes('## [Unreleased]')) fail('CHANGELOG.md has no [Unreleased] section')
   const entry = new RegExp(`^## \\[${pkg.version.replace(/\./g, '\\.')}\\] - \\d{4}-\\d{2}-\\d{2}$`, 'm')
   if (!entry.test(changelog)) fail(`CHANGELOG.md needs a dated "[${pkg.version}] - YYYY-MM-DD" entry`)
-  if (pkg.version === '0.4.20' && !changelog.includes('## [0.4.20] - 2026-11-06')) {
-    fail('CHANGELOG.md must date the 0.4.20 entry 2026-11-06')
+  if (pkg.version === '0.4.21' && !changelog.includes('## [0.4.21] - 2026-11-06')) {
+    fail('CHANGELOG.md must date the 0.4.21 entry 2026-11-06')
   }
   for (const heading of ['### Added', '### Changed', '### Fixed']) {
     if (!changelog.includes(heading)) fail(`CHANGELOG.md entry is missing "${heading}"`)

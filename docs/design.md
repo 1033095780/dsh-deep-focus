@@ -81,14 +81,18 @@ never accumulate. One aggregate line per minute: `{ t, activeMs, apps: { key: ms
   at least two consecutive fresh samples at/after `autoPauseSeconds`, with any
   active sample resetting the streak and stale samples (older than the last
   resume) ignored — so a single high sample cannot flash the overlay
-  (`pausedReason: "idle"`, `paused` event). `POST /resume` resumes it. The pause
-  card is shown only after the paused state has held ~0.6 s. **Any pause — manual or
-  idle — auto-resumes on a fresh sample whose system-wide idle time is below
-  `usage.idleThresholdSeconds`** (activity in another application counts, which keeps
-  usage accounting accurate); `pausedReason` only chooses the card copy. The card
-  blocks host-UI interaction while shown and disappears immediately when the Host
-  reports `paused: false`; the explicit 「继续计时」/Enter/Space/Escape paths remain
-  available if the user prefers to resume sooner.
+  (`pausedReason: "idle"`, `paused` event). `POST /resume` resumes it. The **~0.6 s
+  settle guard applies only to the automatic idle pause**; a manual ring-click pause
+  renders the card immediately (optimistically, the Host confirms within ms). **Any
+  pause resumes when the computer is used again**, with two paths: (a) *inside DSH*
+  the client attaches capture-phase input listeners while paused and, on the first real
+  event after a ~250 ms guard, posts `/resume` immediately and hides the overlay
+  optimistically — resumption is near-instant and does not wait for the sampler; (b)
+  *outside DSH* the Host resumes any paused state on a fresh sample whose system-wide
+  idle time is below `usage.idleThresholdSeconds`, which can take up to the ~5 s
+  sampler interval. `pausedReason` only chooses the card copy. The card blocks
+  host-UI interaction while shown and disappears as soon as the pause ends; the
+  explicit 「继续计时」/Enter/Space/Escape paths remain available.
 - **Rollover:** at local midnight the lock, extension window/count and due flags
   reset. Turning the assistant off ends a rest and clears lock/pause
   (`assistant-off`).
@@ -139,7 +143,7 @@ newest running root — so exactly one conversation is pinned.
 | `sidebar.panellist` | `focus-assistant` | assistant entry below Plugins |
 | `main` (keyed) | `focus-assistant` | overview, 7-day trend, 8-field settings (incl. the one-conversation switch), enable/pause, right-aligned save row |
 | `shell.overlay` | `dsh-deep-focus-rings` | interactive two-ring **button** with two **equal columns** (flex `1 1 0`): each column has a 40–44 px ring with its value absolutely centered (today minutes; continuous mm:ss/h:mm, tabular figures) and a centered 11 px caption below (今日已用 / 连续使用); the continuous clock is interpolated to tick once per second (frozen while paused/resting/locked). Click → `POST /pause`; an in-flight lock ignores double-clicks and shows a pressed/disabled state. Keyboard accessible (`role="button"`, `tabIndex`, Enter/Space) with aria-labels 「暂停计时」/「继续计时」 (“Pause timer”/“Resume timer”). |
-| `shell.overlay` | `dsh-deep-focus-pause-gray` | auto/manual pause: a **blocking** shared today-usage card (`pointer-events: auto`) that captures hover/click/focus; the copy depends on `pausedReason` (`idle` shows 「检测到你回来后会继续计时」, `manual` shows the resume hint). Both kinds disappear immediately when system-wide keyboard/mouse activity resumes the Host; the 「继续计时」 primary action and Enter/Space/Escape remain as explicit resume paths. |
+| `shell.overlay` | `dsh-deep-focus-pause-gray` | blocking pause: the shared today-usage card (`pointer-events: auto`) captures hover/click/focus. A **manual** pause renders it immediately; an **idle** auto-pause keeps the ~0.6 s settle guard to prevent flashing. `pausedReason` selects the copy (`idle` 「检测到你回来后会继续计时」, `manual` the resume hint). While paused, capture-phase input listeners resume on the first real event after ~250 ms by posting `/resume` and hiding the card optimistically (external-app activity is handled by the Host sampler instead, up to ~5 s); 「继续计时」/Enter/Space/Escape remain explicit paths. |
 | `shell.overlay` | `dsh-deep-focus-rest` | forced-rest screen using the shared today-usage card + 「跳过休息」 |
 | `shell.overlay` | `dsh-deep-focus-daily-lock` | daily overlay on the same card: 「再使用 20 分钟」/「跳过」 |
 | `shell.overlay` | `dsh-deep-focus-focus-veil` | veil over a visible non-owner conversation |

@@ -2191,6 +2191,101 @@ window.__ModuleLoader__.load({
         })
       }
 
+      /** Pause UI intent: optimistic manual show, optimistic hide on resume. */
+      const pauseIntent = (function createPauseIntent() {
+        let manual = false
+        let pending = false
+        let suppressed = false
+        let shownAt = 0
+        let suppressTimer = 0
+        const listeners = new Set()
+
+        function notify() {
+          listeners.forEach(function (listener) {
+            try {
+              listener()
+            } catch (error) {
+              /* ignored */
+            }
+          })
+        }
+
+        function clearSuppressTimer() {
+          if (suppressTimer) {
+            clearTimeout(suppressTimer)
+            suppressTimer = 0
+          }
+        }
+
+        function markPending(value) {
+          pending = Boolean(value)
+        }
+
+        function showManual() {
+          manual = true
+          pending = false
+          suppressed = false
+          shownAt = Date.now()
+          clearSuppressTimer()
+          notify()
+        }
+
+        function hide() {
+          manual = false
+          suppressed = false
+          clearSuppressTimer()
+          notify()
+        }
+
+        function suppress() {
+          manual = false
+          suppressed = true
+          clearSuppressTimer()
+          suppressTimer = setTimeout(function () {
+            suppressTimer = 0
+            suppressed = false
+            notify()
+          }, 3000)
+          notify()
+        }
+
+        function noteUnpaused() {
+          if (!manual && !suppressed) return
+          manual = false
+          suppressed = false
+          clearSuppressTimer()
+          notify()
+        }
+
+        function subscribe(listener) {
+          listeners.add(listener)
+          return function () {
+            listeners.delete(listener)
+          }
+        }
+
+        return {
+          markPending: markPending,
+          showManual: showManual,
+          hide: hide,
+          suppress: suppress,
+          noteUnpaused: noteUnpaused,
+          isManual: function () {
+            return manual
+          },
+          isPending: function () {
+            return pending
+          },
+          isSuppressed: function () {
+            return suppressed
+          },
+          getShownAt: function () {
+            return shownAt
+          },
+          subscribe: subscribe,
+        }
+      })()
+
       function Styles() {
         return h('style', { 'data-df-styles': '1' }, CSS_TEXT)
       }
@@ -2611,9 +2706,19 @@ window.__ModuleLoader__.load({
           busyRef.current = true
           setBusy(true)
           try {
-            if (pausedNow) await store.resume()
-            else await store.pause()
+            if (pausedNow) {
+              // Optimistically hide now; the Host confirm keeps it hidden.
+              pauseIntent.suppress()
+              const result = await store.resume()
+              if (result && result.ok === false) pauseIntent.noteUnpaused()
+            } else {
+              pauseIntent.markPending(true)
+              const result = await store.pause()
+              pauseIntent.markPending(false)
+              if (result && result.ok) pauseIntent.showManual()
+            }
           } catch (error) {
+            pauseIntent.markPending(false)
             /* the next state poll reconciles */
           } finally {
             busyRef.current = false
@@ -2871,30 +2976,52 @@ window.__ModuleLoader__.load({
         )
       }
 
+      function usePauseIntentTick() {
+        const pair = React.useState(0)
+        const force = pair[1]
+        React.useEffect(function () {
+          return pauseIntent.subscribe(function () {
+            force(function (value) {
+              return value + 1
+            })
+          })
+        }, [])
+      }
+
       /** Blocking pause screen: shared usage card + explicit resume button. */
       function PauseOverlay() {
         useLocaleTick()
+        usePauseIntentTick()
         const snapshot = useStore(true)
         const state = snapshot.state
         const limit = state && state.limit
         const pausedRaw = Boolean(store.isVisible() && limit && limit.paused === true)
+        const pausedReason = limit && limit.pausedReason === 'idle' ? 'idle' : 'manual'
+        const manual = pauseIntent.isManual()
         const visiblePair = React.useState(false)
         const pausedVisible = visiblePair[0]
         const setPausedVisible = visiblePair[1]
-        const paused = pausedRaw && pausedVisible
         const busyPair = React.useState(false)
         const busy = busyPair[0]
         const setBusy = busyPair[1]
         const busyRef = React.useRef(false)
         const cardRef = React.useRef(null)
         const resumeRef = React.useRef(null)
+        const seenRawRef = React.useRef(false)
+        const safetyTimerRef = React.useRef(0)
 
-        // Belt and braces: only show the pause card after paused stays true for
-        // ~600ms (the Host debounces too); hide immediately when it turns false.
+        const paused = !pauseIntent.isSuppressed() && ((pausedRaw && (pausedReason === 'idle' ? pausedVisible : true)) || (!pausedRaw && manual))
+
+        // Optimistic manual pauses show the card immediately; only the automatic
+        // idle pause keeps the ~600ms settle guard against flashing.
         React.useEffect(
           function () {
             if (!pausedRaw) {
               setPausedVisible(false)
+              return undefined
+            }
+            if (pausedReason !== 'idle' || manual) {
+              setPausedVisible(true)
               return undefined
             }
             const timer = setTimeout(function () {
@@ -2904,7 +3031,40 @@ window.__ModuleLoader__.load({
               clearTimeout(timer)
             }
           },
-          [pausedRaw],
+          [pausedRaw, pausedReason, manual],
+        )
+
+        // Keep track of state-paused vs. optimistic manual show; once the Host
+        // confirms paused=false, clear the optimistic override.
+        React.useEffect(
+          function () {
+            if (safetyTimerRef.current) {
+              clearTimeout(safetyTimerRef.current)
+              safetyTimerRef.current = 0
+            }
+            if (pausedRaw) {
+              seenRawRef.current = true
+              return undefined
+            }
+            if (seenRawRef.current) {
+              seenRawRef.current = false
+              pauseIntent.noteUnpaused()
+              return undefined
+            }
+            if (!manual) return undefined
+            // Safety: an optimistic card must not linger if the Host never confirms.
+            safetyTimerRef.current = setTimeout(function () {
+              safetyTimerRef.current = 0
+              pauseIntent.hide()
+            }, 2500)
+            return function () {
+              if (safetyTimerRef.current) {
+                clearTimeout(safetyTimerRef.current)
+                safetyTimerRef.current = 0
+              }
+            }
+          },
+          [pausedRaw, manual],
         )
 
         // Blocking pause: focus the card and keep focus inside it so the host UI
@@ -2925,10 +3085,12 @@ window.__ModuleLoader__.load({
           [paused],
         )
 
-        async function resume() {
+        async function resumeFromActivity() {
           if (busyRef.current) return
           busyRef.current = true
           setBusy(true)
+          pauseIntent.suppress()
+          setPausedVisible(false)
           try {
             await store.resume()
           } catch (error) {
@@ -2938,6 +3100,57 @@ window.__ModuleLoader__.load({
             setBusy(false)
           }
         }
+
+        async function resume() {
+          if (busyRef.current) return
+          busyRef.current = true
+          setBusy(true)
+          pauseIntent.suppress()
+          setPausedVisible(false)
+          try {
+            await store.resume()
+          } catch (error) {
+            /* the next poll reconciles */
+          } finally {
+            busyRef.current = false
+            setBusy(false)
+          }
+        }
+
+        // Instant resume on real input: the first event after a 250ms guard posts
+        // /resume immediately and optimistically hides the overlay.
+        React.useEffect(
+          function () {
+            if (!paused) return undefined
+            const shownAt = pauseIntent.getShownAt() || Date.now()
+            let used = false
+            const events = ['mousemove', 'keydown', 'pointerdown', 'wheel', 'touchstart']
+            const handler = function () {
+              if (used) return
+              if (Date.now() - shownAt < 250) return
+              if (pauseIntent.isPending()) return
+              used = true
+              resumeFromActivity()
+            }
+            try {
+              events.forEach(function (name) {
+                document.addEventListener(name, handler, true)
+              })
+            } catch (error) {
+              /* ignored */
+            }
+            return function () {
+              try {
+                events.forEach(function (name) {
+                  document.removeEventListener(name, handler, true)
+                })
+              } catch (error) {
+                /* ignored */
+              }
+            }
+          },
+          [paused],
+        )
 
         function onKeyDown(event) {
           const key = event && event.key

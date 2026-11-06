@@ -74,13 +74,15 @@ dependency installation; disabling or uninstalling removes all UI immediately.
 - [ ] Assistant panel opens; rings are two equal columns with the values inside
       (today minutes / continuous mm:ss), the captions 今日已用 / 连续使用 are
       centered, and the continuous clock ticks every second.
-- [ ] Click the rings → pause: the DSH content is **blocked** (no hover, nothing
-      expands) while the card is shown. Any keyboard/mouse activity — including in
-      another app — resumes and the card disappears; the 「继续计时」 button and
-      Enter/Space/Escape also resume it explicitly.
-- [ ] Idling for `usage.autoPauseSeconds` auto-pauses with the same blocking card and
-      resumes on keyboard/mouse activity too; rest and daily-limit screens use the
-      same today-usage card.
+- [ ] Click the rings → pause: the pause card appears **immediately** (the ~0.6 s
+      settle guard applies only to the automatic idle pause). The DSH content is
+      blocked while shown. Moving the mouse / pressing a key inside DSH resumes almost
+      instantly (the client posts `/resume` on the first input, no ~5 s sampler wait);
+      activity in another app resumes within up to ~5 s via the system sampler. The
+      「继续计时」 button and Enter/Space/Escape also resume explicitly.
+- [ ] Idling for `usage.autoPauseSeconds` auto-pauses with the same blocking card
+      (after the ~0.6 s guard) and resumes on keyboard/mouse activity too; rest and
+      daily-limit screens use the same today-usage card.
 - [ ] Daily overlay has only 「再使用 20 分钟」 and 「跳过」 (skip does not extend); with
       DSH hidden, hitting the cap tries `window.focus()` + one system notification
       (best effort).

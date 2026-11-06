@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.4.21] - 2026-11-06
+
+### Changed
+
+- **A manual pause is immediate**: clicking the rings now shows the blocking pause card
+  at once. The ~0.6 s settle guard remains only for the automatic idle pause, where it
+  prevents the screen from flashing.
+- **Pausing resumes as soon as you use the computer.** Inside DSH the client posts
+  `/resume` on the first keyboard/mouse input (after a short guard), so resumption is
+  near-instant instead of waiting for the ~5 s sampler. Activity in another application
+  is still picked up by the system-wide sampler, within up to ~5 s. The card blocks the
+  DSH UI while shown and disappears immediately on resume.
+
 ## [0.4.20] - 2026-11-06
 
 Versions 0.1.0–0.4.19 were never published. The project has no npm package;
