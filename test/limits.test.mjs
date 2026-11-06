@@ -414,6 +414,48 @@ test('the assistant switch clears pause and enforcement', () => {
   assert.equal(env.kinds().includes(EVENT.assistantOff), true)
 })
 
+test('a paused session does not show the daily lock, and resuming re-locks', () => {
+  const env = makeLimits()
+  env.usage.activeTodayMs = 180 * 60_000
+  assert.equal(env.limits.evaluate(BASE).dailyLocked, true)
+  assert.equal(env.kinds().filter((kind) => kind === EVENT.dailyLocked).length, 1)
+
+  // Pausing releases the daily lock immediately: the UI must show "paused", not "over".
+  const paused = env.limits.pause(BASE + 1000)
+  assert.equal(paused.ok, true)
+  const view = env.limits.evaluate(BASE + 2000)
+  assert.equal(view.paused, true)
+  assert.equal(view.dailyLocked, false)
+
+  // While paused the cap cannot re-lock the UI even though usage is still over.
+  env.limits.evaluate(BASE + 60_000)
+  assert.equal(env.limits.getView(BASE + 60_000).dailyLocked, false)
+  assert.equal(env.kinds().filter((kind) => kind === EVENT.dailyLocked).length, 1)
+
+  // Resuming re-evaluates and locks again (a second daily-locked event is legitimate).
+  env.limits.resume(BASE + 120_000, 'manual')
+  const resumed = env.limits.evaluate(BASE + 121_000)
+  assert.equal(resumed.paused, false)
+  assert.equal(resumed.dailyLocked, true)
+  assert.equal(env.kinds().filter((kind) => kind === EVENT.dailyLocked).length, 2)
+})
+
+test('a paused session ignores an extension expiring under it', () => {
+  const env = makeLimits()
+  env.usage.activeTodayMs = 180 * 60_000
+  env.limits.evaluate(BASE)
+  env.limits.extend(BASE + 1000)
+  env.limits.pause(BASE + 2000)
+  const until = env.limits.getView(BASE + 2000).extendedUntil
+  // Extension expires while paused: the UI must stay on the pause screen, not lock.
+  const view = env.limits.evaluate(until + 1000)
+  assert.equal(view.paused, true)
+  assert.equal(view.dailyLocked, false)
+  // Resume after the extension: the cap locks again.
+  env.limits.resume(until + 2000, 'manual')
+  assert.equal(env.limits.evaluate(until + 3000).dailyLocked, true)
+})
+
 test('the daily cap locks and extend grants another window', () => {
   const env = makeLimits()
   env.usage.activeTodayMs = 180 * 60_000

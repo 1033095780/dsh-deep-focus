@@ -284,11 +284,16 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
     maybeAutoPause(options.idleMs, at, options.sampleAt)
 
     // The daily cap is evaluated first so a lock never stacks a forced rest on top.
-    if (!state.resting && !state.paused) {
+    // A paused session never *enters* the daily lock (pausing means "not using"), and
+    // an existing lock is released while paused so the UI shows the pause screen rather
+    // than a stale "today is over" screen; resuming re-evaluates and locks again if the
+    // cap is still exceeded.
+    if (!state.resting) {
       const dailyLimitMs = minutes(s.limits.dailyMinutes, 180) * 60_000
       const over = dailyLimitMs > 0 && usage.activeTodayMs >= dailyLimitMs
       const grace = state.extendedUntil !== null && at < state.extendedUntil
-      if (over && !grace) {
+      const lockNow = !state.paused && over && !grace
+      if (lockNow) {
         if (state.dailyLocked !== true) {
           state = { ...state, dailyLocked: true, extendedUntil: null }
           ring.emit(EVENT.dailyLocked, {

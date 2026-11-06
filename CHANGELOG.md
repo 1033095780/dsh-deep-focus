@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.4.28] - 2026-11-06
+
+### Fixed
+
+- **The daily-limit screen stayed up (or appeared) while paused.** The cap was not
+  evaluated during a pause. Pausing now releases the daily lock (UI shows the pause
+  screen) and no lock is entered while paused; resuming re-locks if still over.
 ## [0.4.27] - 2026-11-06
 
 ### Fixed
@@ -25,29 +32,14 @@ Patch release.
 
 ### Fixed
 
-- **A pause unlocked itself without any new input.** Both sides treated the activity that
-  happened *before* the pause as "the user is back": the Host auto-resumed when a sample
-  taken 1-5 s after the pause still showed a low idle time (it was simply the click), and
-  the client could react to phantom/trailing pointer events from the same gesture. The
-  Host now auto-resumes only when a sample proves the last input is newer than the pause
-  moment (idleMs < timeSincePause - 500), and the client requires a real pointer move of
-  at least 4 CSS px (or a key/wheel/touch event at least 400 ms after the card appeared).
-  The pause stays put until you genuinely come back.
+- **A pause unlocked itself without any new input.** The Host now requires the last input to be measurably newer than the pause (`idleMs < sincePause - 500`), and the client needs a trusted ≥4 px pointer move or a key/wheel/touch event ≥400 ms after the card appears.
 ## [0.4.24] - 2026-11-06
 
 Patch release.
 
 ### Fixed
 
-- **The continuous clock still moved in 5-second steps.** The local value was derived
-  from "last poll timestamp + elapsed", but the poll timestamp resets on every poll
-  (~1 s), so the display could only advance a fraction of a second and then had to jump
-  with the next ~5 s sample. It now advances by **real elapsed time between renders**:
-  every 500 ms render adds the elapsed wall time to the shown value (clamped to 2 s to
-  ignore OS sleep), anchors upward to the Host value, holds while away (the Host stops
-  counting then), and snaps to the Host value only while frozen. Verified by running the
-  real client bundle in headless Edge: the displayed mm:ss incremented by exactly one
-  second per second (00:00 → 00:01 → 00:02…) instead of 5 s steps.
+- **The continuous clock still moved in 5-second steps.** It now advances by real elapsed wall time per 500 ms render (clamped to 2 s), anchors upward to the Host value, holds while away and snaps only when frozen. Verified by running the real bundle in headless Edge: one second per second.
 ## [0.4.23] - 2026-11-06
 
 Patch release.
