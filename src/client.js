@@ -2686,7 +2686,9 @@ window.__ModuleLoader__.load({
           limit.paused === true ||
           limit.resting === true ||
           limit.dailyLocked === true
-        // The display clock must tick smoothly even when the user is momentarily idle or\n        // reading; only the frozen states (paused/rest/locked/hidden/off) should stop it.\n        const clockActive = !frozen
+        // The display clock must tick smoothly even when the user is momentarily idle
+        // or reading; only frozen states (paused/rest/locked/hidden/off) should stop it.
+        const clockActive = !frozen
         const shownContinuousRef = React.useRef(null)
         const shownDailyRef = React.useRef(null)
         const shownDayKeyRef = React.useRef(null)

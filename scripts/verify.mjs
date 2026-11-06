@@ -553,6 +553,20 @@ check('source entry exports', () => {
   return 'apply + inject + client registration'
 })
 
+check('client bundle has no escaped-newline corruption', () => {
+  // A literal "\n" inside a // comment swallows the following line, which once
+  // removed a declaration and crashed the widget at runtime.
+  const client = readText('src/client.js')
+  const lines = client.split(/\r?\n/)
+  for (let index = 0; index < lines.length; index += 1) {
+    if (/\/\/[^\n]*\\n/.test(lines[index])) {
+      fail(`src/client.js:${index + 1} has a literal \\n inside a line comment (code after it is swallowed)`)
+      break
+    }
+  }
+  return 'line comments are clean'
+})
+
 check('tests and e2e exist', () => {
   const testFiles = walkFiles(abs('test')).filter((file) => file.endsWith('.test.mjs') || file.endsWith('.test.js'))
   if (testFiles.length === 0) fail('test/ contains no test files')

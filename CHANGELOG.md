@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.4.23] - 2026-11-06
+
+Patch release.
+
+### Fixed
+
+- **The floating rings disappeared.** The previous patch wrote the new "keep the display
+  clock ticking" comment with a literal `\n`, which swallowed the following line
+  declaration and made the widget throw at render time. The comment and declaration are
+  proper lines again, and `scripts/verify.mjs` now fails if a line comment in
+  `src/client.js` contains a literal `\n` (that class of corruption previously passed
+  `node --check`).
 ## [0.4.22] - 2026-11-06
 
 Patch release.
