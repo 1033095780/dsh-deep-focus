@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.4.22] - 2026-11-06
+
+Patch release.
+
+### Fixed
+
+- **The continuous clock fell back to 5-second steps while the user was idle.** The
+  500 ms interpolation was gated on the "away" check, so as soon as the machine had
+  been quiet for ~30 s the display stopped ticking and only moved with the ~5 s Host
+  sample. The display clock now ticks every 500 ms whenever it is not frozen
+  (paused / resting / daily-locked / hidden / assistant off), independent of the away
+  detection — detection can stay slow, the UI stays smooth.
 ## [0.4.21] - 2026-11-06
 
 ### Changed
