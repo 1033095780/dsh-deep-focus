@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.4.24] - 2026-11-06
+
+Patch release.
+
+### Fixed
+
+- **The continuous clock still moved in 5-second steps.** The local value was derived
+  from "last poll timestamp + elapsed", but the poll timestamp resets on every poll
+  (~1 s), so the display could only advance a fraction of a second and then had to jump
+  with the next ~5 s sample. It now advances by **real elapsed time between renders**:
+  every 500 ms render adds the elapsed wall time to the shown value (clamped to 2 s to
+  ignore OS sleep), anchors upward to the Host value, holds while away (the Host stops
+  counting then), and snaps to the Host value only while frozen. Verified by running the
+  real client bundle in headless Edge: the displayed mm:ss incremented by exactly one
+  second per second (00:00 → 00:01 → 00:02…) instead of 5 s steps.
 ## [0.4.23] - 2026-11-06
 
 Patch release.

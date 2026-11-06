@@ -2692,6 +2692,7 @@ window.__ModuleLoader__.load({
         const shownContinuousRef = React.useRef(null)
         const shownDailyRef = React.useRef(null)
         const shownDayKeyRef = React.useRef(null)
+        const lastClockAtRef = React.useRef(0)
         const tickPair = React.useState(0)
         const tickAt = tickPair[0]
         const setTickAt = tickPair[1]
@@ -2745,29 +2746,35 @@ window.__ModuleLoader__.load({
         const dailyUsed = Math.max(0, numberOr(limit.dailyUsedMs, 0))
         const continuousLimit = Math.max(0, numberOr(limit.continuousLimitMs, 0))
         const continuousBase = Math.max(0, numberOr(limit.continuousUsedMs, 0))
-        const stateAt = numberOr(snapshot.stateUpdatedAt, 0)
-        const elapsed = clockActive && tickAt > 0 && stateAt > 0 ? Math.max(0, tickAt - stateAt) : 0
+        const away = awayTracker.isAway(alertsCfg, state || null)
+        const nowMs = Date.now()
         const dayKey = state && state.usage ? state.usage.dayKey : null
-        const continuousCandidate = continuousBase + elapsed
 
+        // The displayed value advances by REAL elapsed time between renders, not by
+        // "time since the last poll": the poll timestamp resets every second, which
+        // previously let the value sit still and then jump with the 5 s sample.
+        // Only active time advances the clock; while away it holds (the Host also
+        // stops accumulating then) and while frozen it snaps to the Host value.
         let shownContinuous = shownContinuousRef.current
         let shownDaily = shownDailyRef.current
         if (frozen) {
-          // Frozen screens show exactly the Host value and reset the anchors.
           shownContinuous = continuousBase
           shownDaily = dailyUsed
           shownDayKeyRef.current = dayKey
+          lastClockAtRef.current = nowMs
         } else {
-          if (shownContinuous === null) shownContinuous = continuousCandidate
-          else if (continuousCandidate >= shownContinuous) shownContinuous = continuousCandidate
-          else if (continuousBase < shownContinuous - 60000) shownContinuous = continuousCandidate
+          const lastAt = lastClockAtRef.current
+          lastClockAtRef.current = nowMs
+          const step = !away && lastAt > 0 ? Math.min(2000, Math.max(0, nowMs - lastAt)) : 0
+          if (shownContinuous === null) shownContinuous = continuousBase
+          else shownContinuous = shownContinuous + step
+          if (continuousBase > shownContinuous) shownContinuous = continuousBase
+          else if (continuousBase < shownContinuous - 60000) shownContinuous = continuousBase
 
           if (shownDaily === null || shownDayKeyRef.current !== dayKey) {
             shownDaily = dailyUsed
             shownDayKeyRef.current = dayKey
           } else if (dailyUsed >= shownDaily) shownDaily = dailyUsed
-          // Within a day the today-minutes value only ever moves forward; a new
-          // dayKey above resets it. No backward snap for small/large corrections.
         }
         shownContinuousRef.current = shownContinuous
         shownDailyRef.current = shownDaily
