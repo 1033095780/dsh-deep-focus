@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.4.27] - 2026-11-06
+
+### Fixed
+
+- **Legacy mojibake rows are no longer rendered.** Pre-0.4.26 records can contain U+FFFD replacement characters (unrecoverable GBK bytes); the resolver now shows the readable ASCII prefix (`xtitclient_x64…`) or `未知应用` instead of garbage. New samples decode correctly.
+## [0.4.26] - 2026-11-06
+
+### Fixed
+
+- **Non-ASCII app names showed as mojibake.** PowerShell wrote the process name to redirected stdout in the console code page (GBK) while the Host read UTF-8; the sampler now sends it as base64 UTF-8 (pure ASCII on the wire) and the Host decodes/validates it. Verified end-to-end with a Chinese name.
 ## [0.4.25] - 2026-11-06
 
 Patch release.

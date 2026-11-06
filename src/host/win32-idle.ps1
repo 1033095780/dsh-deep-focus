@@ -37,7 +37,11 @@ while ($true) {
       try { $exe = [System.Diagnostics.Process]::GetProcessById([int]$fgPid).ProcessName } catch { $exe = '' }
     }
   }
-  [Console]::Out.WriteLine(([string]$idle) + '|' + ([string]$fgPid) + '|' + $exe)
+  $nameB64 = ''
+  if ($exe.Length -gt 0) {
+    $nameB64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($exe))
+  }
+  [Console]::Out.WriteLine(([string]$idle) + '|' + ([string]$fgPid) + '|b64:' + $nameB64)
   [Console]::Out.Flush()
   Start-Sleep -Milliseconds $sampleMs
 }

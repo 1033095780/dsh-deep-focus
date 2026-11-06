@@ -56,6 +56,10 @@ test('friendly names follow the v2 mapping', () => {
   assert.equal(friendlyAppName('sublime_text'), 'sublime_text')
   assert.equal(friendlyAppName('SomeApp.exe'), 'SomeApp')
   assert.equal(friendlyAppName(''), '')
+  // Legacy mojibake records must never be rendered as replacement characters.
+  assert.equal(friendlyAppName('xtitclient_x64_\uFFFD\uFFFD\uFFFD\uFFFDqmt'), 'xtitclient_x64…')
+  assert.equal(friendlyAppName('\uFFFD\uFFFD'), '未知应用')
+  assert.equal(friendlyAppName('a\uFFFD'), '未知应用')
 })
 
 test('app milliseconds accumulate into a map', () => {

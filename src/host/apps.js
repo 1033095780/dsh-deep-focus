@@ -55,6 +55,13 @@ export function normalizeAppKey(raw) {
 export function friendlyAppName(raw) {
   const name = normalizedExeName(raw)
   if (name.length === 0) return ''
+  // v0.4.26: records written before the base64 fix may contain U+FFFD replacement
+  // characters (UTF-8 decoding of a GBK byte stream). Those are unrecoverable, so
+  // never render the garbage: keep the readable ASCII prefix, else a generic label.
+  if (/[\u0000-\u001F\uFFFD]/.test(name)) {
+    const prefix = name.split(/[\u0000-\u001F\uFFFD]/)[0].replace(/[_\-\s.]+$/, '')
+    return prefix.length >= 3 ? prefix + '…' : '未知应用'
+  }
   return APP_NAMES.get(name.toLowerCase()) ?? name
 }
 

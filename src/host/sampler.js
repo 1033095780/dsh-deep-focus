@@ -40,7 +40,23 @@ export function parseSampleLine(line) {
   const pidToken = parts.length > 1 ? parts[1].trim() : ''
   const parsedPid = /^\d+$/.test(pidToken) ? Number(pidToken) : 0
   const pid = Number.isSafeInteger(parsedPid) && parsedPid > 0 ? parsedPid : null
-  const app = parts.length > 2 ? parts.slice(2).join('|').trim() : ''
+  let app = parts.length > 2 ? parts.slice(2).join('|').trim() : ''
+  // v0.4.26: the Windows script sends the process name as base64 UTF-8 (64:),
+  // because PowerShell writes redirected stdout in the console code page (GBK on
+  // Chinese Windows) and non-ASCII names used to arrive as mojibake.
+  if (app.startsWith('b64:')) {
+    const payload = app.slice(4)
+    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(payload)) {
+      app = ''
+    } else {
+      try {
+        const decoded = Buffer.from(payload, 'base64').toString('utf8')
+        app = decoded.includes('\uFFFD') ? '' : decoded.trim()
+      } catch {
+        app = ''
+      }
+    }
+  }
   return { idleMs, pid, app: app.length > 0 ? app : null }
 }
 

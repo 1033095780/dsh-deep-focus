@@ -24,6 +24,18 @@ test('sampler lines carry idle, pid and executable name', () => {
   assert.equal(parseSampleLine(undefined), null)
 })
 
+test('non-ASCII executable names arrive as base64 UTF-8, not mojibake', () => {
+  const name = 'xtitclient_x64_中信证券'
+  const b64 = Buffer.from(name, 'utf8').toString('base64')
+  assert.deepEqual(parseSampleLine(`531|1234|b64:${b64}`), { idleMs: 531, pid: 1234, app: name })
+  // An empty base64 payload means "no foreground app".
+  assert.deepEqual(parseSampleLine('62|1234|b64:'), { idleMs: 62, pid: 1234, app: null })
+  // A corrupt payload must not leak garbage into the usage list.
+  assert.deepEqual(parseSampleLine('62|1234|b64:@@not-base64@@'), { idleMs: 62, pid: 1234, app: null })
+  // Legacy ASCII lines keep working unchanged.
+  assert.deepEqual(parseSampleLine('531|1234|chrome'), { idleMs: 531, pid: 1234, app: 'chrome' })
+})
+
 test('platform probe output parsers', () => {
   const ioreg = '    | |   "HIDIdleTime" = 12345678901\n'
   assert.equal(parseIoregIdle(ioreg), 12_346)
