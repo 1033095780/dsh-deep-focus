@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.4.25] - 2026-11-06
+
+Patch release.
+
+### Fixed
+
+- **A pause unlocked itself without any new input.** Both sides treated the activity that
+  happened *before* the pause as "the user is back": the Host auto-resumed when a sample
+  taken 1-5 s after the pause still showed a low idle time (it was simply the click), and
+  the client could react to phantom/trailing pointer events from the same gesture. The
+  Host now auto-resumes only when a sample proves the last input is newer than the pause
+  moment (idleMs < timeSincePause - 500), and the client requires a real pointer move of
+  at least 4 CSS px (or a key/wheel/touch event at least 400 ms after the card appeared).
+  The pause stays put until you genuinely come back.
 ## [0.4.24] - 2026-11-06
 
 Patch release.

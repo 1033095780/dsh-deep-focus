@@ -2066,6 +2066,7 @@ window.__ModuleLoader__.load({
       function start() {
         const stopStore = store.start()
         const stopAway = awayTracker.start()
+        const stopPointerTracker = pointerTracker.start()
         soloHider.start()
         let lastObservedStateAt = 0
         const unsubscribe = store.subscribe(function () {
@@ -2099,6 +2100,7 @@ window.__ModuleLoader__.load({
           }
           completionChime.stop()
           stopAway()
+          if (typeof stopPointerTracker === 'function') stopPointerTracker()
           unsubscribe()
           soloHider.stop()
           stopStore()
@@ -2284,6 +2286,50 @@ window.__ModuleLoader__.load({
           },
           subscribe: subscribe,
         }
+      })()
+
+      /** Last real pointer position, so a pause can require actual movement to resume. */
+      const pointerTracker = (function createPointerTracker() {
+        let lastX = null
+        let lastY = null
+        let started = false
+
+        function update(event) {
+          if (!event) return
+          if (typeof event.clientX !== 'number' || typeof event.clientY !== 'number') return
+          if (event.isTrusted === false) return
+          lastX = event.clientX
+          lastY = event.clientY
+        }
+
+        function start() {
+          if (started) return function () {}
+          started = true
+          try {
+            document.addEventListener('mousemove', update, true)
+            document.addEventListener('pointermove', update, true)
+            document.addEventListener('pointerdown', update, true)
+          } catch (error) {
+            /* ignored */
+          }
+          return function () {
+            started = false
+            try {
+              document.removeEventListener('mousemove', update, true)
+              document.removeEventListener('pointermove', update, true)
+              document.removeEventListener('pointerdown', update, true)
+            } catch (error) {
+              /* ignored */
+            }
+          }
+        }
+
+        function get() {
+          if (lastX === null || lastY === null) return null
+          return { x: lastX, y: lastY }
+        }
+
+        return { start: start, get: get }
       })()
 
       function Styles() {
@@ -3126,32 +3172,63 @@ window.__ModuleLoader__.load({
           }
         }
 
-        // Instant resume on real input: the first event after a 250ms guard posts
-        // /resume immediately and optimistically hides the overlay.
+        // Instant resume on REAL new input: pointer events must actually move at
+        // least 4px from the position recorded when the pause appeared (synthetic
+        // or zero-movement events are ignored), keyboard/wheel/touch need 400ms.
         React.useEffect(
           function () {
             if (!paused) return undefined
-            const shownAt = pauseIntent.getShownAt() || Date.now()
+            const shownAt = Date.now()
+            const anchor = pointerTracker.get()
+            let lastX = anchor === null ? null : anchor.x
+            let lastY = anchor === null ? null : anchor.y
             let used = false
-            const events = ['mousemove', 'keydown', 'pointerdown', 'wheel', 'touchstart']
-            const handler = function () {
+            const MOVEMENT_EVENTS = ['mousemove', 'pointerdown']
+            const OTHER_EVENTS = ['keydown', 'wheel', 'touchstart']
+            const finish = function () {
               if (used) return
-              if (Date.now() - shownAt < 250) return
-              if (pauseIntent.isPending()) return
               used = true
               resumeFromActivity()
             }
+            const onMovement = function (event) {
+              if (used) return
+              if (event && event.isTrusted === false) return
+              if (pauseIntent.isPending()) return
+              if (!event || typeof event.clientX !== 'number' || typeof event.clientY !== 'number') return
+              if (lastX === null || lastY === null) {
+                lastX = event.clientX
+                lastY = event.clientY
+                return
+              }
+              const dx = event.clientX - lastX
+              const dy = event.clientY - lastY
+              if (Math.sqrt(dx * dx + dy * dy) < 4) return
+              finish()
+            }
+            const onOther = function (event) {
+              if (used) return
+              if (event && event.isTrusted === false) return
+              if (pauseIntent.isPending()) return
+              if (Date.now() - shownAt < 400) return
+              finish()
+            }
             try {
-              events.forEach(function (name) {
-                document.addEventListener(name, handler, true)
+              MOVEMENT_EVENTS.forEach(function (name) {
+                document.addEventListener(name, onMovement, true)
+              })
+              OTHER_EVENTS.forEach(function (name) {
+                document.addEventListener(name, onOther, true)
               })
             } catch (error) {
               /* ignored */
             }
             return function () {
               try {
-                events.forEach(function (name) {
-                  document.removeEventListener(name, handler, true)
+                MOVEMENT_EVENTS.forEach(function (name) {
+                  document.removeEventListener(name, onMovement, true)
+                })
+                OTHER_EVENTS.forEach(function (name) {
+                  document.removeEventListener(name, onOther, true)
                 })
               } catch (error) {
                 /* ignored */

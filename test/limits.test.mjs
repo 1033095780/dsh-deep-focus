@@ -223,7 +223,6 @@ test('a falling idleMs resumes either kind of pause', () => {
   assert.equal(auto.limits.getView(BASE + 6000).paused, false)
   assert.equal(auto.limits.getView(BASE + 6000).pausedReason, null)
 
-  // A manual pause resumes on system activity exactly like an idle auto-pause.
   const manual = makeLimits()
   manual.limits.pause(BASE)
   manual.limits.applySample({ idleMs: 4000 }, BASE + 6000)
@@ -233,6 +232,43 @@ test('a falling idleMs resumes either kind of pause', () => {
   assert.equal(view.pausedReason, null)
   assert.equal(manual.ring.list().filter((event) => event.kind === EVENT.resumed).at(-1).meta.reason, 'activity')
 })
+
+test('auto-resume requires input that arrived after the pause', () => {
+  const env = makeLimits()
+  env.limits.pause(BASE)
+  // idle ≈ sincePause: the last input is the pause click itself.
+  env.limits.applySample({ idleMs: 1500 }, BASE + 1500)
+  assert.equal(env.limits.getView(BASE + 1500).paused, true)
+  env.limits.applySample({ idleMs: 2000 }, BASE + 2000)
+  assert.equal(env.limits.getView(BASE + 2000).paused, true)
+  // Real input 2s after the pause (sample at +3s): resumes.
+  env.limits.applySample({ idleMs: 1000 }, BASE + 3000)
+  assert.equal(env.limits.getView(BASE + 3000).paused, false)
+  assert.equal(env.limits.getView(BASE + 3000).pausedReason, null)
+  assert.equal(env.ring.list().filter((event) => event.kind === EVENT.resumed).at(-1).meta.reason, 'activity')
+})
+
+test('a missing idleMs never auto-resumes a pause', () => {
+  const env = makeLimits()
+  env.limits.pause(BASE)
+  env.limits.applySample({}, BASE + 5000)
+  env.limits.applySample({ idleMs: null }, BASE + 6000)
+  assert.equal(env.limits.getView(BASE + 6000).paused, true)
+})
+
+test('an idle auto-pause follows the same input-after-pause rule', () => {
+  const env = makeLimits()
+  env.limits.applySample({ idleMs: 60_000 }, BASE)
+  env.limits.applySample({ idleMs: 60_000 }, BASE + 1000)
+  assert.equal(env.limits.getView(BASE + 1000).paused, true)
+  // 1.4s after the pause with idle 1.4s: still the pre-pause click trail.
+  env.limits.applySample({ idleMs: 1400 }, BASE + 2400)
+  assert.equal(env.limits.getView(BASE + 2400).paused, true)
+  // Genuinely new input after the pause resumes it.
+  env.limits.applySample({ idleMs: 300 }, BASE + 3400)
+  assert.equal(env.limits.getView(BASE + 3400).paused, false)
+})
+
 test('usage.autoPauseSeconds 0 disables the automatic pause', () => {
   const env = makeLimits({ settings: { usage: { autoPauseSeconds: 0 } } })
   env.limits.evaluate(BASE, { idleMs: 10 * 60_000, sampleAt: BASE })

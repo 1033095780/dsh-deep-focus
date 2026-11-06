@@ -15,6 +15,8 @@ export const REST_ACTIVITY_WAIT_CAP_MS = 30 * 60_000
 const RESUME_GRACE_MIN_MS = 6000
 /** A sample this close to an auto-pause is the one that triggered it, not a return. */
 const IDLE_RESUME_MIN_DELAY_MS = 1000
+/** The last input must sit measurably after the pause moment. */
+const POST_PAUSE_INPUT_MARGIN_MS = 500
 
 function emptyLimitsState(dayKey) {
   return {
@@ -217,19 +219,23 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
   }
 
   /**
-   * Consume one sampler sample: activity ends an elapsed rest, and it also resumes
-   * a pause — automatic or manual — because the idle signal is system-wide and the
-   * usage statistics must stay accurate. The sample that triggered the pause is
-   * excluded by the 1s guard below.
+   * Consume one sampler sample: activity ends an elapsed rest, and fresh input
+   * after the pause resumes it — automatic or manual, same rule. Pausing itself
+   * leaves recent activity (the click) behind: the last input time is
+   * `at - idleMs`, so it must be measurably after `pausedAt`.
    */
   function applySample(sample, at = now()) {
     const active = sampleIsActive(sample)
     if (active) lastActivityAt = at
+    const idleMs = sample?.idleMs
+    const sincePause = state.pausedAt === null ? 0 : at - state.pausedAt
     if (
       state.paused
-      && active
       && state.pausedAt !== null
-      && at > state.pausedAt + IDLE_RESUME_MIN_DELAY_MS
+      && sincePause > IDLE_RESUME_MIN_DELAY_MS
+      && Number.isFinite(idleMs)
+      && idleMs < sincePause - POST_PAUSE_INPUT_MARGIN_MS
+      && sampleIsActive(sample)
     ) {
       resumeInternal(at, 'activity')
     }
