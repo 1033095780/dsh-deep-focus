@@ -82,7 +82,7 @@ window.__ModuleLoader__.load({
         'veil.aria': '专注模式：当前视图不是正在运行的会话',
         'veil.blocked': '先完成正在运行的任务再发送吧',
         'pause.resume': '继续计时',
-        'pause.blockedHint': '当前计时已暂停。点击「继续计时」，或按 Enter / 空格 / Esc 继续。',
+        'pause.resumeHint': '动一下鼠标或键盘继续',
         'rest.skip': '跳过休息',
         'rest.thenRestart': '已跳过休息，连续计时重新开始',
         'rest.doneWaiting': '休息完成 · 动一下鼠标键盘继续',
@@ -206,7 +206,7 @@ window.__ModuleLoader__.load({
         'veil.aria': 'Focus mode: the current view is not the running conversation',
         'veil.blocked': 'Finish the running task before sending',
         'pause.resume': 'Resume timer',
-        'pause.blockedHint': 'Tracking is paused. Click “Resume timer”, or press Enter / Space / Esc to continue.',
+        'pause.resumeHint': 'Move the mouse or keyboard to resume',
         'rest.skip': 'Skip rest',
         'rest.thenRestart': 'Rest skipped — the continuous timer starts over',
         'rest.doneWaiting': 'Rest done · move the mouse or press a key to continue',
@@ -2975,7 +2975,9 @@ window.__ModuleLoader__.load({
             h(TodayUsageCard, {
               t: t,
               title: t('pause.title'),
-              reason: busy ? t('rings.busy') : t('pause.blockedHint'),
+              // Both automatic and manual pauses resume as soon as the Host sees
+              // system-wide keyboard/mouse activity; the button is an immediate shortcut.
+              reason: busy ? t('rings.busy') : t('pause.resumeHint'),
               usedMs: usedMs,
               rows: apps,
               cardRef: cardRef,

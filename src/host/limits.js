@@ -13,6 +13,8 @@ const REST_DUE_RATIO = 0.8
 export const REST_ACTIVITY_WAIT_CAP_MS = 30 * 60_000
 /** After a resume, ignore idle samples long enough for the sampler to produce a fresh one. */
 const RESUME_GRACE_MIN_MS = 6000
+/** A sample this close to an auto-pause is the one that triggered it, not a return. */
+const IDLE_RESUME_MIN_DELAY_MS = 1000
 
 function emptyLimitsState(dayKey) {
   return {
@@ -214,10 +216,23 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
     }
   }
 
-  /** Consume one sampler sample: activity ends an elapsed rest, never a pause. */
+  /**
+   * Consume one sampler sample: activity ends an elapsed rest, and it also resumes
+   * a pause — automatic or manual — because the idle signal is system-wide and the
+   * usage statistics must stay accurate. The sample that triggered the pause is
+   * excluded by the 1s guard below.
+   */
   function applySample(sample, at = now()) {
     const active = sampleIsActive(sample)
     if (active) lastActivityAt = at
+    if (
+      state.paused
+      && active
+      && state.pausedAt !== null
+      && at > state.pausedAt + IDLE_RESUME_MIN_DELAY_MS
+    ) {
+      resumeInternal(at, 'activity')
+    }
     if (state.resting && state.restUntil !== null && at >= state.restUntil && active) {
       endRest(false, 'elapsed-and-active')
     }

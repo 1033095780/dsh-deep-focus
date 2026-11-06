@@ -400,6 +400,26 @@ test('idle auto-pause uses the latest sampler value and reports its reason', asy
   assert.equal(offState.limit.paused, false)
   assert.equal(offState.limit.pausedReason, null)
 })
+
+test('an idle auto-pause auto-resumes on system activity', async () => {
+  const fixture = await makeFixture()
+  const readState = async () => (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+  fixture.limits.applySample({ idleMs: 60_000 }, fixture.clock)
+  fixture.advance(1000)
+  fixture.limits.applySample({ idleMs: 60_000 }, fixture.clock)
+  let state = await readState()
+  assert.equal(state.limit.paused, true)
+  assert.equal(state.limit.pausedReason, 'idle')
+
+  // System-wide activity (fresh sample past the 1s trigger window) resumes it.
+  fixture.advance(2000)
+  fixture.limits.applySample({ idleMs: 100 }, fixture.clock)
+  state = await readState()
+  assert.equal(state.limit.paused, false)
+  assert.equal(state.limit.pausedReason, null)
+  const resumed = state.events.filter((event) => event.kind === 'resumed').at(-1)
+  assert.equal(resumed.meta.reason, 'activity')
+})
 test('POST /resume stays stable against a stale pre-resume idle sample', async () => {
   const fixture = await makeFixture()
   const staleSampleAt = fixture.clock - 5000
@@ -437,6 +457,22 @@ test('POST /resume stays stable against a stale pre-resume idle sample', async (
   assert.equal(repaused.limit.pausedReason, 'idle')
   assert.ok(resumedAt > 0)
 })
+test('a manual pause also auto-resumes on system activity', async () => {
+  const fixture = await makeFixture()
+  const readState = async () => (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+  const paused = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.pause, body: '{}' }))
+  assert.equal(paused.json.state.limit.pausedReason, 'manual')
+
+  // A fresh active sampler sample after the trigger window resumes it.
+  fixture.advance(2000)
+  fixture.limits.applySample({ idleMs: 100 }, fixture.clock)
+  const state = await readState()
+  assert.equal(state.limit.paused, false)
+  assert.equal(state.limit.pausedReason, null)
+  const resumed = state.events.filter((event) => event.kind === 'resumed').at(-1)
+  assert.equal(resumed.meta.reason, 'activity')
+})
+
 test('usage exposes machine idle time and the away flag', async () => {
   const near = await makeFixture({ idleMs: 1000 })
   const nearState = (await call(near.api, makeRequest({ url: ROUTES.state }))).json

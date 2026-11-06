@@ -82,10 +82,13 @@ never accumulate. One aggregate line per minute: `{ t, activeMs, apps: { key: ms
   active sample resetting the streak and stale samples (older than the last
   resume) ignored — so a single high sample cannot flash the overlay
   (`pausedReason: "idle"`, `paused` event). `POST /resume` resumes it. The pause
-  card is shown only after the paused state has held ~0.6 s. In v0.4.14 the pause
-  card is a **blocking lock** (see the browser section): it captures pointer events
-  and the only resume paths are the 「继续计时」 button or Enter/Space/Escape on the
-  card; the UI no longer posts `/resume` from mouse movement.
+  card is shown only after the paused state has held ~0.6 s. **Any pause — manual or
+  idle — auto-resumes on a fresh sample whose system-wide idle time is below
+  `usage.idleThresholdSeconds`** (activity in another application counts, which keeps
+  usage accounting accurate); `pausedReason` only chooses the card copy. The card
+  blocks host-UI interaction while shown and disappears immediately when the Host
+  reports `paused: false`; the explicit 「继续计时」/Enter/Space/Escape paths remain
+  available if the user prefers to resume sooner.
 - **Rollover:** at local midnight the lock, extension window/count and due flags
   reset. Turning the assistant off ends a rest and clears lock/pause
   (`assistant-off`).
@@ -136,7 +139,7 @@ newest running root — so exactly one conversation is pinned.
 | `sidebar.panellist` | `focus-assistant` | assistant entry below Plugins |
 | `main` (keyed) | `focus-assistant` | overview, 7-day trend, 8-field settings (incl. the one-conversation switch), enable/pause, right-aligned save row |
 | `shell.overlay` | `dsh-deep-focus-rings` | interactive two-ring **button** with two **equal columns** (flex `1 1 0`): each column has a 40–44 px ring with its value absolutely centered (today minutes; continuous mm:ss/h:mm, tabular figures) and a centered 11 px caption below (今日已用 / 连续使用); the continuous clock is interpolated to tick once per second (frozen while paused/resting/locked). Click → `POST /pause`; an in-flight lock ignores double-clicks and shows a pressed/disabled state. Keyboard accessible (`role="button"`, `tabIndex`, Enter/Space) with aria-labels 「暂停计时」/「继续计时」 (“Pause timer”/“Resume timer”). |
-| `shell.overlay` | `dsh-deep-focus-pause-gray` | auto/manual pause: a **blocking** shared today-usage card (`pointer-events: auto`) with 「已暂停计时 · 动一下鼠标或键盘继续」 and a primary 「继续计时」 action; it captures hover/click/focus so the app underneath stays inert. Resume only via the button or Enter/Space/Escape on the card (mouse movement alone no longer resumes); clicks on the card background do nothing. |
+| `shell.overlay` | `dsh-deep-focus-pause-gray` | auto/manual pause: a **blocking** shared today-usage card (`pointer-events: auto`) that captures hover/click/focus; the copy depends on `pausedReason` (`idle` shows 「检测到你回来后会继续计时」, `manual` shows the resume hint). Both kinds disappear immediately when system-wide keyboard/mouse activity resumes the Host; the 「继续计时」 primary action and Enter/Space/Escape remain as explicit resume paths. |
 | `shell.overlay` | `dsh-deep-focus-rest` | forced-rest screen using the shared today-usage card + 「跳过休息」 |
 | `shell.overlay` | `dsh-deep-focus-daily-lock` | daily overlay on the same card: 「再使用 20 分钟」/「跳过」 |
 | `shell.overlay` | `dsh-deep-focus-focus-veil` | veil over a visible non-owner conversation |

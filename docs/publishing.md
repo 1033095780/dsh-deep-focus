@@ -75,10 +75,12 @@ dependency installation; disabling or uninstalling removes all UI immediately.
       (today minutes / continuous mm:ss), the captions 今日已用 / 连续使用 are
       centered, and the continuous clock ticks every second.
 - [ ] Click the rings → pause: the DSH content is **blocked** (no hover, nothing
-      expands); the pause card shows 「继续计时」 and Enter/Space/Escape resume it.
-      Moving the mouse alone must not resume.
-- [ ] Idling for `usage.autoPauseSeconds` auto-pauses with the same blocking card;
-      rest and daily-limit screens use the same today-usage card.
+      expands) while the card is shown. Any keyboard/mouse activity — including in
+      another app — resumes and the card disappears; the 「继续计时」 button and
+      Enter/Space/Escape also resume it explicitly.
+- [ ] Idling for `usage.autoPauseSeconds` auto-pauses with the same blocking card and
+      resumes on keyboard/mouse activity too; rest and daily-limit screens use the
+      same today-usage card.
 - [ ] Daily overlay has only 「再使用 20 分钟」 and 「跳过」 (skip does not extend); with
       DSH hidden, hitting the cap tries `window.focus()` + one system notification
       (best effort).

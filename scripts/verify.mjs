@@ -352,8 +352,10 @@ check('READMEs describe the current product', () => {
     [/click(?:ing)? the (?:rings|widget|card)/i, 'click-to-pause on the rings'],
     [/(?:continue|继续计时)/i, 'the explicit Continue action'],
     [/Enter\/Space\/Escape|Enter, Space|Enter \/ Space \/ Escape/i, 'the keyboard resume shortcuts'],
-    [/while paused[^.]{0,140}(?:not interactive|no hover|blocking|blocks?)/i, 'the blocking pause lock'],
-    [/moving the mouse alone no longer resumes|mouse movement[^.]{0,60}(?:no longer|does not)/i, 'mouse no longer auto-resumes'],
+    [/(?:blocking (?:lock|card)|content is not interactive|not clickable|no hover)/i, 'the blocking pause lock'],
+    [/automatic idle pause|idle auto-pause|auto-?pause/i, 'the automatic idle pause'],
+    [/any pause[^.]{0,80}resumes?|(?:manual|automatic)[^.]{0,80}resume[^.]{0,80}activity|activity[^.]{0,60}resume/i, 'pause resumes on keyboard/mouse activity'],
+    [/system-wide|another application|other application/i, 'system-wide activity resumption'],
     [/two equal columns|equal columns|equal-width columns/i, 'the equal-column ring layout'],
     [/centered|center(?:ed)? captions/i, 'the centered ring captions'],
     [/sustained idle|two consecutive/i, 'the sustained-idle auto-pause rule'],
@@ -402,8 +404,10 @@ check('READMEs describe the current product', () => {
     [/点击(?:卡片|双环|小组件)/, 'click-to-pause on the rings'],
     [/继续计时/, 'the explicit Continue action'],
     [/Enter\/Space\/Escape|Enter、Space、Escape/, 'the keyboard resume shortcuts'],
-    [/不可交互|阻断式/, 'the blocking pause lock'],
-    [/只移动鼠标不再恢复|移动鼠标不再/, 'mouse no longer auto-resumes'],
+    [/不可交互|阻断/, 'the blocking pause lock'],
+    [/自动(?:空闲)?暂停/, 'the automatic idle pause'],
+    [/任何暂停|(?:手动|自动)[^。]{0,40}暂停[^。]{0,60}恢复/, 'pause resumes on keyboard/mouse activity'],
+    [/整机|其它软件|其他软件/, 'system-wide activity resumption'],
     [/两等宽列|等宽.*列/, 'the equal-column ring layout'],
     [/居中/, 'the centered ring captions'],
     [/持续空闲|连续两个新鲜采样/, 'the sustained-idle auto-pause rule'],
@@ -447,6 +451,8 @@ check('READMEs describe the current product', () => {
     /仅显示/,
     /your own \(root\) conversation's turn/i,
     /你的（root）会话整轮完成|your own \(root\) conversation's turn/i,
+    /manual pause[^.]{0,40}(?:needs|must)[^.]{0,30}(?:continue|resume)/i,
+    /手动[^。]{0,30}(?:必须|才能)[^。]{0,20}继续/i,
     /countdown chip/i,
     /seven (?:common )?(?:settings|controls)/i,
     /7 个设置/,
@@ -477,8 +483,8 @@ check('LICENSE and CHANGELOG', () => {
   if (!changelog.includes('## [Unreleased]')) fail('CHANGELOG.md has no [Unreleased] section')
   const entry = new RegExp(`^## \\[${pkg.version.replace(/\./g, '\\.')}\\] - \\d{4}-\\d{2}-\\d{2}$`, 'm')
   if (!entry.test(changelog)) fail(`CHANGELOG.md needs a dated "[${pkg.version}] - YYYY-MM-DD" entry`)
-  if (pkg.version === '0.4.15' && !changelog.includes('## [0.4.15] - 2026-11-05')) {
-    fail('CHANGELOG.md must date the 0.4.15 entry 2026-11-05')
+  if (pkg.version === '0.4.20' && !changelog.includes('## [0.4.20] - 2026-11-06')) {
+    fail('CHANGELOG.md must date the 0.4.20 entry 2026-11-06')
   }
   for (const heading of ['### Added', '### Changed', '### Fixed']) {
     if (!changelog.includes(heading)) fail(`CHANGELOG.md entry is missing "${heading}"`)

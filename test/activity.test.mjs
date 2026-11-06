@@ -45,7 +45,7 @@ function makeActivity({ settingsPatch = null } = {}) {
   }
 }
 
-test('pausing stops counting until POST /resume', async () => {
+test('pausing stops counting and resumes on system activity', async () => {
   const env = makeActivity()
   await env.ready
   let usage = env.step(100, BASE)
@@ -54,21 +54,21 @@ test('pausing stops counting until POST /resume', async () => {
 
   env.limits.pause(BASE + STEP_MS + 1000)
   assert.equal(env.limits.getView(env.clock).paused, true)
+  assert.equal(env.limits.getView(env.clock).pausedReason, 'manual')
 
-  // Activity inside or after the old grace window does not resume a manual pause.
-  usage = env.step(100, BASE + STEP_MS + 2000)
+  // Activity inside the 1s trigger window does not resume and nothing counts.
+  usage = env.step(100, BASE + STEP_MS + 1500)
   assert.equal(env.limits.getView(env.clock).paused, true)
   assert.equal(usage.activeTodayMs, STEP_MS)
+
+  // Later system activity auto-resumes the manual pause and counting continues.
   usage = env.step(100, BASE + STEP_MS + 5000)
-  assert.equal(env.limits.getView(env.clock).paused, true)
-  assert.equal(usage.activeTodayMs, STEP_MS)
-
-  // Only an explicit resume restarts the clock; the next active sample counts again.
-  const resumed = env.limits.resume(env.clock)
-  assert.equal(resumed.ok, true)
   assert.equal(env.limits.getView(env.clock).paused, false)
+  assert.equal(env.limits.getView(env.clock).pausedReason, null)
+  assert.ok(env.kinds().includes(EVENT.resumed))
+  assert.equal(usage.activeTodayMs, STEP_MS + 3500)
   usage = env.step(100, env.clock + STEP_MS)
-  assert.equal(usage.activeTodayMs, STEP_MS * 2)
+  assert.equal(usage.activeTodayMs, STEP_MS + 8500)
 })
 test('an idle machine keeps the pause and never resumes by timer', async () => {
   const env = makeActivity()
@@ -143,7 +143,7 @@ test('a skipped rest ends immediately and counting resumes', async () => {
   assert.ok(usage.activeTodayMs > 0)
 })
 
-test('idle beyond autoPauseSeconds auto-pauses through the sampler path', async () => {
+test('idle beyond autoPauseSeconds auto-pauses; system activity resumes it', async () => {
   const env = makeActivity()
   await env.ready
   env.step(100, BASE)
@@ -157,18 +157,23 @@ test('idle beyond autoPauseSeconds auto-pauses through the sampler path', async 
   env.step(60_000, env.clock + 1000)
   assert.equal(env.limits.getView(env.clock).paused, true)
   assert.equal(env.limits.getView(env.clock).pausedReason, 'idle')
+
+  // Activity inside the 1s trigger window does not resume.
+  env.step(100, env.clock + 500)
+  assert.equal(env.limits.getView(env.clock).paused, true)
+  // While paused, counting stays frozen.
   env.step(60_000, env.clock + 10_000)
   assert.equal(env.tracker.snapshot(env.clock).activeTodayMs, before)
   assert.equal(env.kinds().filter((kind) => kind === EVENT.paused).length, 1)
 
-  // Activity does NOT resume an auto-pause; only an explicit resume does.
-  env.step(100, env.clock + 2000)
-  assert.equal(env.limits.getView(env.clock).paused, true)
-  assert.equal(env.limits.getView(env.clock).pausedReason, 'idle')
-  const resumed = env.limits.resume(env.clock)
-  assert.equal(resumed.ok, true)
+  // Later system-wide activity auto-resumes the idle pause and counting continues.
+  env.step(100, env.clock + 3000)
   assert.equal(env.limits.getView(env.clock).paused, false)
+  assert.equal(env.limits.getView(env.clock).pausedReason, null)
   assert.ok(env.kinds().includes(EVENT.resumed))
+  env.step(100, env.clock + STEP_MS)
+  assert.ok(env.tracker.snapshot(env.clock).activeTodayMs > before)
+
   // The idle value that caused the pause is older than the resume: ticking with it
   // must not flap straight back into the paused state.
   const staleIdleAt = env.clock - 20_000
@@ -183,15 +188,17 @@ test('idle beyond autoPauseSeconds auto-pauses through the sampler path', async 
   env.limits.evaluate(env.clock + 21_000, { idleMs: 186_484, sampleAt: env.clock + 21_000 })
   assert.equal(env.limits.getView(env.clock + 21_000).paused, true)
 })
-test('activity does not clear a manual pause', async () => {
+test('activity auto-resumes a manual pause', async () => {
   const env = makeActivity()
   await env.ready
   env.step(100, BASE)
   env.limits.pause(BASE + STEP_MS)
-  env.step(100, BASE + STEP_MS + 1000)
-  env.step(100, BASE + STEP_MS + 2000)
+  env.step(100, BASE + STEP_MS + 500)
   assert.equal(env.limits.getView(env.clock).paused, true)
   assert.equal(env.limits.getView(env.clock).pausedReason, 'manual')
-  env.limits.resume(env.clock)
+  env.step(100, BASE + STEP_MS + 2000)
   assert.equal(env.limits.getView(env.clock).paused, false)
+  assert.equal(env.limits.getView(env.clock).pausedReason, null)
+  const resumed = env.ring.list().filter((event) => event.kind === EVENT.resumed).at(-1)
+  assert.equal(resumed.meta.reason, 'activity')
 })
