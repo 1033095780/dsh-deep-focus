@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createEventRing } from '../src/host/events.js'
-import { createLimits, LIMITS_FILE, REST_ACTIVITY_WAIT_CAP_MS } from '../src/host/limits.js'
+import { createLimits, LIMITS_FILE } from '../src/host/limits.js'
 import { normalizeSettings } from '../src/host/settings.js'
 import { EVENT } from '../src/shared/contract.js'
 
@@ -360,20 +360,44 @@ test('the continuous cap starts a forced rest that still needs activity to end',
   assert.equal(env.kinds().filter((kind) => kind === EVENT.restFinished).length, 1)
 })
 
-test('a rest finishes without activity after the 30-minute wait cap', () => {
+test('a finished rest waits for real DSH foreground activity', () => {
   const env = makeLimits()
   env.usage.continuousMs = 30 * 60_000
   env.limits.evaluate(BASE)
   const restUntil = env.limits.getView(BASE).restUntil
-  env.setClock(restUntil + REST_ACTIVITY_WAIT_CAP_MS + 1000)
-  const view = env.limits.evaluate(restUntil + REST_ACTIVITY_WAIT_CAP_MS + 1000)
+  // The countdown is over with no input: stay resting and ask for activity.
+  let view = env.limits.evaluate(restUntil + 1000)
+  assert.equal(view.resting, true)
+  assert.equal(view.restNeedsActivity, true)
+  assert.equal(view.restRemainingMs, 0)
+  assert.equal(env.kinds().filter((kind) => kind === EVENT.restFinished).length, 0)
+  // Activity in another application is not "the user came back".
+  env.limits.setForegroundDsh(false)
+  env.limits.applySample({ idleMs: 100 }, restUntil + 5000)
+  assert.equal(env.limits.getView(restUntil + 5000).resting, true)
+  assert.equal(env.kinds().filter((kind) => kind === EVENT.restFinished).length, 0)
+  // Genuine DSH foreground input after the countdown ends it exactly once.
+  env.limits.setForegroundDsh(true)
+  env.limits.applySample({ idleMs: 100 }, restUntil + 10_000)
+  view = env.limits.getView(restUntil + 10_000)
   assert.equal(view.resting, false)
-  const event = env.ring.list().at(-1)
-  assert.equal(event.kind, EVENT.restFinished)
-  assert.equal(event.meta.early, false)
-  assert.equal(event.meta.capped, true)
+  assert.equal(env.kinds().filter((kind) => kind === EVENT.restFinished).length, 1)
+  env.limits.applySample({ idleMs: 100 }, restUntil + 15_000)
+  assert.equal(env.kinds().filter((kind) => kind === EVENT.restFinished).length, 1)
 })
 
+test('a rest waiting for the user never ends on its own', () => {
+  const env = makeLimits()
+  env.usage.continuousMs = 30 * 60_000
+  env.limits.evaluate(BASE)
+  const restUntil = env.limits.getView(BASE).restUntil
+  const later = restUntil + 2 * 60 * 60_000
+  env.setClock(later)
+  const view = env.limits.evaluate(later)
+  assert.equal(view.resting, true)
+  assert.equal(view.restNeedsActivity, true)
+  assert.equal(env.kinds().filter((kind) => kind === EVENT.restFinished).length, 0)
+})
 test('skipping a rest ends it immediately with reason skipped', () => {
   const env = makeLimits()
   const started = env.limits.startRest(BASE)

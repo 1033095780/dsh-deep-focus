@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.4.33] - 2026-11-07
+
+### Changed
+
+- **A finished rest no longer auto-resumes counting.** When the rest countdown after a
+  continuous timeout reaches 0, the rest page stays in a “waiting for you” state instead of
+  restarting the timer or a new continuous run (you may still be away). Waiting counts
+  nothing and does not grow/decay the continuous value. The rest ends only when you
+  genuinely come back and use the mouse/keyboard in DSH **after** the countdown (foreground
+  activity); activity in another application does not end it. Skipping the rest still
+  works, and the v0.4.31 best-effort attention behaviour is unchanged.
+
 ## [0.4.32] - 2026-11-07
 
 ### Changed

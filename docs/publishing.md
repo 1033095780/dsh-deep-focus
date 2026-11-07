@@ -103,6 +103,10 @@ dependency installation; disabling or uninstalling removes all UI immediately.
       today's usage keeps increasing and the continuous value is held (no decay, no reset);
       switch back to DSH → counting stops and (for a rest) decay begins. The v0.4.31
       best-effort focus attempt + clickable notification still apply.
+- [ ] **Rest countdown end waits for you:** with the rest countdown running, do not touch
+      the machine until it reaches 0 → the rest page stays in the “waiting for you” state
+      (no counting, no new continuous run); activity in another app does not end it; only
+      real mouse/keyboard use in DSH after the countdown ends the rest and resumes counting.
 - [ ] Chime: with one conversation running, finish it while away → it rings; with
       two running, finishing only one stays silent and the second rings; repeats
       until input, capped ~2 min.

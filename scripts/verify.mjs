@@ -384,6 +384,9 @@ check('READMEs describe the current product', () => {
     [/another application[^.]{0,140}(?:keeps? counting|continues? (?:counting|accumulating))|today's usage[^.]{0,100}keeps counting/i, 'away usage keeps counting'],
     [/(?:continuous|value)[^.]{0,60}(?:held|frozen)[^.]{0,80}(?:no decay|no reset)|neither decays nor resets/i, 'the frozen continuous counter while away'],
     [/(?:return|back in front)[^.]{0,120}(?:stops? counting|decay)/i, 'returning to DSH gives effect'],
+    [/waiting for you[^.]{0,100}(?:state|rest)|rest page[^.]{0,100}wait/i, 'the waiting-for-you rest state'],
+    [/does not (?:auto-?)?(?:resume|restart)[^.]{0,100}(?:counting|continuous)/i, 'no auto-resume after the rest countdown'],
+    [/only (?:a genuine |real )?(?:mouse|keyboard)[^.]{0,140}after the countdown|after the countdown[^.]{0,100}(?:ends?|resumes?)/i, 'foreground input after the countdown is required'],
     [/window\.focus\(\)[^.]{0,80}(?:couple|retr)/i, 'the window.focus retries'],
     [/(?:one )?clickable system notification|system notification[^.]{0,40}click/i, 'the clickable system notification'],
     [/cannot force the OS[^.]{0,80}(?:raise|topmost|foreground)/i, 'the honest best-effort limitation'],
@@ -460,6 +463,9 @@ check('READMEs describe the current product', () => {
     [/继续计时|继续累计/, 'away usage keeps counting'],
     [/不衰减也不重置|保持不变/, 'the frozen continuous counter while away'],
     [/回到 DSH[^。]{0,80}(?:停止计时|衰减)/, 'returning to DSH gives effect'],
+    [/等待你回来|等待[^。]{0,10}回来/, 'the waiting-for-you rest state'],
+    [/不会自动恢复|不会自己重新计时|不会自动重新/, 'no auto-resume after the rest countdown'],
+    [/倒计时结束后[^。]{0,60}(?:动键鼠|键鼠|前台)/, 'foreground input after the countdown is required'],
     [/重试[^。]{0,30}window\.focus\(\)|window\.focus\(\)[^。]{0,30}(?:重试|几次)/, 'the window.focus retries'],
     [/可点击的系统通知|系统通知[^。]{0,20}点击/, 'the clickable system notification'],
     [/无法强制[^。]{0,50}(?:置顶|前台)/, 'the honest best-effort limitation'],
@@ -541,8 +547,8 @@ check('LICENSE and CHANGELOG', () => {
   if (!changelog.includes('## [Unreleased]')) fail('CHANGELOG.md has no [Unreleased] section')
   const entry = new RegExp(`^## \\[${pkg.version.replace(/\./g, '\\.')}\\] - \\d{4}-\\d{2}-\\d{2}$`, 'm')
   if (!entry.test(changelog)) fail(`CHANGELOG.md needs a dated "[${pkg.version}] - YYYY-MM-DD" entry`)
-  if (pkg.version === '0.4.32' && !changelog.includes('## [0.4.32] - 2026-11-07')) {
-    fail('CHANGELOG.md must date the 0.4.32 entry 2026-11-07')
+  if (pkg.version === '0.4.33' && !changelog.includes('## [0.4.33] - 2026-11-07')) {
+    fail('CHANGELOG.md must date the 0.4.33 entry 2026-11-07')
   }
   for (const heading of ['### Added', '### Changed', '### Fixed']) {
     if (!changelog.includes(heading)) fail(`CHANGELOG.md entry is missing "${heading}"`)

@@ -76,13 +76,15 @@ the foreground. One aggregate line per minute: `{ t, activeMs, apps: { key: ms }
   `rest-started`). Decay runs **only while the rest screen is effective, i.e. DSH is the
   foreground app**: the continuous counter is not reset but decays at
   `continuousMinutes / restMinutes` per minute, so the whole cap clears after roughly
-  `limits.restMinutes` of foreground recovery (default 30 min used → 10 min rest → 0; with
-  20/10, 20 min → 10 min → 0). While the user is in another application the value is held;
-  a skipped or short rest keeps the decayed remainder and resuming continues from it. The
-  rest ends only when its time elapsed **and** activity was seen afterwards
-  (`rest-finished`, `reason: "elapsed-and-active"`), or via
-  `POST /rest/finish` (`reason: "skipped"`); a 30-minute cap prevents a stuck rest.
-  Day rollover, assistant-off and invalid/sleep sampler gaps still reset the counter.
+  `limits.restMinutes` of foreground recovery (default 30/10 → clears in ~10 min). While
+  the user is in another application the value is held. **When the countdown reaches 0 the
+  rest does NOT end automatically**: `resting` stays true with `restNeedsActivity: true`,
+  nothing is counted, the continuous counter neither grows nor decays, and no
+  `rest-finished` is emitted — the person may still be away. The rest ends only when a
+  genuine foreground input happens **after `restUntil`**
+  (`lastForegroundActivityAt >= restUntil`), or via `POST /rest/finish` (`reason:
+  "skipped"`). A skipped or short rest keeps the decayed remainder; day rollover,
+  assistant-off and invalid sampler gaps still reset it.
 - **Daily cap:** when active time ≥ cap and no extension grace window is active,
   `dailyLocked` is set once (`daily-locked`). `POST /extend` sets
   `extendedUntil`, increments `extendCountToday` and clears the lock; only a

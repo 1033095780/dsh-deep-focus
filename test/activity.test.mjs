@@ -117,20 +117,44 @@ test('a forced rest excludes all counting until activity ends it', async () => {
   assert.ok(env.tracker.snapshot(env.clock).activeTodayMs > usedBefore)
 })
 
-test('the 30-minute wait cap releases a rest with no user return', async () => {
-  const env = makeActivity()
+test('a finished rest waits for real DSH foreground activity before resuming', async () => {
+  const env = makeActivity({ settingsPatch: { limits: { continuousMinutes: 20, restMinutes: 10 } } })
   await env.ready
-  for (let index = 0; index <= 360; index += 1) {
-    env.step(100, BASE + index * STEP_MS)
-  }
+  buildContinuous(env, 20)
+  assert.equal(env.limits.getView(env.clock).resting, true)
   const restUntil = env.limits.getView(env.clock).restUntil
-  env.setClock(restUntil + 30 * 60_000 + 1000)
-  env.limits.evaluate(env.clock)
-  assert.equal(env.limits.getView(env.clock).resting, false)
-  const finished = env.ring.list().filter((event) => event.kind === EVENT.restFinished).at(-1)
-  assert.equal(finished.meta.capped, true)
-})
+  const usedBefore = env.tracker.snapshot(env.clock).activeTodayMs
 
+  // Countdown elapses with idle samples in DSH: still resting, nothing counts and
+  // the continuous counter only decays while the countdown is running.
+  for (let index = 1; index <= 120; index += 1) {
+    env.step(60_000, restUntil - 600_000 + index * STEP_MS, 'DeepSeek Harness')
+  }
+  const waiting = env.limits.getView(env.clock)
+  assert.equal(waiting.resting, true)
+  assert.equal(waiting.restNeedsActivity, true)
+  const continuousWaiting = env.tracker.snapshot(env.clock).continuousMs
+
+  // Two hours later it is still waiting; counters did not change.
+  env.setClock(env.clock + 2 * 60 * 60_000)
+  env.limits.setForegroundDsh(true)
+  env.limits.evaluate(env.clock)
+  assert.equal(env.limits.getView(env.clock).resting, true)
+  assert.equal(env.tracker.snapshot(env.clock).activeTodayMs, usedBefore)
+  assert.equal(env.tracker.snapshot(env.clock).continuousMs, continuousWaiting)
+
+  // Activity in another app does not end the rest.
+  env.step(100, env.clock + STEP_MS, 'msedge')
+  assert.equal(env.limits.getView(env.clock).resting, true)
+  // DSH foreground movement ends it exactly once, then counting resumes.
+  env.step(100, env.clock + STEP_MS, 'DeepSeek Harness')
+  assert.equal(env.limits.getView(env.clock).resting, false)
+  assert.equal(env.kinds().filter((kind) => kind === EVENT.restFinished).length, 1)
+  const afterReturn = env.tracker.snapshot(env.clock).activeTodayMs
+  env.step(100, env.clock + STEP_MS, 'DeepSeek Harness')
+  assert.ok(env.tracker.snapshot(env.clock).activeTodayMs >= afterReturn + STEP_MS)
+  assert.equal(env.kinds().filter((kind) => kind === EVENT.restFinished).length, 1)
+})
 test('a skipped rest ends immediately and counting resumes', async () => {
   const env = makeActivity()
   await env.ready
@@ -249,7 +273,8 @@ test('a ten-minute rest clears a full 20-minute continuous run', async () => {
     env.step(60_000, restStart + index * STEP_MS)
   }
   assert.equal(env.limits.getView(env.clock).resting, true)
-  assert.equal(env.tracker.snapshot(env.clock).continuousMs, 0)
+  // The decay stops when the countdown ends (one sample of tolerance at the edge).
+  assert.ok(env.tracker.snapshot(env.clock).continuousMs <= 10_000)
 })
 
 test('a five-minute rest leaves about half of a 20-minute continuous run', async () => {

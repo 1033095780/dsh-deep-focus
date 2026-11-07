@@ -9,8 +9,6 @@ import { localDayKey } from './storage.js'
 export const LIMITS_FILE = 'limits.json'
 /** `rest-due` fires when continuous usage reaches this share of the limit. */
 const REST_DUE_RATIO = 0.8
-/** A rest whose time elapsed still finishes eventually if the user never returns. */
-export const REST_ACTIVITY_WAIT_CAP_MS = 30 * 60_000
 /** After a resume, ignore idle samples long enough for the sampler to produce a fresh one. */
 const RESUME_GRACE_MIN_MS = 6000
 /** A sample this close to an auto-pause is the one that triggered it, not a return. */
@@ -37,6 +35,9 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
   let writeChain = Promise.resolve()
   let restDueEmitted = false
   let lastActivityAt = null
+  // Real input in the DSH foreground after a rest countdown: the only thing that ends a
+  // finished rest. Activity in other apps never counts as "the user came back".
+  let lastForegroundActivityAt = null
   // Auto-pause provenance: the idle value that paused us must be newer than the
   // latest resume, and a short grace window waits for the sampler to catch up.
   let lastResumeAt = null
@@ -85,17 +86,14 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
     return true
   }
 
-  function endRest(early, reason, extra = {}, options = {}) {
+  function endRest(early, reason, extra = {}) {
     state = { ...state, resting: false, restUntil: null }
     idleStrike = 0
-    // No instant reset by default: the continuous counter keeps whatever the rest
-    // decayed it to (a skipped rest keeps the remainder). Two safety resets remain:
-    // a forced ending (30-minute wait cap / assistant-off) and a completed rest
-    // whose counter still claims a full cap because no samples arrived to decay it
-    // (would otherwise start another rest immediately and loop).
-    if (options.resetContinuous === true) {
-      tracker.resetContinuous()
-    } else if (!early) {
+    // No instant reset: the continuous counter keeps whatever the countdown decayed
+    // it to (a skipped rest keeps the remainder). A completed rest whose counter
+    // still claims a full cap (no samples arrived to decay it) is the one safety
+    // reset, otherwise it would start another rest immediately and loop.
+    if (!early) {
       const limitMs = Math.max(0, minutes(settings.get().limits.continuousMinutes, 30)) * 60_000
       if (limitMs > 0 && tracker.snapshot(now()).continuousMs >= limitMs) tracker.resetContinuous()
     }
@@ -242,6 +240,7 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
   function applySample(sample, at = now()) {
     const active = sampleIsActive(sample)
     if (active) lastActivityAt = at
+    if (active && foregroundDsh) lastForegroundActivityAt = at
     const idleMs = sample?.idleMs
     const sincePause = state.pausedAt === null ? 0 : at - state.pausedAt
     if (
@@ -255,9 +254,10 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
     ) {
       resumeInternal(at, 'activity')
     }
-    // A rest only ends on the user's return while the DSH rest page is in front;
-    // activity in another app must not silently clear it.
-    if (state.resting && foregroundDsh && state.restUntil !== null && at >= state.restUntil && active) {
+    // A rest only ends on real input in the DSH foreground AFTER the countdown;
+    // activity in another app (or before the countdown finished) never clears it.
+    if (state.resting && state.restUntil !== null
+      && lastForegroundActivityAt !== null && lastForegroundActivityAt >= state.restUntil) {
       endRest(false, 'elapsed-and-active')
     }
     maybeAutoPause(sample?.idleMs, at, at)
@@ -281,16 +281,11 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
       if (state.restUntil === null) {
         endRest(false, 'elapsed-and-active')
         restEnded = true
-      } else if (at >= state.restUntil) {
-        const capped = at > state.restUntil + REST_ACTIVITY_WAIT_CAP_MS
-        const cameBack = lastActivityAt !== null && lastActivityAt >= state.restUntil
-        if (capped) {
-          endRest(false, 'elapsed-and-active', { capped: true }, { resetContinuous: true })
-          restEnded = true
-        } else if (cameBack && foregroundDsh) {
-          endRest(false, 'elapsed-and-active')
-          restEnded = true
-        }
+      } else if (at >= state.restUntil
+        && lastForegroundActivityAt !== null && lastForegroundActivityAt >= state.restUntil) {
+        // The countdown is over and the user has since moved in the DSH foreground.
+        endRest(false, 'elapsed-and-active')
+        restEnded = true
       }
     }
 
@@ -337,7 +332,7 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
 
     const continuousLimitMs = minutes(s.limits.continuousMinutes, 30) * 60_000
     // A rest that just ended in this tick must not instantly re-trigger from the
-    // counters sampled before its end (would loop for skipped/capped rests).
+    // counters sampled before its end (would loop for skipped/completed rests).
     if (!state.resting && !state.dailyLocked && !state.paused && !restEnded) {
       if (continuousLimitMs > 0 && usage.continuousMs >= continuousLimitMs) {
         startRest(at, 'continuous')
@@ -374,9 +369,16 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
     isRestEffective() {
       return state.resting === true && foregroundDsh === true
     },
-    /** Recovery decay applies while either pause or rest is effective. */
+    /**
+     * Recovery decay applies while paused in the DSH foreground, or during the rest
+     * countdown. Once the countdown is over the rest just waits for the user, so the
+     * counter must neither grow nor decay.
+     */
     isRecoveryEffective() {
-      return (state.paused === true || state.resting === true) && foregroundDsh === true
+      if (foregroundDsh !== true) return false
+      if (state.paused === true) return true
+      if (state.resting === true) return state.restUntil !== null && now() < state.restUntil
+      return false
     },
     /** Remember where the user is; pause/rest survive (persist) until they come back. */
     setForegroundDsh(isDsh) {
@@ -410,9 +412,8 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
         return state
       }
       const restUntil = Number.isFinite(document.restUntil) ? document.restUntil : null
-      // A restored rest keeps waiting for activity up to the 30-minute cap.
+      // A restored rest keeps waiting for real foreground input, no matter how old.
       const resting = document.resting === true && restUntil !== null
-        && at <= restUntil + REST_ACTIVITY_WAIT_CAP_MS
       const paused = document.paused === true && Number.isFinite(document.pausedAt)
       state = {
         dayKey,
@@ -433,6 +434,7 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
         state = { ...state, dailyLocked: false, extendedUntil: null, extendCountToday: 0 }
       }
       lastActivityAt = null
+      lastForegroundActivityAt = null
       lastResumeAt = null
       resumeGraceUntil = 0
       idleStrike = 0
