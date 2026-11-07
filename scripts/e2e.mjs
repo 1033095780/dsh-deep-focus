@@ -105,15 +105,12 @@ async function main() {
   if (!sawAutoPause) {
     const latest = await state()
     const idle = typeof latest.usage?.idleMs === 'number' ? latest.usage.idleMs : null
-    // Auto-pause needs the machine to actually be idle. If the user is at the
-    // keyboard right now this check cannot be exercised; report it as skipped
-    // instead of pretending the plugin failed.
-    if (idle !== null && idle < 1000) {
-      skipCheck('idle auto-pause fires after usage.autoPauseSeconds', `machine in use (idleMs=${idle})`)
-      skipCheck('resume stability: stayed unpaused for 8s', 'depends on auto-pause')
-    } else {
-      fail('idle auto-pause fires after usage.autoPauseSeconds', `idleMs=${idle}`)
-    }
+    // Since 0.4.32 the automatic pause only fires while DeepSeek Harness is the
+    // foreground application (and the machine is idle). A headless test cannot
+    // control the OS foreground window, so skip instead of failing falsely; the
+    // Host unit tests cover the state machine.
+    skipCheck('idle auto-pause fires after usage.autoPauseSeconds', `needs DSH foreground + idle (idleMs=${idle})`)
+    skipCheck('resume stability: stayed unpaused for 8s', 'depends on auto-pause')
   } else {
     assert(sawAutoPause, 'idle auto-pause fires after usage.autoPauseSeconds')
 
