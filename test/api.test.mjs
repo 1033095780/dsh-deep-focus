@@ -174,7 +174,7 @@ test('GET /state returns the v4 contract shape with root-only sessions and solo'
     'assistantEnabled', 'continuousLimitMs', 'continuousUsedMs', 'dailyLimitMs', 'dailyLocked', 'dailyUsedMs',
     'extendCountToday', 'extendLimit', 'extendedUntil', 'paused', 'pausedAt', 'pausedNeedsActivity',
     'pausedReason', 'restDue',
-    'restNeedsActivity', 'restRemainingMs', 'restUntil', 'resting',
+    'restNeedsActivity', 'restRemainingMs', 'restUntil', 'resting', 'trackingOnly',
   ])
   assert.deepEqual(Object.keys(state.settings).sort(), ['alerts', 'assistant', 'limits', 'usage', 'version'])
   assert.equal(state.settings.version, 4)
@@ -471,6 +471,27 @@ test('a manual pause also auto-resumes on system activity', async () => {
   assert.equal(state.limit.pausedReason, null)
   const resumed = state.events.filter((event) => event.kind === 'resumed').at(-1)
   assert.equal(resumed.meta.reason, 'activity')
+})
+
+test('tracking-only mode disables enforcement and rejects pause/rest', async () => {
+  const fixture = await makeFixture()
+  await fixture.settings.update({ assistant: { trackingOnly: true }, limits: { dailyMinutes: 1, continuousMinutes: 1 } })
+  fixture.feedActive('chrome', 30)
+  const state = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+  assert.equal(state.limit.trackingOnly, true)
+  assert.equal(state.limit.assistantEnabled, true)
+  assert.equal(state.limit.dailyLocked, false)
+  assert.equal(state.limit.resting, false)
+  assert.equal(state.limit.paused, false)
+  assert.equal(state.limit.restDue, false)
+  assert.ok(state.usage.activeTodayMs > 0)
+
+  const pause = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.pause, body: '{}' }))
+  assert.equal(pause.status, 409)
+  assert.equal(pause.json.error.code, 'tracking-only')
+  const rest = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.restStart, body: '{}' }))
+  assert.equal(rest.status, 409)
+  assert.equal(rest.json.error.code, 'tracking-only')
 })
 
 test('usage exposes machine idle time and the away flag', async () => {

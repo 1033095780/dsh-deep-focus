@@ -365,3 +365,31 @@ test('a rest stays ineffective while another app is foreground', async () => {
   assert.equal(inside.activeTodayMs, beforeBack)
   assert.ok(inside.continuousMs < continuousBack)
 })
+
+
+test('trackingOnly records usage, never enforces, then leaving resumes enforcement', async () => {
+  const env = makeActivity({
+    settingsPatch: { assistant: { trackingOnly: true }, limits: { dailyMinutes: 1, continuousMinutes: 1 } },
+  })
+  await env.ready
+  for (let index = 0; index <= 36; index += 1) env.step(100, BASE + index * STEP_MS, 'DeepSeek Harness')
+  const snapshot = env.tracker.snapshot(env.clock)
+  assert.ok(snapshot.activeTodayMs >= 180_000)
+  assert.ok(snapshot.continuousMs >= 180_000)
+  const view = env.limits.getView(env.clock)
+  assert.equal(view.trackingOnly, true)
+  assert.equal(view.dailyLocked, false)
+  assert.equal(view.resting, false)
+  assert.equal(view.restDue, false)
+  assert.equal(env.kinds().includes(EVENT.dailyLocked), false)
+  assert.equal(env.kinds().includes(EVENT.restStarted), false)
+  assert.deepEqual(env.limits.pause(env.clock), { ok: false, code: 'tracking-only' })
+  assert.deepEqual(env.limits.startRest(env.clock), { ok: false, code: 'tracking-only' })
+
+  // Leaving the mode re-enables normal enforcement (daily cap is evaluated first).
+  await env.settings.update({ assistant: { trackingOnly: false } })
+  env.limits.evaluate(env.clock + 1000)
+  const after = env.limits.getView(env.clock + 1000)
+  assert.equal(after.trackingOnly, false)
+  assert.equal(after.dailyLocked, true)
+})

@@ -107,6 +107,11 @@ dependency installation; disabling or uninstalling removes all UI immediately.
       the machine until it reaches 0 → the rest page stays in the “waiting for you” state
       (no counting, no new continuous run); activity in another app does not end it; only
       real mouse/keyboard use in DSH after the countdown ends the rest and resumes counting.
+- [ ] **Tracking-only mode:** enable 「仅记录模式」/“Tracking only” in settings — rings,
+      dashboard, history and app breakdown keep updating, but no daily/rest/pause overlay
+      appears, no background focus/notification is attempted, the completion chime stays
+      silent, and the one-conversation graying/auto-jump is off. Turning it off restores
+      all rules.
 - [ ] Chime: with one conversation running, finish it while away → it rings; with
       two running, finishing only one stays silent and the second rings; repeats
       until input, capped ~2 min.

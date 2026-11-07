@@ -70,7 +70,8 @@ the foreground. One aggregate line per minute: `{ t, activeMs, apps: { key: ms }
 | `limits.dailyExtendLimit` | 0 | extensions per day; `0` = unlimited |
 | `usage.autoPauseSeconds` | 60 | idle auto-rest threshold; `0` = off |
 | `assistant.enabled` | true | false = statistics only, no enforcement |
-| `assistant.soloSession` | true | one-conversation pinning (auto-jump + gray + non-clickable); exposed as the eighth UI switch together with `hideOtherSessions` |
+| `assistant.soloSession` | true | one-conversation pinning (auto-jump + gray + non-clickable); exposed as a UI switch together with `hideOtherSessions` |
+| `assistant.trackingOnly` | false | record/display usage only — no daily lock, rest, pause, overlays, chime, background attention or solo restriction |
 
 - **Continuous cap:** reaching it starts a rest (`resting`, `restUntil`,
   `rest-started`). Decay runs **only while the rest screen is effective, i.e. DSH is the
@@ -110,6 +111,14 @@ the foreground. One aggregate line per minute: `{ t, activeMs, apps: { key: ms }
   sampler interval. `pausedReason` only chooses the card copy. The card blocks
   host-UI interaction while shown and disappears as soon as the pause ends; the
   explicit 「继续计时」/Enter/Space/Escape paths remain available.
+- **Tracking-only mode:** with `assistant.trackingOnly = true` the Host still samples and
+  records usage (day total, per-app buckets, continuous value, history) but **never
+  enforces anything**: `dailyLocked`/`resting`/`paused` stay false and `restDue` false,
+  the daily/continuous/auto-pause paths are skipped, switching into the mode clears any
+  existing lock/rest/pause, and `POST /pause` / `POST /rest/start` are rejected (409
+  `tracking-only`). Leaving the mode re-enables normal enforcement. The client keeps the
+  rings/dashboard visible, disables the pause interaction, and renders no
+  pause/rest/daily overlays, no background attention, no chime and no solo graying/veil.
 - **Rollover:** at local midnight the lock, extension window/count and due flags
   reset. Turning the assistant off ends a rest and clears lock/pause
   (`assistant-off`).

@@ -46,9 +46,9 @@ const REQUIRED_FILES = [
 ]
 const DELETED_FILES = ['PLAN.md', 'PLAN-v0.3.md', 'Agents.md']
 const DOC_SIZE_BUDGET = {
-  'README.md': [4_000, 17_000],
-  'README.zh.md': [4_000, 17_000],
-  'docs/design.md': [4_000, 16_000],
+  'README.md': [4_000, 19_000],
+  'README.zh.md': [4_000, 19_000],
+  'docs/design.md': [4_000, 18_000],
   'docs/privacy.md': [2_000, 9_000],
   'docs/publishing.md': [3_000, 10_000],
   'CHANGELOG.md': [600, 10_000],
@@ -407,8 +407,12 @@ check('READMEs describe the current product', () => {
     [/gray(?:s|ed)? out|dim(?:s|med)?/i, 'the grayed sidebar rows'],
     [/not clickable|non-clickable|cannot be clicked/i, 'the non-clickable sidebar rows'],
     [/0\s*=\s*unlimited/i, 'unlimited daily extensions (0 = unlimited)'],
-    [/eight (?:common )?(?:settings|controls)/i, 'the eight exposed settings'],
+    [/nine (?:common )?(?:settings|controls)/i, 'the nine exposed settings'],
     [/assistant\.soloSession|one conversation at a time/i, 'the solo-mode setting switch'],
+    [/tracking[- ]only mode/i, 'the tracking-only mode'],
+    [/record and display[^.]{0,140}(?:usage|rings)/i, 'tracking-only records/displays usage'],
+    [/daily[- ](?:limit )?lock[^.]{0,140}(?:disabl|off)|disabl[^.]{0,120}daily[- ]lock/i, 'tracking-only disables the daily lock'],
+    [/one-conversation restriction/i, 'tracking-only disables the solo restriction'],
     [/(?:all .{0,30}running|running .{0,20}set)/i, 'the all-done chime rule'],
     [/subagent|teammate/i, 'the subagent/teammate silence rule'],
     [/(?:only some|partial)/i, 'the partial-completion silence rule'],
@@ -486,8 +490,12 @@ check('READMEs describe the current product', () => {
     [/置灰|变灰/, 'the grayed sidebar rows'],
     [/不可点|无法点击|不可点击/, 'the non-clickable sidebar rows'],
     [/0\s*=\s*不限/, 'unlimited daily extensions (0 = unlimited)'],
-    [/(?:8|八) ?(?:个|项)/, 'the eight exposed settings'],
+    [/(?:9|九) ?(?:个|项)/, 'the nine exposed settings'],
     [/assistant\.soloSession|专注时只允许一个对话/, 'the solo-mode setting switch'],
+    [/仅记录模式/, 'the tracking-only mode'],
+    [/只记录和显示用时/, 'tracking-only records/displays usage'],
+    [/每日超时锁[^。]{0,80}(?:关闭|不起作用)|关闭每日超时锁/, 'tracking-only disables the daily lock'],
+    [/单会话限制/, 'tracking-only disables the solo restriction'],
     [/所有正在运行的会话|运行集合/, 'the all-done chime rule'],
     [/子代理|队友/, 'the subagent/teammate silence rule'],
     [/只完成了一部分|部分完成/, 'the partial-completion silence rule'],
@@ -547,8 +555,8 @@ check('LICENSE and CHANGELOG', () => {
   if (!changelog.includes('## [Unreleased]')) fail('CHANGELOG.md has no [Unreleased] section')
   const entry = new RegExp(`^## \\[${pkg.version.replace(/\./g, '\\.')}\\] - \\d{4}-\\d{2}-\\d{2}$`, 'm')
   if (!entry.test(changelog)) fail(`CHANGELOG.md needs a dated "[${pkg.version}] - YYYY-MM-DD" entry`)
-  if (pkg.version === '0.4.33' && !changelog.includes('## [0.4.33] - 2026-11-07')) {
-    fail('CHANGELOG.md must date the 0.4.33 entry 2026-11-07')
+  if (pkg.version === '0.4.34' && !changelog.includes('## [0.4.34] - 2026-11-07')) {
+    fail('CHANGELOG.md must date the 0.4.34 entry 2026-11-07')
   }
   for (const heading of ['### Added', '### Changed', '### Fixed']) {
     if (!changelog.includes(heading)) fail(`CHANGELOG.md entry is missing "${heading}"`)

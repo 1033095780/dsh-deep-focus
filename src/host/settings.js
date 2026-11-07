@@ -25,6 +25,7 @@ const BOOLEAN_FIELDS = [
   'assistant.soloSession',
   'assistant.hideOtherSessions',
   'assistant.showRings',
+  'assistant.trackingOnly',
   'alerts.sound',
   'alerts.repeatUntilActive',
   'usage.trackApps',

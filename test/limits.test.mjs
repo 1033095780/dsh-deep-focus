@@ -42,7 +42,7 @@ function viewKeys() {
     'assistantEnabled', 'continuousLimitMs', 'continuousUsedMs', 'dailyLimitMs', 'dailyLocked', 'dailyUsedMs',
     'extendCountToday', 'extendLimit', 'extendedUntil', 'paused', 'pausedAt', 'pausedNeedsActivity',
     'pausedReason', 'restDue',
-    'restNeedsActivity', 'restRemainingMs', 'restUntil', 'resting',
+    'restNeedsActivity', 'restRemainingMs', 'restUntil', 'resting', 'trackingOnly',
   ].sort()
 }
 
@@ -635,4 +635,75 @@ test('auto-pause does not trigger while another app is foreground', () => {
   assert.equal(env.limits.getView(BASE + 2000).paused, false)
   env.limits.evaluate(BASE + 3000, { idleMs: 120_000, sampleAt: BASE + 3000 })
   assert.equal(env.limits.getView(BASE + 3000).paused, true)
+})
+
+
+test('trackingOnly disables every enforcement and clears live state silently', () => {
+  // Pause is cleared without a resume event.
+  const paused = makeLimits()
+  paused.limits.pause(BASE)
+  const pausedCount = paused.kinds().filter((kind) => kind === EVENT.paused).length
+  paused.setSettings({ assistant: { trackingOnly: true } })
+  const pausedView = paused.limits.evaluate(BASE + 1000)
+  assert.equal(pausedView.trackingOnly, true)
+  assert.equal(pausedView.paused, false)
+  assert.equal(pausedView.pausedReason, null)
+  assert.equal(paused.kinds().filter((kind) => kind === EVENT.paused).length, pausedCount)
+  assert.equal(paused.kinds().includes(EVENT.resumed), false)
+
+  // Rest is cleared without a rest-finished event.
+  const resting = makeLimits()
+  resting.limits.startRest(BASE)
+  assert.ok(resting.kinds().includes(EVENT.restStarted))
+  resting.setSettings({ assistant: { trackingOnly: true } })
+  const restView = resting.limits.evaluate(BASE + 1000)
+  assert.equal(restView.resting, false)
+  assert.equal(restView.restNeedsActivity, false)
+  assert.equal(resting.kinds().includes(EVENT.restFinished), false)
+
+  // Daily lock is cleared without a new daily-locked event.
+  const locked = makeLimits()
+  locked.usage.activeTodayMs = 180 * 60_000
+  locked.limits.evaluate(BASE)
+  assert.equal(locked.kinds().filter((kind) => kind === EVENT.dailyLocked).length, 1)
+  locked.setSettings({ assistant: { trackingOnly: true } })
+  const lockView = locked.limits.evaluate(BASE + 1000)
+  assert.equal(lockView.dailyLocked, false)
+  assert.equal(locked.kinds().filter((kind) => kind === EVENT.dailyLocked).length, 1)
+})
+
+test('trackingOnly never locks, rests or warns, and pause/rest are rejected', () => {
+  const env = makeLimits({
+    settings: { assistant: { trackingOnly: true }, limits: { dailyMinutes: 1, continuousMinutes: 1 } },
+  })
+  env.usage.activeTodayMs = 10 * 60_000
+  env.usage.continuousMs = 10 * 60_000
+  for (const offset of [0, 1000, 2000]) {
+    const view = env.limits.evaluate(BASE + offset)
+    assert.equal(view.trackingOnly, true)
+    assert.equal(view.dailyLocked, false)
+    assert.equal(view.resting, false)
+    assert.equal(view.restDue, false)
+    assert.equal(view.paused, false)
+  }
+  assert.equal(env.kinds().includes(EVENT.dailyLocked), false)
+  assert.equal(env.kinds().includes(EVENT.restStarted), false)
+  assert.equal(env.kinds().includes(EVENT.limitWarning), false)
+  assert.deepEqual(env.limits.pause(BASE), { ok: false, code: 'tracking-only' })
+  assert.deepEqual(env.limits.startRest(BASE), { ok: false, code: 'tracking-only' })
+  // High idle never auto-pauses in tracking-only.
+  env.limits.evaluate(BASE + 3000, { idleMs: 120_000, sampleAt: BASE + 3000 })
+  env.limits.evaluate(BASE + 4000, { idleMs: 120_000, sampleAt: BASE + 4000 })
+  assert.equal(env.limits.getView(BASE + 4000).paused, false)
+})
+
+test('leaving trackingOnly re-enables enforcement', () => {
+  const env = makeLimits({ settings: { assistant: { trackingOnly: true }, limits: { dailyMinutes: 1 } } })
+  env.usage.activeTodayMs = 5 * 60_000
+  assert.equal(env.limits.evaluate(BASE).dailyLocked, false)
+  env.setSettings({ assistant: { trackingOnly: false }, limits: { dailyMinutes: 1 } })
+  const view = env.limits.evaluate(BASE + 1000)
+  assert.equal(view.trackingOnly, false)
+  assert.equal(view.dailyLocked, true)
+  assert.ok(env.kinds().includes(EVENT.dailyLocked))
 })

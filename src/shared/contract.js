@@ -57,6 +57,8 @@ export const DEFAULT_SETTINGS = {
     soloSession: true,
     hideOtherSessions: true,
     showRings: true,
+    /** Record/display usage only: no limits, pause, rest, prompts or restrictions. */
+    trackingOnly: false,
   },
   alerts: {
     sound: true,

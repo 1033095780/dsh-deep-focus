@@ -57,6 +57,10 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
     writeChain = writeChain.then(() => storage.writeJson(LIMITS_FILE, state)).catch(() => {})
   }
 
+  function trackingOnlyActive() {
+    return settings.get().assistant.trackingOnly === true
+  }
+
   function minutes(value, fallback) {
     const n = typeof value === 'number' ? value : Number(value)
     return Number.isFinite(n) ? Math.max(0, Math.round(n)) : fallback
@@ -165,6 +169,7 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
    * resume must never pause again, and one the 1s tick re-reads counts once.
    */
   function maybeAutoPause(idleMs, at, sampleAt) {
+    if (trackingOnlyActive()) return
     if (!foregroundDsh) return
     if (state.paused || state.resting) return
     const s = settings.get()
@@ -207,7 +212,8 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
     const continuousLimitMs = minutes(s.limits.continuousMinutes, 30) * 60_000
     const resting = state.resting === true && state.restUntil !== null
     const restNeedsActivity = resting && at >= state.restUntil
-    return {
+    const trackingOnly = trackingOnlyActive()
+    const view = {
       assistantEnabled: enabled,
       dailyLimitMs,
       dailyUsedMs: Math.round(usage.activeTodayMs),
@@ -228,6 +234,24 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
       pausedAt: state.paused === true ? state.pausedAt : null,
       pausedReason: state.paused === true ? (state.pausedReason ?? 'manual') : null,
       pausedNeedsActivity: state.paused === true,
+      trackingOnly,
+    }
+    if (!trackingOnly) return view
+    // Tracking-only: forced fakes so clients never render a pause/rest/lock while the
+    // mode is on; usage numbers keep flowing for display.
+    return {
+      ...view,
+      dailyLocked: false,
+      extendedUntil: null,
+      resting: false,
+      restUntil: null,
+      restRemainingMs: 0,
+      restNeedsActivity: false,
+      restDue: false,
+      paused: false,
+      pausedAt: null,
+      pausedReason: null,
+      pausedNeedsActivity: false,
     }
   }
 
@@ -238,6 +262,7 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
    * `at - idleMs`, so it must be measurably after `pausedAt`.
    */
   function applySample(sample, at = now()) {
+    if (trackingOnlyActive()) return getView(at)
     const active = sampleIsActive(sample)
     if (active) lastActivityAt = at
     if (active && foregroundDsh) lastForegroundActivityAt = at
@@ -276,6 +301,27 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
     const usage = tracker.snapshot(at)
     let changed = false
     let restEnded = false
+
+    if (trackingOnlyActive()) {
+      // Entering tracking-only clears any live pause/rest/lock silently (no events).
+      if (state.paused || state.resting || state.dailyLocked || state.extendedUntil !== null) {
+        state = {
+          ...state,
+          paused: false,
+          pausedAt: null,
+          pausedReason: null,
+          resting: false,
+          restUntil: null,
+          dailyLocked: false,
+          extendedUntil: null,
+        }
+        idleStrike = 0
+        lastIdleSampleAt = null
+        restDueEmitted = false
+        persist()
+      }
+      return getView(at)
+    }
 
     if (state.resting) {
       if (state.restUntil === null) {
@@ -387,6 +433,7 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
 
     /** Manual pause: counting stops immediately and resumes only on real activity. */
     pause(at = now()) {
+      if (trackingOnlyActive()) return { ok: false, code: 'tracking-only' }
       if (settings.get().assistant.enabled !== true) return { ok: false, code: 'assistant-off' }
       if (state.resting) return { ok: false, code: 'already-resting' }
       if (state.paused) return { ok: false, code: 'already-paused' }
@@ -433,6 +480,9 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
       if (document.dayKey !== dayKey) {
         state = { ...state, dailyLocked: false, extendedUntil: null, extendCountToday: 0 }
       }
+      if (trackingOnlyActive()) {
+        state = { ...state, paused: false, pausedAt: null, pausedReason: null, resting: false, restUntil: null, dailyLocked: false, extendedUntil: null }
+      }
       lastActivityAt = null
       lastForegroundActivityAt = null
       lastResumeAt = null
@@ -445,6 +495,7 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
 
     /** Manual "start rest now": 409 already-resting / assistant-off. */
     startRest(at = now()) {
+      if (trackingOnlyActive()) return { ok: false, code: 'tracking-only' }
       const enabled = settings.get().assistant.enabled === true
       if (!enabled) return { ok: false, code: 'assistant-off' }
       if (state.resting) return { ok: false, code: 'already-resting' }

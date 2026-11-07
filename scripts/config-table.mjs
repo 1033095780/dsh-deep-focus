@@ -99,6 +99,14 @@ const FIELDS = [
     },
   },
   {
+    key: 'assistant.trackingOnly',
+    unit: '',
+    note: {
+      en: 'Record and display usage only; disables the daily lock, forced rest, pause, overlays, background attention, chime and one-conversation restriction.',
+      zh: '只记录和显示用时；关闭每日锁、强制休息、暂停、遮罩、后台提醒、提示音与单会话限制。',
+    },
+  },
+  {
     key: 'alerts.sound',
     unit: '',
     note: {

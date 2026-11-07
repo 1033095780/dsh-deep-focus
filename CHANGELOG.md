@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.4.34] - 2026-11-07
+
+### Added
+
+- **Tracking-only mode** (`assistant.trackingOnly`): record and display usage only —
+  the rings, dashboard, history and per-app breakdown keep working — while disabling the
+  daily lock, continuous forced rest, auto/manual pause, rest screens, background
+  focus/notification attempts, the completion chime and the one-conversation restriction.
+  Nothing is counted differently; turn it off to restore the normal rules.
+
 ## [0.4.33] - 2026-11-07
 
 ### Changed
@@ -77,18 +87,13 @@ Nothing yet.
 - The floating rings render again (a literal `\n` in a line comment is rejected by verify).
 
 ## [0.4.21] - 2026-11-06
-## [0.4.21] - 2026-11-06
 
 ### Changed
 
-- **A manual pause is immediate**: clicking the rings now shows the blocking pause card
-  at once. The ~0.6 s settle guard remains only for the automatic idle pause, where it
-  prevents the screen from flashing.
-- **Pausing resumes as soon as you use the computer.** Inside DSH the client posts
-  `/resume` on the first keyboard/mouse input (after a short guard), so resumption is
-  near-instant instead of waiting for the ~5 s sampler. Activity in another application
-  is still picked up by the system-wide sampler, within up to ~5 s. The card blocks the
-  DSH UI while shown and disappears immediately on resume.
+- **A manual pause is immediate** (the ~0.6 s settle guard stays only for the automatic
+  idle pause) and resumes as soon as you use the computer: the client posts `/resume` on
+  the first in-DSH input, while activity in another app is picked up by the system-wide
+  sampler within up to ~5 s.
 
 ## [0.4.20] - 2026-11-06
 
@@ -97,12 +102,9 @@ distribution is GitHub Releases + source only.
 
 ### Fixed
 
-- **Any pause now resumes when the computer is used again, even in another
-  application.** The sampler's idle signal is system-wide, so switching to another app
-  and typing/moving the mouse resumes counting for both the automatic idle pause and a
-  manual click-pause instead of leaving the timer paused (keeps today's accounting
-  accurate). The pause card still blocks host-UI interaction while shown and
-  disappears immediately on resume.
+- **Any pause resumes when the computer is used again, even in another application.** The
+  sampler's idle signal is system-wide, so activity elsewhere resumes counting instead of
+  leaving the timer paused (keeps today's accounting accurate).
 
 ### Changed
 

@@ -11,6 +11,7 @@ test('normalizeSettings fills every v4 default', () => {
   assert.deepEqual(settings.alerts, DEFAULT_SETTINGS.alerts)
   assert.deepEqual(settings.usage, DEFAULT_SETTINGS.usage)
   assert.equal(settings.assistant.showRings, true)
+  assert.equal(settings.assistant.trackingOnly, false)
   assert.equal(settings.alerts.repeatUntilActive, true)
   assert.equal(settings.alerts.repeatIntervalMs, 1000)
   assert.equal(settings.alerts.awayIdleSeconds, 30)
@@ -115,7 +116,7 @@ test('a v4 settings file keeps and clamps its values', async () => {
     readJson: async () => ({
       version: 4,
       limits: { dailyMinutes: 60, continuousMinutes: 45 },
-      assistant: { enabled: false, showRings: false },
+      assistant: { enabled: false, showRings: false, trackingOnly: true },
       alerts: { volume: -1, repeatIntervalMs: 7_500, awayIdleSeconds: 120 },
     }),
     writeJson: async () => {},
@@ -126,6 +127,7 @@ test('a v4 settings file keeps and clamps its values', async () => {
   assert.equal(store.get().limits.continuousMinutes, 45)
   assert.equal(store.get().assistant.enabled, false)
   assert.equal(store.get().assistant.showRings, false)
+  assert.equal(store.get().assistant.trackingOnly, true)
   assert.equal(store.get().alerts.volume, 0)
   assert.equal(store.get().alerts.repeatIntervalMs, 7_500)
   assert.equal(store.get().alerts.awayIdleSeconds, 120)

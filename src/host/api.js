@@ -102,6 +102,7 @@ const CONFLICT_STATUS = {
   'not-paused': 409,
   'not-locked': 409,
   'extend-limit-reached': 409,
+  'tracking-only': 409,
 }
 
 function errorMessage(code) {
@@ -118,6 +119,7 @@ function errorMessage(code) {
     'not-paused': 'Counting is not paused.',
     'not-locked': 'The daily usage cap is not reached.',
     'extend-limit-reached': "Today's extend limit is used up.",
+    'tracking-only': 'Tracking-only mode is on: pause and rest are unavailable.',
     'not-found': 'Unknown deep-focus API path.',
   }
   return messages[code] ?? code

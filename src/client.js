@@ -140,6 +140,9 @@ window.__ModuleLoader__.load({
         'field.extendMinutes.hint': '分钟',
         'field.sound': '提示音',
         'field.autoPauseSeconds': '空闲自动休息',
+        'field.trackingOnly': '仅记录模式（只统计和显示用时，不限制、不暂停、不提示）',
+        'field.trackingOnly.hint': '开启后计时与显示照常，所有限制与提示都不生效',
+        'settings.trackingOnly.hint': '此模式下上述限制与提示不生效。',
         'field.autoPauseSeconds.hint': '秒，0 = 关闭',
         'field.trackApps': '按应用统计使用时长',
         'field.trackApps.hint': '记录前台应用的名称与时长',
@@ -267,6 +270,9 @@ window.__ModuleLoader__.load({
         'field.extendMinutes.hint': 'minutes',
         'field.sound': 'Sound',
         'field.autoPauseSeconds': 'Auto-rest after idle',
+        'field.trackingOnly': 'Tracking only (record & show usage; no limits, pause or prompts)',
+        'field.trackingOnly.hint': 'Timing and display keep working; all limits and prompts are disabled',
+        'settings.trackingOnly.hint': 'These limit fields have no effect while tracking-only mode is on.',
         'field.autoPauseSeconds.hint': 'seconds, 0 = off',
         'field.trackApps': 'Track per-app usage',
         'field.trackApps.hint': 'records the foreground app name and duration',
@@ -471,6 +477,15 @@ window.__ModuleLoader__.load({
       if (state.limit.assistantEnabled === false) return false
       const assistant = state.settings.assistant || {}
       return assistant.enabled !== false
+    }
+
+    /** Tracking-only mode: display usage only - no limits, pause, prompts or sound. */
+    function trackingOnlyMode(state) {
+      try {
+        return Boolean(state && state.settings && state.settings.assistant && state.settings.assistant.trackingOnly === true)
+      } catch (error) {
+        return false
+      }
     }
 
     /* App usage normalizers keep the UI resilient if the Host evolves. */
@@ -1392,6 +1407,7 @@ window.__ModuleLoader__.load({
         }
 
         function play(alerts) {
+          if (trackingOnlyMode(store.get().state)) return
           if (plays >= REPEAT_LIMIT) return
           plays += 1
           if (!alerts || alerts.sound === false) return
@@ -1510,6 +1526,7 @@ window.__ModuleLoader__.load({
          * that reported running. A single transient empty poll never rings.
          */
         function observeHostState(state, sampledAt) {
+          if (trackingOnlyMode(state)) return
           const at = numberOr(sampledAt, 0)
           if (at <= 0) return
           const soloActive = Boolean(state && state.solo && state.solo.active === true)
@@ -1546,6 +1563,7 @@ window.__ModuleLoader__.load({
         /** Ring only when ALL running root conversations just finished, and never while watching. */
         function triggerAllFinished() {
           const state = store.get().state
+          if (trackingOnlyMode(state)) return
           const alerts = (state && state.settings && state.settings.alerts) || null
           if (!awayTracker.isAway(alerts, state)) return
           if (alerts && alerts.repeatUntilActive === false) {
@@ -1669,6 +1687,7 @@ window.__ModuleLoader__.load({
 
         function observeState(state) {
           if (!state) return
+          if (trackingOnlyMode(state)) return
           const limit = state.limit || {}
           const settings = state.settings || {}
           const current = {
@@ -1756,6 +1775,10 @@ window.__ModuleLoader__.load({
           }
           const state = current.state
           if (!state) return null
+          if (trackingOnlyMode(state)) {
+            clearOwnerHysteresis()
+            return null
+          }
           if (!assistantActive(state)) {
             clearOwnerHysteresis()
             return null
@@ -2916,6 +2939,7 @@ window.__ModuleLoader__.load({
         const assistantCfg = settings.assistant || {}
         const alertsCfg = settings.alerts || {}
         const assistantOn = limit.assistantEnabled !== false && assistantCfg.enabled !== false
+        const trackingOnly = trackingOnlyMode(state)
 
         // Monotonic smooth clock: the Host samples in ~5s chunks, so the raw value
         // can arrive lower than the locally interpolated one. We keep a local
@@ -3100,6 +3124,7 @@ window.__ModuleLoader__.load({
 
         async function togglePause(event) {
           if (event && typeof event.preventDefault === 'function') event.preventDefault()
+          if (trackingOnly) return
           if (busyRef.current) return
           busyRef.current = true
           setBusy(true)
@@ -3220,6 +3245,8 @@ window.__ModuleLoader__.load({
                 'data-dsh-deep-focus-root': 'rings',
                 'data-busy': busy ? 'true' : undefined,
                 'data-paused': pausedNow ? 'true' : undefined,
+                'data-tracking-only': trackingOnly ? 'true' : undefined,
+                'aria-disabled': trackingOnly ? 'true' : undefined,
                 disabled: busy,
                 'aria-label': pausedNow ? t('rings.resumeAria') : t('rings.pauseAria'),
                 'aria-pressed': pausedNow ? 'true' : undefined,
@@ -3429,7 +3456,11 @@ window.__ModuleLoader__.load({
         const seenRawRef = React.useRef(false)
         const safetyTimerRef = React.useRef(0)
 
-        const paused = !pauseIntent.isSuppressed() && ((pausedRaw && (pausedReason === 'idle' ? pausedVisible : true)) || (!pausedRaw && manual))
+        const trackingOnly = trackingOnlyMode(state)
+        const paused =
+          !trackingOnly &&
+          !pauseIntent.isSuppressed() &&
+          ((pausedRaw && (pausedReason === 'idle' ? pausedVisible : true)) || (!pausedRaw && manual))
 
         // Optimistic manual pauses show the card immediately; only the automatic
         // idle pause keeps the ~600ms settle guard against flashing.
@@ -3701,7 +3732,7 @@ window.__ModuleLoader__.load({
         const state = snapshot.state
         const limit = state && state.limit
         const dayKey = state && state.usage ? state.usage.dayKey : null
-        const locked = Boolean(store.isVisible() && limit && limit.dailyLocked === true)
+        const locked = Boolean(store.isVisible() && !trackingOnlyMode(state) && limit && limit.dailyLocked === true)
         const acked = store.isAcked(dayKey)
         const busyPair = React.useState(false)
         const busy = busyPair[0]
@@ -3817,7 +3848,7 @@ window.__ModuleLoader__.load({
         const snapshot = useStore(true)
         const state = snapshot.state
         const limit = state && state.limit
-        const resting = Boolean(store.isVisible() && limit && limit.resting === true)
+        const resting = Boolean(store.isVisible() && !trackingOnlyMode(state) && limit && limit.resting === true)
         const cardRef = React.useRef(null)
         const busyPair = React.useState(false)
         const busy = busyPair[0]
@@ -4259,6 +4290,21 @@ window.__ModuleLoader__.load({
               ),
               h('div', { className: 'df-section-title' }, t('hub.section.settings')),
               h(
+                FieldRow,
+                { label: t('field.trackingOnly'), hint: t('field.trackingOnly.hint') },
+                h(Switch, {
+                  checked: draftAssistant.trackingOnly === true,
+                  label: t('field.trackingOnly'),
+                  disabled: disabled,
+                  onChange: function (value) {
+                    patch('assistant.trackingOnly', value)
+                  },
+                }),
+              ),
+              draftAssistant.trackingOnly === true
+                ? h('p', { className: 'df-field-hint', 'data-muted': 'true', role: 'status' }, t('settings.trackingOnly.hint'))
+                : null,
+              h(
                 Section,
                 { title: t('group.limits') },
                 h(
@@ -4359,6 +4405,7 @@ window.__ModuleLoader__.load({
                       style: secondaryButtonStyle({ height: '30px', padding: '0 10px', fontSize: '12px' }),
                       disabled: disabled,
                       onClick: function () {
+                        if (trackingOnlyMode(state)) return
                         audio.unlock()
                         audio.chime(numberOr(draftAlerts.volume, 0.6))
                       },
