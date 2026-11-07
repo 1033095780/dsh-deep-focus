@@ -46,8 +46,8 @@ const REQUIRED_FILES = [
 ]
 const DELETED_FILES = ['PLAN.md', 'PLAN-v0.3.md', 'Agents.md']
 const DOC_SIZE_BUDGET = {
-  'README.md': [4_000, 16_000],
-  'README.zh.md': [4_000, 16_000],
+  'README.md': [4_000, 17_000],
+  'README.zh.md': [4_000, 17_000],
   'docs/design.md': [4_000, 16_000],
   'docs/privacy.md': [2_000, 9_000],
   'docs/publishing.md': [3_000, 10_000],
@@ -380,6 +380,15 @@ check('READMEs describe the current product', () => {
     [/continuousMinutes\s*\/\s*restMinutes/i, 'the decay rate formula'],
     [/continues? from the remaining|never zero(?:e)?s|resumes? from the remaining/i, 'resume continues from the remaining value'],
     [/(?:day rollover|disabling the assistant|assistant[- ]off)[^.]{0,100}reset/i, 'the decay reset conditions'],
+    [/background[^.]{0,120}(?:limit|rest|pause|daily)/i, 'the background limit-screen attention'],
+    [/window\.focus\(\)[^.]{0,80}(?:couple|retr)/i, 'the window.focus retries'],
+    [/(?:one )?clickable system notification|system notification[^.]{0,40}click/i, 'the clickable system notification'],
+    [/cannot force the OS[^.]{0,80}(?:raise|topmost|foreground)/i, 'the honest best-effort limitation'],
+    [/Windows[^.]{0,100}(?:another application|another app|front)/i, 'the Windows foreground caveat'],
+    [/notification[^.]{0,80}reliable fallback/i, 'the reliable notification fallback'],
+    [/best[- ]effort/i, 'the best-effort switching disclaimer'],
+    [/prompt(?:s|ing)? (?:you|the user) to return|prompts? you back/i, 'the notification prompts the user to return'],
+    [/no native code[^.]{0,120}(?:notification permission|permission)/i, 'the no-new-permissions statement'],
     [/sustained idle|two consecutive/i, 'the sustained-idle auto-pause rule'],
     [/held ~1\.5 s|~1\.5 s/i, 'the sidebar gray hysteresis'],
     [/auto(?:matic)?[- ]?(?:rest|pause)|pauses? only after sustained/i, 'the automatic idle rest'],
@@ -444,6 +453,15 @@ check('READMEs describe the current product', () => {
     [/continuousMinutes\s*\/\s*restMinutes/, 'the decay rate formula'],
     [/从剩余值继续|不会清零/, 'resume continues from the remaining value'],
     [/(?:跨天|关闭助手)[^。]{0,80}(?:清零|重置)/, 'the decay reset conditions'],
+    [/后台[^。]{0,80}(?:限制|休息|暂停|每日)/, 'the background limit-screen attention'],
+    [/重试[^。]{0,30}window\.focus\(\)|window\.focus\(\)[^。]{0,30}(?:重试|几次)/, 'the window.focus retries'],
+    [/可点击的系统通知|系统通知[^。]{0,20}点击/, 'the clickable system notification'],
+    [/无法强制[^。]{0,50}(?:置顶|前台)/, 'the honest best-effort limitation'],
+    [/Windows[^。]{0,50}(?:别的|其它|其他)[^。]{0,20}前面/, 'the Windows foreground caveat'],
+    [/通知[^。]{0,20}(?:可靠|兜底)/, 'the reliable notification fallback'],
+    [/best-effort|尽力而为/, 'the best-effort switching disclaimer'],
+    [/提示你回到 DeepSeek|提示[^。]{0,10}回到/, 'the notification prompts the user to return'],
+    [/只用浏览器通知权限|仅浏览器通知权限/, 'the no-new-permissions statement'],
     [/持续空闲|连续两个新鲜采样/, 'the sustained-idle auto-pause rule'],
     [/(?:约 )?1\.5 秒/, 'the sidebar gray hysteresis'],
     [/自动休息|自动暂停/, 'the automatic idle rest'],
@@ -517,8 +535,8 @@ check('LICENSE and CHANGELOG', () => {
   if (!changelog.includes('## [Unreleased]')) fail('CHANGELOG.md has no [Unreleased] section')
   const entry = new RegExp(`^## \\[${pkg.version.replace(/\./g, '\\.')}\\] - \\d{4}-\\d{2}-\\d{2}$`, 'm')
   if (!entry.test(changelog)) fail(`CHANGELOG.md needs a dated "[${pkg.version}] - YYYY-MM-DD" entry`)
-  if (pkg.version === '0.4.30' && !changelog.includes('## [0.4.30] - 2026-11-07')) {
-    fail('CHANGELOG.md must date the 0.4.30 entry 2026-11-07')
+  if (pkg.version === '0.4.31' && !changelog.includes('## [0.4.31] - 2026-11-07')) {
+    fail('CHANGELOG.md must date the 0.4.31 entry 2026-11-07')
   }
   for (const heading of ['### Added', '### Changed', '### Fixed']) {
     if (!changelog.includes(heading)) fail(`CHANGELOG.md entry is missing "${heading}"`)

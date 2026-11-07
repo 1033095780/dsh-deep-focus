@@ -149,7 +149,10 @@ window.__ModuleLoader__.load({
         'settings.appsSampling.off': '应用统计当前不可用（可能因为长时间空闲或未开启按应用统计）。',
         'daily.title': '今日使用已用完',
         'daily.reason': '达到每日使用上限了。',
-        'daily.notify': '今日使用已超时 · 点击回到 DeepSeek',
+        'foreground.restTitle': '连续使用超时 · 需要休息',
+        'foreground.dailyTitle': '今日使用已超时',
+        'foreground.pauseTitle': '计时已暂停',
+        'foreground.body': '点击回到 DeepSeek',
         'daily.apps': '应用明细',
         'daily.extend': '再使用 {n} 分钟',
         'daily.extendRemaining': '今日还可续期 {n} 次',
@@ -273,7 +276,10 @@ window.__ModuleLoader__.load({
         'settings.appsSampling.off': 'App tracking is currently unavailable (long idle or disabled).',
         'daily.title': 'Daily usage is used up',
         'daily.reason': 'The daily usage limit has been reached.',
-        'daily.notify': 'Daily limit reached · click to return to DeepSeek',
+        'foreground.restTitle': 'Continuous use limit reached · rest needed',
+        'foreground.dailyTitle': 'Daily usage time is up',
+        'foreground.pauseTitle': 'Tracking paused',
+        'foreground.body': 'Click to return to DeepSeek',
         'daily.apps': 'App breakdown',
         'daily.extend': 'Use {n} more minutes',
         'daily.extendRemaining': '{n} extension(s) left today',
@@ -1562,6 +1568,147 @@ window.__ModuleLoader__.load({
       // workspace/overflow rows fade out (~220ms) and then collapse to display:none;
       // restore runs the reverse. No inline styles and no banner.
 
+      /* ── Foreground attention for blocking limit screens ── */
+      // A pure plugin cannot force the OS foreground window: best effort only.
+      // On a transition into a blocking screen while DSH is not in front we try
+      // window.focus() (plus two retries) and show one system notification.
+      const foregroundAlert = (function createForegroundAlert() {
+        let prev = null
+        let permissionAsked = false
+        let lastTriggerAt = 0
+        let focusTimers = []
+
+        function pageUnfocused() {
+          try {
+            if (typeof document === 'undefined') return false
+            if (document.hidden === true) return true
+            if (typeof document.hasFocus === 'function' && document.hasFocus() === false) return true
+          } catch (error) {
+            /* ignored */
+          }
+          return false
+        }
+
+        function clearFocusTimers() {
+          for (let index = 0; index < focusTimers.length; index += 1) {
+            try {
+              clearTimeout(focusTimers[index])
+            } catch (error) {
+              /* ignored */
+            }
+          }
+          focusTimers = []
+        }
+
+        function focusWithRetries() {
+          clearFocusTimers()
+          try {
+            window.focus()
+          } catch (error) {
+            /* ignored */
+          }
+          for (let attempt = 1; attempt <= 2; attempt += 1) {
+            try {
+              focusTimers.push(
+                setTimeout(function () {
+                  try {
+                    window.focus()
+                  } catch (error) {
+                    /* ignored */
+                  }
+                }, 1200 * attempt),
+              )
+            } catch (error) {
+              /* ignored */
+            }
+          }
+        }
+
+        function showNotification(kind) {
+          try {
+            if (typeof Notification === 'undefined') return
+            const title =
+              kind === 'rest'
+                ? t('foreground.restTitle')
+                : kind === 'daily'
+                  ? t('foreground.dailyTitle')
+                  : t('foreground.pauseTitle')
+            const body = t('foreground.body')
+            const show = function () {
+              try {
+                const notification = new Notification(title, { body: body })
+                notification.onclick = function () {
+                  try {
+                    window.focus()
+                  } catch (error) {
+                    /* ignored */
+                  }
+                  try {
+                    notification.close()
+                  } catch (error) {
+                    /* ignored */
+                  }
+                }
+              } catch (error) {
+                /* notifications may be unavailable */
+              }
+            }
+            if (Notification.permission === 'granted') show()
+            else if (Notification.permission === 'default' && !permissionAsked) {
+              permissionAsked = true
+              Promise.resolve(Notification.requestPermission())
+                .then(function (result) {
+                  if (result === 'granted') show()
+                })
+                .catch(function () {})
+            }
+          } catch (error) {
+            /* silent fail */
+          }
+        }
+
+        function observeState(state) {
+          if (!state) return
+          const limit = state.limit || {}
+          const settings = state.settings || {}
+          const current = {
+            resting: limit.resting === true,
+            dailyLocked: limit.dailyLocked === true,
+            paused: limit.paused === true,
+          }
+          if (prev === null) {
+            prev = current
+            return
+          }
+          const transitions = []
+          if (current.resting && !prev.resting) transitions.push('rest')
+          if (current.dailyLocked && !prev.dailyLocked) transitions.push('daily')
+          if (current.paused && !prev.paused) transitions.push('pause')
+          prev = current
+          if (transitions.length === 0) return
+          if (!pageUnfocused()) return
+
+          focusWithRetries()
+
+          const now = Date.now()
+          if (now - lastTriggerAt < 800) return
+          lastTriggerAt = now
+
+          const assistantCfg = settings.assistant || {}
+          if (limit.assistantEnabled === false || assistantCfg.enabled === false) return
+          const alerts = settings.alerts || {}
+          if (isQuietHours(alerts)) return
+          showNotification(transitions[0])
+        }
+
+        function stop() {
+          clearFocusTimers()
+          prev = null
+        }
+
+        return { observeState: observeState, stop: stop }
+      })()
+
       /* ── Solo session mode: gray rows + gentle click interception ── */
       // Client-primary running-set detection. A single injected style node + one
       // <html> attribute reduce opacity of non-owner session/workspace/overflow
@@ -2082,6 +2229,7 @@ window.__ModuleLoader__.load({
           if (sampledAt <= 0 || sampledAt === lastObservedStateAt) return
           lastObservedStateAt = sampledAt
           completionChime.observeHostState(snap.state, sampledAt)
+          foregroundAlert.observeState(snap.state)
         })
         const unlockAudio = function () {
           audio.unlock()
@@ -2100,6 +2248,7 @@ window.__ModuleLoader__.load({
             /* ignored */
           }
           completionChime.stop()
+          foregroundAlert.stop()
           stopAway()
           if (typeof stopPointerTracker === 'function') stopPointerTracker()
           unsubscribe()
@@ -3546,9 +3695,6 @@ window.__ModuleLoader__.load({
         )
       }
 
-      /** Best-effort foreground helper: a pure plugin cannot force the OS window. */
-      let dailyNotificationPermissionAsked = false
-
       function DailyLockOverlay() {
         useLocaleTick()
         const snapshot = useStore(false)
@@ -3564,70 +3710,6 @@ window.__ModuleLoader__.load({
         const error = errorPair[0]
         const setError = errorPair[1]
         const cardRef = React.useRef(null)
-        const notifiedRef = React.useRef(false)
-
-        React.useEffect(
-          function () {
-            if (!locked || acked) {
-              notifiedRef.current = false
-              return
-            }
-            if (notifiedRef.current) return
-            notifiedRef.current = true
-            // Best effort only: a pure plugin cannot force the OS foreground
-            // window. We try window.focus(), one system notification and one ring.
-            try {
-              window.focus()
-            } catch (error) {
-              /* ignored */
-            }
-            const alerts = (state.settings && state.settings.alerts) || {}
-            if (alerts.sound !== false) {
-              try {
-                audio.chime(numberOr(alerts.volume, 0.6))
-              } catch (error) {
-                /* ignored */
-              }
-            }
-            try {
-              if (typeof Notification !== 'undefined') {
-                const show = function () {
-                  try {
-                    const notification = new Notification(t('daily.notify'))
-                    notification.onclick = function () {
-                      try {
-                        window.focus()
-                      } catch (error) {
-                        /* ignored */
-                      }
-                      try {
-                        notification.close()
-                      } catch (error) {
-                        /* ignored */
-                      }
-                    }
-                  } catch (error) {
-                    /* notifications may be unavailable */
-                  }
-                }
-                if (Notification.permission === 'granted') {
-                  show()
-                } else if (Notification.permission === 'default' && !dailyNotificationPermissionAsked) {
-                  dailyNotificationPermissionAsked = true
-                  Promise.resolve(Notification.requestPermission())
-                    .then(function (result) {
-                      if (result === 'granted') show()
-                    })
-                    .catch(function () {})
-                }
-              }
-            } catch (error) {
-              /* ignored */
-            }
-          },
-          [locked, acked],
-        )
-
         React.useEffect(
           function () {
             if (!locked || acked) return undefined

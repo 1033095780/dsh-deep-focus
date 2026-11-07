@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.4.31] - 2026-11-07
+
+### Added
+
+- **Background limit-screen attention.** When a limit screen appears (continuous timeout
+  → rest/pause page, or the daily lock) while DSH is behind another app, the client retries
+  `window.focus()` a couple of times; **switching back is best effort**. When it does not
+  happen, it posts **one clickable system notification** prompting you to return to
+  DeepSeek (「连续使用超时 · 需要休息」 / 「今日使用已超时」); clicking it focuses DSH. Windows
+  may keep another app in front, so the notification is the reliable fallback. No native
+  code or extra permission beyond browser notifications.
+
 ## [0.4.30] - 2026-11-07
 
 ### Changed
@@ -33,47 +45,42 @@ Nothing yet.
 
 ### Fixed
 
-- **The daily-limit screen stayed up (or appeared) while paused.** The cap was not
-  evaluated during a pause. Pausing now releases the daily lock (UI shows the pause
-  screen) and no lock is entered while paused; resuming re-locks if still over.
+- **The daily-limit screen stayed up/appeared while paused**: the cap was not evaluated
+  during a pause. Pausing now releases the daily lock (UI shows the pause screen), no
+  lock is entered while paused, and resuming re-locks if still over.
 ## [0.4.27] - 2026-11-06
 
 ### Fixed
 
-- **Legacy mojibake rows are no longer rendered.** Pre-0.4.26 records can contain U+FFFD
-  replacement characters (unrecoverable GBK bytes); the resolver shows the readable ASCII
-  prefix or `未知应用` instead of garbage. New samples decode correctly.
+- **Legacy mojibake rows**: pre-0.4.26 records with U+FFFD bytes now show the readable
+  ASCII prefix or `未知应用` instead of garbage; new samples decode correctly.
 ## [0.4.26] - 2026-11-06
 
 ### Fixed
 
-- **Non-ASCII app names showed as mojibake.** PowerShell wrote the process name in the
-  console code page (GBK) while the Host read UTF-8; the sampler now sends base64 UTF-8
-  and the Host decodes/validates it (verified with a Chinese name).
+- **Non-ASCII app names were mojibake** (PowerShell wrote GBK, Host read UTF-8); the
+  sampler now sends base64 UTF-8 and the Host decodes/validates it.
 ## [0.4.25] - 2026-11-06
 
-Patch release.
-
 ### Fixed
 
-- **A pause unlocked itself without any new input.** The Host now requires the last input to be measurably newer than the pause (`idleMs < sincePause - 500`), and the client needs a trusted ≥4 px pointer move or a key/wheel/touch event ≥400 ms after the card appears.
+- **A pause unlocked itself without new input.** The Host now requires the last input to
+  be measurably newer than the pause, and the client needs a trusted pointer move or
+  key/wheel/touch ~400 ms after the card appears.
 ## [0.4.24] - 2026-11-06
 
-Patch release.
-
 ### Fixed
 
-- **The continuous clock still moved in 5-second steps.** It now advances by real elapsed wall time per 500 ms render (clamped to 2 s), anchors upward to the Host value, holds while away and snaps only when frozen. Verified by running the real bundle in headless Edge: one second per second.
+- **The continuous clock still moved in 5-second steps.** It now advances by real elapsed
+  wall time at 500 ms render (clamped 2 s), anchors upward to the Host value and holds
+  while away.
 ## [0.4.23] - 2026-11-06
 
-Patch release.
-
 ### Fixed
 
-- **The floating rings disappeared.** A patch wrote a "keep the display clock ticking"
-  comment with a literal `\n`, swallowing the following declaration and making the
-  widget throw. The lines are proper again and `scripts/verify.mjs` now fails on a
-  literal `\n` inside a `src/client.js` line comment.
+- **The floating rings disappeared.** A patch comment with a literal `\n` swallowed the
+  next declaration; the lines are proper again and verify now fails on `\n` inside a
+  `src/client.js` line comment.
 ## [0.4.22] - 2026-11-06
 
 Patch release.
@@ -146,18 +153,16 @@ distribution is GitHub Releases + source only.
 
 ### Fixed
 
-- Ring values no longer escape the rings: the centered overlay anchors to its own ring
-  column, numbers sit inside the 44 px rings, the unit sits under the number, and
-  captions share a baseline.
+- Ring values no longer escape: the overlay anchors to its own ring column, values sit
+  inside the 44 px rings, and captions share a baseline.
 
 ## [0.4.15] - 2026-11-05
 
 ### Removed
 
-- **npm publishing** — the Trusted Publishing/provenance workflow
-  (`.github/workflows/publish.yml`) is deleted; releasing a tag no longer triggers any
-  npm step. Distribution is GitHub Releases + source only: install with
-  `dsh plugin add <repository URL or local path>`.
+- **npm publishing** — the Trusted Publishing/provenance workflow is deleted; releasing a
+  tag no longer triggers any npm step. Distribution is GitHub Releases + source only:
+  install with `dsh plugin add <repository URL or local path>`.
 
 ## [0.4.14] - 2026-11-05
 

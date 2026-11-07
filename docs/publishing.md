@@ -91,9 +91,14 @@ dependency installation; disabling or uninstalling removes all UI immediately.
       the value (never zero); about 10 minutes of pause/rest clears the full 20 min;
       skipping the rest keeps the decayed remainder; day rollover / assistant-off
       reset it.
-- [ ] Daily overlay has only 「再使用 20 分钟」 and 「跳过」 (skip does not extend); with
-      DSH hidden, hitting the cap tries `window.focus()` + one system notification
-      (best effort).
+- [ ] Daily overlay has only 「再使用 20 分钟」 and 「跳过」 (skip does not extend).
+- [ ] Background limit screens: with DSH hidden/behind another app, trigger a continuous
+      timeout and then the daily cap — each should retry `window.focus()` a couple of times
+      and show **one clickable system notification**; clicking it returns to DSH. No
+      duplicate notifications while the same screen stays; no native permission beyond the
+      browser notification permission. (Honest limitation: switching back is best effort —
+      Windows may keep another window in front, and the notification prompts the user to
+      return.)
 - [ ] Chime: with one conversation running, finish it while away → it rings; with
       two running, finishing only one stays silent and the second rings; repeats
       until input, capped ~2 min.

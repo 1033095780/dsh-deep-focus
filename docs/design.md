@@ -159,9 +159,19 @@ newest running root — so exactly one conversation is pinned.
 One shared `TodayUsageCard` renders title/reason, today's total, per-app rows and the
 screen's buttons for **idle auto-pause, manual pause, the forced rest and the daily
 cap** — only the title and actions differ. The old separate gray-only pause layer is
-gone. When the daily cap hits while the window is hidden/unfocused, the client tries
-`window.focus()`, posts one system `Notification` (click → focus) and rings once per
-lock transition; this is best effort — a pure plugin cannot force the OS foreground.
+gone. When a **limit screen** appears while the window is hidden/unfocused — continuous
+timeout into the rest/pause page, the daily lock, or a pause card — the client attempts
+to bring DSH back: `window.focus()` immediately plus two retries (~1.2 s apart), and if
+it is still unfocused it posts **one system `Notification` per transition** with a
+reason-specific title (「连续使用超时 · 需要休息」 / 「今日使用已超时 · 点击回到
+DeepSeek」, “click to return”); `onclick` focuses DSH again and closes the notification.
+Permission is requested once when `default`; quiet hours / assistant-off suppress it and
+failures are silent. Deduped per transition (no repeats while the screen stays). This is
+best effort — **a pure plugin cannot force the OS to raise a window**; when the switch
+does not happen the notification **prompts the user to return to DSH** (clicking focuses
+it). Windows may keep another application in front, so the notification is the reliable
+fallback. No native code and no extra permission beyond the browser notification
+permission.
 
 One conversation at a time is style-only and pins to **one primary conversation**:
 the host records each root session's last turn start and exposes the newest one as
