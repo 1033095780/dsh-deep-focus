@@ -368,7 +368,6 @@ check('READMEs describe the current product', () => {
     [/(?:immediately|at once)[^.]{0,60}(?:pause card|paused card|shown)|click[^.]{0,60}(?:immediately|at once)/i, 'the immediate manual pause card'],
     [/0\.6 s[^.]{0,50}(?:automatic|only)/i, 'the 0.6 s guard only for the automatic pause'],
     [/(?:inside DSH|in DSH)[^.]{0,100}(?:posts?|resumes?)|posts? `?\/resume`?/i, 'the instant in-DSH resume'],
-    [/(?:other application|another app|outside DSH)[^.]{0,100}(?:5 s|five seconds)/i, 'external activity resumes within ~5 s'],
     [/any pause[^.]{0,80}resumes?|(?:manual|automatic)[^.]{0,80}resume[^.]{0,80}activity|activity[^.]{0,60}resume/i, 'pause resumes on keyboard/mouse activity'],
     [/system-wide|another application|other application/i, 'system-wide activity resumption'],
     [/two equal columns|equal columns|equal-width columns/i, 'the equal-column ring layout'],
@@ -381,6 +380,10 @@ check('READMEs describe the current product', () => {
     [/continues? from the remaining|never zero(?:e)?s|resumes? from the remaining/i, 'resume continues from the remaining value'],
     [/(?:day rollover|disabling the assistant|assistant[- ]off)[^.]{0,100}reset/i, 'the decay reset conditions'],
     [/background[^.]{0,120}(?:limit|rest|pause|daily)/i, 'the background limit-screen attention'],
+    [/only[^.]{0,80}(?:effective|take effect)[^.]{0,100}foreground/i, 'the foreground-only pause/rest rule'],
+    [/another application[^.]{0,140}(?:keeps? counting|continues? (?:counting|accumulating))|today's usage[^.]{0,100}keeps counting/i, 'away usage keeps counting'],
+    [/(?:continuous|value)[^.]{0,60}(?:held|frozen)[^.]{0,80}(?:no decay|no reset)|neither decays nor resets/i, 'the frozen continuous counter while away'],
+    [/(?:return|back in front)[^.]{0,120}(?:stops? counting|decay)/i, 'returning to DSH gives effect'],
     [/window\.focus\(\)[^.]{0,80}(?:couple|retr)/i, 'the window.focus retries'],
     [/(?:one )?clickable system notification|system notification[^.]{0,40}click/i, 'the clickable system notification'],
     [/cannot force the OS[^.]{0,80}(?:raise|topmost|foreground)/i, 'the honest best-effort limitation'],
@@ -440,8 +443,7 @@ check('READMEs describe the current product', () => {
     [/立即(?:显示|出现)|点击[^。]{0,30}立即/, 'the immediate manual pause card'],
     [/0\.6 秒[^。]{0,40}(?:自动|仅)/, 'the 0.6 s guard only for the automatic pause'],
     [/(?:DSH 内)[^。]{0,80}\/resume|第一次输入/, 'the instant in-DSH resume'],
-    [/其它软件|其他软件|DSH 外/, 'external activity detection'],
-    [/(?:约|最长约) ?5 秒/, 'external activity resumes within ~5 s'],
+    [/其它软件|其他软件|别的软件|DSH 外|其它应用/, 'external activity detection'],
     [/任何暂停|(?:手动|自动)[^。]{0,40}暂停[^。]{0,60}恢复/, 'pause resumes on keyboard/mouse activity'],
     [/整机|其它软件|其他软件/, 'system-wide activity resumption'],
     [/两等宽列|等宽.*列/, 'the equal-column ring layout'],
@@ -454,6 +456,10 @@ check('READMEs describe the current product', () => {
     [/从剩余值继续|不会清零/, 'resume continues from the remaining value'],
     [/(?:跨天|关闭助手)[^。]{0,80}(?:清零|重置)/, 'the decay reset conditions'],
     [/后台[^。]{0,80}(?:限制|休息|暂停|每日)/, 'the background limit-screen attention'],
+    [/只在 DSH (?:是|为)前台|只在 DSH 前台|仅[^。]{0,30}前台[^。]{0,20}生效/, 'the foreground-only pause/rest rule'],
+    [/继续计时|继续累计/, 'away usage keeps counting'],
+    [/不衰减也不重置|保持不变/, 'the frozen continuous counter while away'],
+    [/回到 DSH[^。]{0,80}(?:停止计时|衰减)/, 'returning to DSH gives effect'],
     [/重试[^。]{0,30}window\.focus\(\)|window\.focus\(\)[^。]{0,30}(?:重试|几次)/, 'the window.focus retries'],
     [/可点击的系统通知|系统通知[^。]{0,20}点击/, 'the clickable system notification'],
     [/无法强制[^。]{0,50}(?:置顶|前台)/, 'the honest best-effort limitation'],
@@ -535,8 +541,8 @@ check('LICENSE and CHANGELOG', () => {
   if (!changelog.includes('## [Unreleased]')) fail('CHANGELOG.md has no [Unreleased] section')
   const entry = new RegExp(`^## \\[${pkg.version.replace(/\./g, '\\.')}\\] - \\d{4}-\\d{2}-\\d{2}$`, 'm')
   if (!entry.test(changelog)) fail(`CHANGELOG.md needs a dated "[${pkg.version}] - YYYY-MM-DD" entry`)
-  if (pkg.version === '0.4.31' && !changelog.includes('## [0.4.31] - 2026-11-07')) {
-    fail('CHANGELOG.md must date the 0.4.31 entry 2026-11-07')
+  if (pkg.version === '0.4.32' && !changelog.includes('## [0.4.32] - 2026-11-07')) {
+    fail('CHANGELOG.md must date the 0.4.32 entry 2026-11-07')
   }
   for (const heading of ['### Added', '### Changed', '### Fixed']) {
     if (!changelog.includes(heading)) fail(`CHANGELOG.md entry is missing "${heading}"`)

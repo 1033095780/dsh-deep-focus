@@ -48,12 +48,14 @@ child printing `idleMs|pid|exeName`; macOS uses `ioreg` + `osascript`; Linux use
 sampling for the session. No window titles are read.
 
 Tracker: a sample counts as active only when idle < `usage.idleThresholdSeconds`;
-active time goes to the day total and the current app bucket. While paused or
-resting the Host calls `tracker.sample(..., { counted: false })`: those periods never
-accumulate, and the **continuous counter decays** by `gap * (continuousMinutes /
-restMinutes)` instead of resetting — so recovery time is consumed proportionally and a
-short pause never zeroes the run. One aggregate line per minute:
-`{ t, activeMs, apps: { key: ms } }`.
+active time goes to the day total and the current app bucket. **Pause/rest are only
+effective while the DSH window is the foreground application** (`apps.isDshForegroundName`
+on the sampler's foreground app): only then does the Host pass `counted: false` /
+`recovering: true` to `tracker.sample(...)`, so counting stops and the **continuous
+counter decays** by `gap * (continuousMinutes / restMinutes)`. While the user is in
+another application a paused/resting screen is inert: samples keep counting today's
+usage and the continuous counter is **frozen** (no decay, no reset) until DSH returns to
+the foreground. One aggregate line per minute: `{ t, activeMs, apps: { key: ms } }`.
 
 ## Limits, rest and pause
 
@@ -71,12 +73,14 @@ short pause never zeroes the run. One aggregate line per minute:
 | `assistant.soloSession` | true | one-conversation pinning (auto-jump + gray + non-clickable); exposed as the eighth UI switch together with `hideOtherSessions` |
 
 - **Continuous cap:** reaching it starts a rest (`resting`, `restUntil`,
-  `rest-started`). The continuous counter is **not reset**: during the pause/rest it
-  decays at `continuousMinutes / restMinutes` per minute, so the whole cap clears after
-  roughly `limits.restMinutes` of recovery (default 30 min used → 10 min rest → 0; with
-  20/10, 20 min → 10 min → 0). A skipped or short rest keeps the decayed remainder and
-  resuming continues from it. The rest ends only when its time elapsed **and** activity
-  was seen afterwards (`rest-finished`, `reason: "elapsed-and-active"`), or via
+  `rest-started`). Decay runs **only while the rest screen is effective, i.e. DSH is the
+  foreground app**: the continuous counter is not reset but decays at
+  `continuousMinutes / restMinutes` per minute, so the whole cap clears after roughly
+  `limits.restMinutes` of foreground recovery (default 30 min used → 10 min rest → 0; with
+  20/10, 20 min → 10 min → 0). While the user is in another application the value is held;
+  a skipped or short rest keeps the decayed remainder and resuming continues from it. The
+  rest ends only when its time elapsed **and** activity was seen afterwards
+  (`rest-finished`, `reason: "elapsed-and-active"`), or via
   `POST /rest/finish` (`reason: "skipped"`); a 30-minute cap prevents a stuck rest.
   Day rollover, assistant-off and invalid/sleep sampler gaps still reset the counter.
 - **Daily cap:** when active time ≥ cap and no extension grace window is active,
@@ -88,9 +92,13 @@ short pause never zeroes the run. One aggregate line per minute:
   at least two consecutive fresh samples at/after `autoPauseSeconds`, with any
   active sample resetting the streak and stale samples (older than the last
   resume) ignored — so a single high sample cannot flash the overlay
-  (`pausedReason: "idle"`, `paused` event). `POST /resume` resumes it. The **~0.6 s
-  settle guard applies only to the automatic idle pause**; a manual ring-click pause
-  renders the card immediately (optimistically, the Host confirms within ms). **Any
+  (`pausedReason: "idle"`, `paused` event). `isPauseEffective()`/`isRestEffective()` are
+  true only when the raw state is paused/resting **and** DSH is the foreground
+  application; only effective recovery stops counting/decays, while persisted pause state
+  waits until the user returns. An idle pause auto-resumes on activity only when DSH is
+  foreground (activity elsewhere must not silently clear it). `POST /resume` resumes it.
+  The **~0.6 s settle guard applies only to the automatic idle pause**; a manual ring-click
+  pause renders the card immediately. **Any
   pause resumes when the computer is used again**, with two paths: (a) *inside DSH*
   the client attaches capture-phase input listeners while paused and, on the first real
   event after a ~250 ms guard, posts `/resume` immediately and hides the overlay
@@ -150,7 +158,7 @@ newest running root — so exactly one conversation is pinned.
 | `sidebar.panellist` | `focus-assistant` | assistant entry below Plugins |
 | `main` (keyed) | `focus-assistant` | overview, 7-day trend, 8-field settings (incl. the one-conversation switch), enable/pause, right-aligned save row |
 | `shell.overlay` | `dsh-deep-focus-rings` | interactive two-ring **button**, also **draggable**: two equal columns (flex `1 1 0`), 40–44 px ring per column with the value absolutely centered (today minutes; continuous mm:ss/h:mm, tabular figures) and a centered 11 px caption below (今日已用 / 连续使用); the continuous clock is interpolated to tick once per second (frozen while paused/resting/locked). A pointer press moved beyond ~5 px becomes a drag (`position:absolute` left/top, clamped to the viewport with an 8 px margin, re-clamped on resize); a press below the threshold is a tap and toggles pause/resume. Drags suppress the click, use pointer capture/`touch-action:none` and a grab/grabbing cursor; the position persists in `localStorage` (`dsh-deep-focus.rings-position`, `{x,y}`), is restored+clamped on mount, and defaults to the top-right. Dragging is ignored while a blocking overlay is shown. Click → `POST /pause` with an in-flight lock, pressed/disabled state, `role="button"`, `tabIndex`, Enter/Space and aria-labels 「暂停计时」/「继续计时」 (“Pause timer”/“Resume timer”). |
-| `shell.overlay` | `dsh-deep-focus-pause-gray` | blocking pause: the shared today-usage card (`pointer-events: auto`) captures hover/click/focus. A **manual** pause renders it immediately; an **idle** auto-pause keeps the ~0.6 s settle guard to prevent flashing. `pausedReason` selects the copy (`idle` 「检测到你回来后会继续计时」, `manual` the resume hint). While paused, capture-phase input listeners resume on the first real event after ~250 ms by posting `/resume` and hiding the card optimistically (external-app activity is handled by the Host sampler instead, up to ~5 s); 「继续计时」/Enter/Space/Escape remain explicit paths. |
+| `shell.overlay` | `dsh-deep-focus-pause-gray` | blocking pause: the shared today-usage card (`pointer-events: auto`) captures hover/click/focus. A **manual** pause renders it immediately; an **idle** auto-pause keeps the ~0.6 s settle guard to prevent flashing. `pausedReason` selects the copy (`idle` 「检测到你回来后会继续计时」, `manual` the resume hint). The screen is only effective while DSH is foreground; while the user is in another app it waits and the Host keeps counting (continuous value frozen). While focused, capture-phase input listeners resume on the first real event after ~250 ms by posting `/resume` and hiding the card optimistically; 「继续计时」/Enter/Space/Escape remain explicit paths. |
 | `shell.overlay` | `dsh-deep-focus-rest` | forced-rest screen using the shared today-usage card + 「跳过休息」 |
 | `shell.overlay` | `dsh-deep-focus-daily-lock` | daily overlay on the same card: 「再使用 20 分钟」/「跳过」 |
 | `shell.overlay` | `dsh-deep-focus-focus-veil` | veil over a visible non-owner conversation |

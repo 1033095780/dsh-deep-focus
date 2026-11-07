@@ -45,6 +45,10 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
   // already consumed (the 1s tick re-reads the same sampler sample many times).
   let idleStrike = 0
   let lastIdleSampleAt = null
+  // Whether the DSH window is the foreground app; pause/rest only take effect then.
+  // Unknown at startup (no sample yet) is treated as "DSH is here" so the old
+  // behaviour is preserved when foreground tracking is unavailable.
+  let foregroundDsh = true
   let lastAssistantEnabled = settings.get().assistant.enabled === true
 
   function persist() {
@@ -163,6 +167,7 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
    * resume must never pause again, and one the 1s tick re-reads counts once.
    */
   function maybeAutoPause(idleMs, at, sampleAt) {
+    if (!foregroundDsh) return
     if (state.paused || state.resting) return
     const s = settings.get()
     if (s.assistant.enabled !== true) return
@@ -242,6 +247,7 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
     if (
       state.paused
       && state.pausedAt !== null
+      && foregroundDsh
       && sincePause > IDLE_RESUME_MIN_DELAY_MS
       && Number.isFinite(idleMs)
       && idleMs < sincePause - POST_PAUSE_INPUT_MARGIN_MS
@@ -249,7 +255,9 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
     ) {
       resumeInternal(at, 'activity')
     }
-    if (state.resting && state.restUntil !== null && at >= state.restUntil && active) {
+    // A rest only ends on the user's return while the DSH rest page is in front;
+    // activity in another app must not silently clear it.
+    if (state.resting && foregroundDsh && state.restUntil !== null && at >= state.restUntil && active) {
       endRest(false, 'elapsed-and-active')
     }
     maybeAutoPause(sample?.idleMs, at, at)
@@ -279,7 +287,7 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
         if (capped) {
           endRest(false, 'elapsed-and-active', { capped: true }, { resetContinuous: true })
           restEnded = true
-        } else if (cameBack) {
+        } else if (cameBack && foregroundDsh) {
           endRest(false, 'elapsed-and-active')
           restEnded = true
         }
@@ -358,6 +366,22 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
     isPaused() {
       return state.paused === true
     },
+    /** Pause state is effective (stops counting) only while DSH is foreground. */
+    isPauseEffective() {
+      return state.paused === true && foregroundDsh === true
+    },
+    /** Rest state is effective (stops counting/decays) only while DSH is foreground. */
+    isRestEffective() {
+      return state.resting === true && foregroundDsh === true
+    },
+    /** Recovery decay applies while either pause or rest is effective. */
+    isRecoveryEffective() {
+      return (state.paused === true || state.resting === true) && foregroundDsh === true
+    },
+    /** Remember where the user is; pause/rest survive (persist) until they come back. */
+    setForegroundDsh(isDsh) {
+      foregroundDsh = isDsh === true
+    },
 
     /** Manual pause: counting stops immediately and resumes only on real activity. */
     pause(at = now()) {
@@ -374,6 +398,7 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
     },
 
     async load() {
+      foregroundDsh = true
       const document = await storage?.readJson(LIMITS_FILE, null)
       const at = now()
       const dayKey = localDayKey(at)

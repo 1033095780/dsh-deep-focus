@@ -17,9 +17,10 @@ export function emptyTrackerState(dayKey) {
  * Fold one idle sample into the counters.
  * Elapsed time only counts while the previous sample said "active", so a sleep
  * or sampler gap never inflates usage; a gap also ends the continuous-work run.
- * A non-counting sample (pause / rest / idle) does not wipe the continuous run:
- * it DECAYS by `gap * continuousDecayRate` so a quick pause only removes a
- * proportional slice (clearing the cap takes roughly `limits.restMinutes`).
+ * A non-counting sample only touches the continuous run when it is a RECOVERY
+ * sample (the pause/rest page is actually in the foreground): then it decays by
+ * `gap * continuousDecayRate`. Any other inactive sample (user in another app,
+ * or plain idle) freezes the counter: no decay, no reset.
  */
 export function applySample(state, sample, config) {
   const dayKeyOf = config.dayKeyOf ?? localDayKey
@@ -46,7 +47,7 @@ export function applySample(state, sample, config) {
     deltaMs = gap
     next.activeMs += gap
     next.continuousMs += gap
-  } else {
+  } else if (sample.recovering === true) {
     const decayRate = Number.isFinite(config.continuousDecayRate) && config.continuousDecayRate > 0
       ? config.continuousDecayRate
       : 0
@@ -60,6 +61,7 @@ export function applySample(state, sample, config) {
       next.continuousMs = 0
     }
   }
+  // Inactive but not recovering: freeze the continuous counter (no decay/reset).
   next.lastTickAt = sample.now
   return { state: next, deltaMs, active, resetContinuous }
 }
@@ -155,7 +157,8 @@ export function createTracker({ storage = null, settings = null, now = Date.now 
       const cfg = config()
       const idleMs = sample?.idleMs
       const counted = options.counted !== false
-      const result = applySample(state, { now: at, idleMs, counted }, cfg)
+      const recovering = options.recovering === true
+      const result = applySample(state, { now: at, idleMs, counted, recovering }, cfg)
       state = result.state
       if (result.deltaMs > 0) {
         pendingMs += result.deltaMs

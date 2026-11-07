@@ -563,3 +563,52 @@ test('load restores a waiting rest and a pause', async () => {
   assert.equal(restEnv.limits.getView(BASE).resting, true)
   assert.equal(restEnv.limits.getView(BASE).restNeedsActivity, false)
 })
+
+test('pause/rest are only effective while DSH is foreground', () => {
+  const env = makeLimits()
+  env.limits.pause(BASE)
+  assert.equal(env.limits.isPaused(), true)
+  assert.equal(env.limits.isPauseEffective(), true)
+  assert.equal(env.limits.isRecoveryEffective(), true)
+  env.limits.setForegroundDsh(false)
+  assert.equal(env.limits.isPaused(), true) // raw state survives until the user returns
+  assert.equal(env.limits.isPauseEffective(), false)
+  assert.equal(env.limits.isRecoveryEffective(), false)
+  env.limits.setForegroundDsh(true)
+  assert.equal(env.limits.isPauseEffective(), true)
+
+  const rest = makeLimits()
+  rest.limits.startRest(BASE)
+  assert.equal(rest.limits.isRestEffective(), true)
+  rest.limits.setForegroundDsh(false)
+  assert.equal(rest.limits.isResting(), true)
+  assert.equal(rest.limits.isRestEffective(), false)
+  assert.equal(rest.limits.isRecoveryEffective(), false)
+})
+
+test('activity in another app does not auto-resume a pause', () => {
+  const env = makeLimits()
+  env.limits.pause(BASE)
+  env.limits.setForegroundDsh(false)
+  // This active fresh sample would resume if the DSH pause page were in front.
+  env.limits.applySample({ idleMs: 100 }, BASE + 3000)
+  assert.equal(env.limits.getView(BASE + 3000).paused, true)
+  assert.equal(env.kinds().includes(EVENT.resumed), false)
+  // Back in DSH: the next active sample resumes.
+  env.limits.setForegroundDsh(true)
+  env.limits.applySample({ idleMs: 100 }, BASE + 5000)
+  assert.equal(env.limits.getView(BASE + 5000).paused, false)
+})
+
+test('auto-pause does not trigger while another app is foreground', () => {
+  const env = makeLimits()
+  env.limits.setForegroundDsh(false)
+  env.limits.evaluate(BASE, { idleMs: 120_000, sampleAt: BASE })
+  env.limits.evaluate(BASE + 1000, { idleMs: 120_000, sampleAt: BASE + 1000 })
+  assert.equal(env.limits.getView(BASE + 1000).paused, false)
+  env.limits.setForegroundDsh(true)
+  env.limits.evaluate(BASE + 2000, { idleMs: 120_000, sampleAt: BASE + 2000 })
+  assert.equal(env.limits.getView(BASE + 2000).paused, false)
+  env.limits.evaluate(BASE + 3000, { idleMs: 120_000, sampleAt: BASE + 3000 })
+  assert.equal(env.limits.getView(BASE + 3000).paused, true)
+})

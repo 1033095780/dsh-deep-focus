@@ -7,6 +7,7 @@ import { createSettingsStore } from './host/settings.js'
 import { createSampler } from './host/sampler.js'
 import { createTracker } from './host/tracker.js'
 import { createLimits } from './host/limits.js'
+import { isDshForegroundName } from './host/apps.js'
 import { createEventRing, createStatusMap, installHostEventListeners } from './host/events.js'
 import { createApi, registerApi } from './host/api.js'
 
@@ -46,12 +47,13 @@ function createRuntime(ctx) {
   const limits = createLimits({ storage, settings, tracker, ring, now })
 
   function onSample(sample, sampledAt) {
-    // Resolve pause/rest state first, then decide whether this sample is counted:
-    // paused and resting periods must never add active, app or continuous time.
+    // Pause/rest only stop the clock while the DSH window is the foreground app;
+    // using another application keeps counting (and keeps the continuous run frozen).
+    limits.setForegroundDsh(isDshForegroundName(sample?.app))
     limits.evaluate(sampledAt)
     limits.applySample(sample, sampledAt)
-    const counted = limits.isResting() === false && limits.isPaused() === false
-    tracker.sample(sample, sampledAt, { counted })
+    const counted = !limits.isPauseEffective() && !limits.isRestEffective()
+    tracker.sample(sample, sampledAt, { counted, recovering: limits.isRecoveryEffective() })
     // The sample may have reached the continuous cap; enforce immediately.
     limits.evaluate(sampledAt)
   }

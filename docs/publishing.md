@@ -99,6 +99,10 @@ dependency installation; disabling or uninstalling removes all UI immediately.
       browser notification permission. (Honest limitation: switching back is best effort —
       Windows may keep another window in front, and the notification prompts the user to
       return.)
+- [ ] **Foreground gating:** with a pause/rest screen up, switch to another application —
+      today's usage keeps increasing and the continuous value is held (no decay, no reset);
+      switch back to DSH → counting stops and (for a rest) decay begins. The v0.4.31
+      best-effort focus attempt + clickable notification still apply.
 - [ ] Chime: with one conversation running, finish it while away → it rings; with
       two running, finishing only one stays silent and the second rings; repeats
       until input, capped ~2 min.

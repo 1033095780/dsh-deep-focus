@@ -22,15 +22,16 @@ test('active samples accumulate active and continuous time', () => {
   assert.equal(result.state.continuousMs, 10_000)
 })
 
-test('idle samples stop accumulating and end the continuous run', () => {
+test('idle samples stop accumulating and freeze the continuous run', () => {
   let state = emptyTrackerState('2026-11-05')
   state = applySample(state, { now: 0, idleMs: 100 }, CONFIG).state
   state = applySample(state, { now: 5000, idleMs: 100 }, CONFIG).state
   const result = applySample(state, { now: 10_000, idleMs: 61_000 }, CONFIG)
   assert.equal(result.deltaMs, 0)
   assert.equal(result.active, false)
-  assert.equal(result.resetContinuous, true)
-  assert.equal(result.state.continuousMs, 0)
+  // Idle in another app is not a recovery: the continuous run is frozen, not reset.
+  assert.equal(result.resetContinuous, false)
+  assert.equal(result.state.continuousMs, 5000)
   assert.equal(result.state.activeMs, 5000)
 })
 
@@ -106,7 +107,7 @@ test('samples accumulate per-app usage for active time only', () => {
   tracker.sample({ idleMs: 120_000, app: 'vlc' }, 15_000)
   const snapshot = tracker.snapshot(15_000)
   assert.equal(snapshot.activeTodayMs, 10_000)
-  assert.equal(snapshot.continuousMs, 0)
+  assert.equal(snapshot.continuousMs, 10_000)
   assert.equal(snapshot.apps.get('chrome'), 5000)
   assert.equal(snapshot.apps.get('code'), 5000)
   assert.equal(snapshot.apps.get('vlc'), undefined)
@@ -164,15 +165,21 @@ test('a day rollover flushes pending usage to the previous day', async () => {
   assert.equal(tracker.snapshot(Date.UTC(2026, 10, 6, 0, 0, 5)).activeTodayMs, 0)
 })
 
-test('suppressed samples keep the baseline but add no active or app time', () => {
+test('suppressed samples keep the baseline; only recovery samples decay', () => {
   const { tracker } = makeTracker()
   tracker.sample({ idleMs: 100, app: 'chrome' }, 0)
   tracker.sample({ idleMs: 100, app: 'chrome' }, 5000)
   assert.equal(tracker.snapshot(5000).activeTodayMs, 5000)
 
-  // A forced rest suppresses every sample: no active/app time, continuity reset.
+  // Outside the DSH pause page a suppressed sample adds no active/app time and
+  // freezes the continuous run (no decay, no reset).
   tracker.sample({ idleMs: 100, app: 'chrome' }, 10_000, { counted: false })
-  tracker.sample({ idleMs: 100, app: 'chrome' }, 15_000, { counted: false })
+  const frozen = tracker.snapshot(10_000)
+  assert.equal(frozen.activeTodayMs, 5000)
+  assert.equal(frozen.continuousMs, 5000)
+
+  // A recovery sample (pause/rest page in front) decays by gap * rate (default 3x).
+  tracker.sample({ idleMs: 100, app: 'chrome' }, 15_000, { counted: false, recovering: true })
   const duringRest = tracker.snapshot(15_000)
   assert.equal(duringRest.activeTodayMs, 5000)
   assert.equal(duringRest.continuousMs, 0)
@@ -200,7 +207,7 @@ const DECAY_CONFIG = { idleThresholdMs: 60_000, maxGapMs: 20_000, dayKeyOf: () =
 
 test('a non-counting sample decays the continuous counter proportionally', () => {
   const state = { ...emptyTrackerState('2026-11-05'), continuousMs: 600_000, lastTickAt: 0 }
-  const result = applySample(state, { now: 5000, idleMs: 120_000 }, DECAY_CONFIG)
+  const result = applySample(state, { now: 5000, idleMs: 120_000, recovering: true }, DECAY_CONFIG)
   assert.equal(result.state.continuousMs, 590_000) // 600s - 5s * rate 2
   assert.equal(result.resetContinuous, false)
   assert.equal(result.deltaMs, 0)
@@ -208,7 +215,7 @@ test('a non-counting sample decays the continuous counter proportionally', () =>
 
 test('decay clamps at zero and reports the reset', () => {
   const state = { ...emptyTrackerState('2026-11-05'), continuousMs: 5000, lastTickAt: 0 }
-  const result = applySample(state, { now: 5000, idleMs: 120_000 }, DECAY_CONFIG)
+  const result = applySample(state, { now: 5000, idleMs: 120_000, recovering: true }, DECAY_CONFIG)
   assert.equal(result.state.continuousMs, 0)
   assert.equal(result.resetContinuous, true)
 })
@@ -216,7 +223,7 @@ test('decay clamps at zero and reports the reset', () => {
 test('a missing decay rate keeps the old instant-reset fallback', () => {
   const state = { ...emptyTrackerState('2026-11-05'), continuousMs: 600_000, lastTickAt: 0 }
   const config = { idleThresholdMs: 60_000, maxGapMs: 20_000, dayKeyOf: () => '2026-11-05' }
-  const result = applySample(state, { now: 5000, idleMs: 120_000 }, config)
+  const result = applySample(state, { now: 5000, idleMs: 120_000, recovering: true }, config)
   assert.equal(result.state.continuousMs, 0)
   assert.equal(result.resetContinuous, true)
 })
@@ -233,8 +240,15 @@ test('the tracker derives the decay rate from limits (20min cap / 10min rest = 2
   t.sample({ idleMs: 100 }, 0)
   t.sample({ idleMs: 100 }, 5000)
   assert.equal(t.snapshot(5000).continuousMs, 5000)
-  // 10s of idle at 2x removes 20s of continuous usage, clamped at 0.
-  const after = t.sample({ idleMs: 120_000 }, 15_000)
+  // A recovering sample decays: 10s at 2x removes 20s of continuous usage, clamped at 0.
+  const after = t.sample({ idleMs: 120_000 }, 15_000, { counted: false, recovering: true })
   assert.equal(after.resetContinuous, true)
   assert.equal(t.snapshot(15_000).continuousMs, 0)
+})
+
+test('an inactive non-recovery sample leaves the continuous counter unchanged', () => {
+  const state = { ...emptyTrackerState('2026-11-05'), continuousMs: 600_000, lastTickAt: 0 }
+  const result = applySample(state, { now: 5000, idleMs: 120_000 }, DECAY_CONFIG)
+  assert.equal(result.state.continuousMs, 600_000)
+  assert.equal(result.resetContinuous, false)
 })

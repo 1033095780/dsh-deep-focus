@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { isDshForegroundName } from '../src/host/apps.js'
 import { createEventRing } from '../src/host/events.js'
 import { createLimits } from '../src/host/limits.js'
 import { createSettingsStore } from '../src/host/settings.js'
@@ -10,8 +11,8 @@ const BASE = new Date(2026, 10, 5, 10, 0, 0).getTime()
 const STEP_MS = 5000
 
 /**
- * Mirrors the exact `onSample` order used by src/index.js: resolve pause/rest,
- * then count only when neither is active.
+ * Mirrors the exact `onSample` order used by src/index.js: resolve the foreground
+ * app, then count only when the pause/rest page is actually effective in front.
  */
 function makeActivity({ settingsPatch = null } = {}) {
   let clock = BASE
@@ -22,12 +23,13 @@ function makeActivity({ settingsPatch = null } = {}) {
   const ring = createEventRing({ now: () => clock })
   const limits = createLimits({ settings, tracker, ring, now: () => clock })
 
-  function step(idleMs, at = clock) {
+  function step(idleMs, at = clock, app = 'DeepSeek Harness') {
     clock = at
+    limits.setForegroundDsh(isDshForegroundName(app))
     limits.evaluate(at)
     limits.applySample({ idleMs }, at)
-    const counted = !limits.isResting() && !limits.isPaused()
-    tracker.sample({ idleMs, app: 'chrome' }, at, { counted })
+    const counted = !limits.isPauseEffective() && !limits.isRestEffective()
+    tracker.sample({ idleMs, app }, at, { counted, recovering: limits.isRecoveryEffective() })
     limits.evaluate(at)
     return tracker.snapshot(at)
   }
@@ -284,4 +286,57 @@ test('assistant-off still zeroes continuous usage', async () => {
   assert.ok(env.tracker.snapshot(env.clock).continuousMs > 0)
   env.limits.setAssistantEnabled(false)
   assert.equal(env.tracker.snapshot(env.clock).continuousMs, 0)
+})
+
+
+test('a pause keeps counting while another app is foreground, then decays back in DSH', async () => {
+  const env = makeActivity({ settingsPatch: { limits: { continuousMinutes: 20, restMinutes: 10 } } })
+  await env.ready
+  buildContinuous(env, 5)
+  const pauseAt = env.clock + 1000
+  env.limits.pause(pauseAt)
+  assert.equal(env.limits.getView(env.clock).paused, true)
+
+  // Using another application: pause is not effective, so usage keeps counting and
+  // the continuous run does not decay.
+  const beforeActive = env.tracker.snapshot(env.clock).activeTodayMs
+  const beforeContinuous = env.tracker.snapshot(env.clock).continuousMs
+  env.step(100, pauseAt + STEP_MS, 'msedge')
+  env.step(100, pauseAt + 2 * STEP_MS, 'msedge')
+  const outside = env.tracker.snapshot(env.clock)
+  assert.equal(env.limits.getView(env.clock).paused, true)
+  assert.ok(outside.activeTodayMs > beforeActive)
+  assert.ok(outside.continuousMs >= beforeContinuous)
+
+  // Back on the DSH pause page with no new input: counting stops and decay begins.
+  const beforeBack = env.tracker.snapshot(env.clock).activeTodayMs
+  const continuousBack = env.tracker.snapshot(env.clock).continuousMs
+  env.step(60_000, env.clock + STEP_MS, 'DeepSeek Harness')
+  const inside = env.tracker.snapshot(env.clock)
+  assert.equal(env.limits.getView(env.clock).paused, true)
+  assert.equal(inside.activeTodayMs, beforeBack)
+  assert.ok(inside.continuousMs < continuousBack)
+})
+
+test('a rest stays ineffective while another app is foreground', async () => {
+  const env = makeActivity({ settingsPatch: { limits: { continuousMinutes: 20, restMinutes: 10 } } })
+  await env.ready
+  buildContinuous(env, 20)
+  assert.equal(env.limits.getView(env.clock).resting, true)
+  const restStart = env.clock
+
+  const beforeActive = env.tracker.snapshot(env.clock).activeTodayMs
+  env.step(100, restStart + STEP_MS, 'msedge')
+  env.step(100, restStart + 2 * STEP_MS, 'msedge')
+  const outside = env.tracker.snapshot(env.clock)
+  assert.equal(env.limits.getView(env.clock).resting, true)
+  assert.ok(outside.activeTodayMs > beforeActive)
+
+  // Back in DSH, the rest page becomes effective: counting stops, decay starts.
+  const beforeBack = env.tracker.snapshot(env.clock).activeTodayMs
+  const continuousBack = env.tracker.snapshot(env.clock).continuousMs
+  env.step(60_000, env.clock + STEP_MS, 'DeepSeek Harness')
+  const inside = env.tracker.snapshot(env.clock)
+  assert.equal(inside.activeTodayMs, beforeBack)
+  assert.ok(inside.continuousMs < continuousBack)
 })

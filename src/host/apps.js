@@ -65,6 +65,22 @@ export function friendlyAppName(raw) {
   return APP_NAMES.get(name.toLowerCase()) ?? name
 }
 
+/** Rows for `/apps` are derived via `appsToRows`; foreground-DSH detection uses the raw name. */
+const DSH_APP_NAMES = new Set(['deepseek harness', 'dsh'])
+
+/**
+ * Whether a sampler foreground name is the DeepSeek Harness process itself.
+ * Strict on purpose: only the exact app name (any separator) or the `dsh` CLI /
+ * a name led by the `dsh` token counts; other apps must never match.
+ */
+export function isDshForegroundName(raw) {
+  const key = normalizeAppKey(raw)
+  if (key.length === 0) return false
+  const canonical = key.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim()
+  if (DSH_APP_NAMES.has(canonical)) return true
+  return canonical.startsWith('dsh ')
+}
+
 /** Add one app's milliseconds into a `Map<id, ms>` accumulator. */
 export function addAppMs(target, rawName, ms) {
   if (!(target instanceof Map)) return target

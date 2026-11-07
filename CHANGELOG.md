@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.4.32] - 2026-11-07
+
+### Changed
+
+- **Pause/rest only take effect while DSH is the foreground application.** While the user
+  is working in another app, today's usage keeps counting and the continuous counter
+  neither decays nor resets — the pause/rest page simply waits for them. Only when DSH is
+  actually back in front (the pause/rest page is the active window) does counting stop and
+  the continuous decay begin. The v0.4.31 best-effort foreground switch + clickable
+  notification still apply.
+
 ## [0.4.31] - 2026-11-07
 
 ### Added
@@ -41,57 +52,19 @@ Nothing yet.
   `localStorage` (`dsh-deep-focus.rings-position`) and restored across reloads, clamped
   inside the window (default stays top-right), and kept visible on resize.
 
-## [0.4.28] - 2026-11-06
+## [0.4.22]–[0.4.28] - 2026-11-06
 
 ### Fixed
 
-- **The daily-limit screen stayed up/appeared while paused**: the cap was not evaluated
-  during a pause. Pausing now releases the daily lock (UI shows the pause screen), no
-  lock is entered while paused, and resuming re-locks if still over.
-## [0.4.27] - 2026-11-06
+- Daily-limit screen no longer stays up while paused (pause releases the lock; resume
+  re-locks if still over).
+- Legacy mojibake rows show the readable ASCII prefix or `未知应用`; non-ASCII app names
+  are decoded from base64 UTF-8.
+- A pause no longer unlocks itself without new input; the continuous display clock ticks
+  smoothly at 500 ms and no longer falls back to 5 s steps while idle.
+- The floating rings render again (a literal `\n` in a line comment is rejected by verify).
 
-### Fixed
-
-- **Legacy mojibake rows**: pre-0.4.26 records with U+FFFD bytes now show the readable
-  ASCII prefix or `未知应用` instead of garbage; new samples decode correctly.
-## [0.4.26] - 2026-11-06
-
-### Fixed
-
-- **Non-ASCII app names were mojibake** (PowerShell wrote GBK, Host read UTF-8); the
-  sampler now sends base64 UTF-8 and the Host decodes/validates it.
-## [0.4.25] - 2026-11-06
-
-### Fixed
-
-- **A pause unlocked itself without new input.** The Host now requires the last input to
-  be measurably newer than the pause, and the client needs a trusted pointer move or
-  key/wheel/touch ~400 ms after the card appears.
-## [0.4.24] - 2026-11-06
-
-### Fixed
-
-- **The continuous clock still moved in 5-second steps.** It now advances by real elapsed
-  wall time at 500 ms render (clamped 2 s), anchors upward to the Host value and holds
-  while away.
-## [0.4.23] - 2026-11-06
-
-### Fixed
-
-- **The floating rings disappeared.** A patch comment with a literal `\n` swallowed the
-  next declaration; the lines are proper again and verify now fails on `\n` inside a
-  `src/client.js` line comment.
-## [0.4.22] - 2026-11-06
-
-Patch release.
-
-### Fixed
-
-- **The continuous clock fell back to 5-second steps while idle.** The 500 ms
-  interpolation was gated on the "away" check, so a quiet machine showed only ~5 s Host
-  updates. The display clock now ticks every 500 ms whenever it is not frozen
-  (paused / resting / daily-locked / hidden / assistant off), independent of away
-  detection.
+## [0.4.21] - 2026-11-06
 ## [0.4.21] - 2026-11-06
 
 ### Changed

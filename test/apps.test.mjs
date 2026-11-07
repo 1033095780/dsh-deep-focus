@@ -6,6 +6,7 @@ import {
   appsToRows,
   appsTotal,
   friendlyAppName,
+  isDshForegroundName,
   mergeAppMs,
   normalizeAppKey,
   normalizedExeName,
@@ -102,4 +103,20 @@ test('rows are sorted, named, rounded and capped', () => {
 test('record form keeps positive rounded values', () => {
   const record = appsToRecord(new Map([['chrome', 3000.6], ['zero', 0], ['negative', -1]]))
   assert.deepEqual(record, { chrome: 3001 })
+})
+
+test('isDshForegroundName matches only the DSH application process', () => {
+  assert.equal(isDshForegroundName('DeepSeek Harness'), true)
+  assert.equal(isDshForegroundName('deepseek-harness'), true)
+  assert.equal(isDshForegroundName('deepseek_harness.exe'), true)
+  assert.equal(isDshForegroundName('dsh'), true)
+  assert.equal(isDshForegroundName('dsh.exe'), true)
+  assert.equal(isDshForegroundName('dsh client'), true)
+  assert.equal(isDshForegroundName('msedge'), false)
+  assert.equal(isDshForegroundName('chrome'), false)
+  assert.equal(isDshForegroundName('dshmarket'), false)
+  assert.equal(isDshForegroundName('not dsh'), false)
+  assert.equal(isDshForegroundName('deepseek harness helper'), false)
+  assert.equal(isDshForegroundName(null), false)
+  assert.equal(isDshForegroundName(''), false)
 })
