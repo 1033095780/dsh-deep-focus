@@ -35,8 +35,8 @@ const REQUIRED_FILES = [
 ]
 const DELETED_FILES = ['PLAN.md', 'PLAN-v0.3.md', 'Agents.md']
 const DOC_SIZE_BUDGET = {
-  'README.md': [4_000, 14_000],
-  'README.zh.md': [4_000, 14_000],
+  'README.md': [4_000, 15_000],
+  'README.zh.md': [4_000, 15_000],
   'docs/design.md': [4_000, 16_000],
   'docs/privacy.md': [2_000, 9_000],
   'docs/publishing.md': [3_000, 10_000],
@@ -362,6 +362,9 @@ check('READMEs describe the current product', () => {
     [/system-wide|another application|other application/i, 'system-wide activity resumption'],
     [/two equal columns|equal columns|equal-width columns/i, 'the equal-column ring layout'],
     [/centered|center(?:ed)? captions/i, 'the centered ring captions'],
+    [/drag(?:gable|ging)?[^.]{0,120}(?:pause|anywhere|position)/i, 'the draggable timer'],
+    [/localStorage[^.]{0,120}(?:position|remember)|position[^.]{0,80}(?:remembered|saved)/i, 'the remembered timer position'],
+    [/(?:kept inside|clamped|inside) the window/i, 'the window-clamped timer position'],
     [/sustained idle|two consecutive/i, 'the sustained-idle auto-pause rule'],
     [/held ~1\.5 s|~1\.5 s/i, 'the sidebar gray hysteresis'],
     [/auto(?:matic)?[- ]?(?:rest|pause)|pauses? only after sustained/i, 'the automatic idle rest'],
@@ -419,6 +422,9 @@ check('READMEs describe the current product', () => {
     [/整机|其它软件|其他软件/, 'system-wide activity resumption'],
     [/两等宽列|等宽.*列/, 'the equal-column ring layout'],
     [/居中/, 'the centered ring captions'],
+    [/拖动|可拖动/, 'the draggable timer'],
+    [/localStorage[^。]{0,80}位置|位置[^。]{0,60}(?:记住|保存)/, 'the remembered timer position'],
+    [/限制在窗口|窗口内/, 'the window-clamped timer position'],
     [/持续空闲|连续两个新鲜采样/, 'the sustained-idle auto-pause rule'],
     [/(?:约 )?1\.5 秒/, 'the sidebar gray hysteresis'],
     [/自动休息|自动暂停/, 'the automatic idle rest'],
@@ -492,8 +498,8 @@ check('LICENSE and CHANGELOG', () => {
   if (!changelog.includes('## [Unreleased]')) fail('CHANGELOG.md has no [Unreleased] section')
   const entry = new RegExp(`^## \\[${pkg.version.replace(/\./g, '\\.')}\\] - \\d{4}-\\d{2}-\\d{2}$`, 'm')
   if (!entry.test(changelog)) fail(`CHANGELOG.md needs a dated "[${pkg.version}] - YYYY-MM-DD" entry`)
-  if (pkg.version === '0.4.21' && !changelog.includes('## [0.4.21] - 2026-11-06')) {
-    fail('CHANGELOG.md must date the 0.4.21 entry 2026-11-06')
+  if (pkg.version === '0.4.29' && !changelog.includes('## [0.4.29] - 2026-11-07')) {
+    fail('CHANGELOG.md must date the 0.4.29 entry 2026-11-07')
   }
   for (const heading of ['### Added', '### Changed', '### Fixed']) {
     if (!changelog.includes(heading)) fail(`CHANGELOG.md entry is missing "${heading}"`)

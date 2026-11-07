@@ -727,9 +727,10 @@ window.__ModuleLoader__.load({
       '.df-rest-body{color:var(--dsw-alias-label-secondary);font-size:14px;margin:0}',
       '.df-rings-layer{position:absolute;top:min(calc(var(--dsh-frame-top-clearance, 0px) + 96px), calc(100% - 150px));right:16px;z-index:75;display:flex;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none}',
       '@media (max-height: 540px){.df-rings-layer{top:calc(var(--dsh-frame-top-clearance, 0px) + 56px)}}',
-      '.df-rings{position:static;display:flex;align-items:stretch;gap:10px;box-sizing:border-box;min-width:180px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent);backdrop-filter:blur(8px);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:11px;line-height:1.2;cursor:pointer;pointer-events:auto;box-shadow:0 8px 24px color-mix(in srgb, var(--dsw-alias-bg-overlay) 40%, transparent);transition:border-color .16s ease,transform .12s ease,opacity .16s ease}',
+      '.df-rings{position:static;display:flex;align-items:stretch;gap:10px;box-sizing:border-box;min-width:180px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent);backdrop-filter:blur(8px);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:11px;line-height:1.2;cursor:grab;pointer-events:auto;touch-action:none;user-select:none;box-shadow:0 8px 24px color-mix(in srgb, var(--dsw-alias-bg-overlay) 40%, transparent);transition:border-color .16s ease,transform .12s ease,opacity .16s ease}',
       '.df-rings:hover{border-color:var(--dsw-alias-border-l2)}',
       '.df-rings:active{transform:scale(.97)}',
+      '.df-rings[data-dragging="true"]{cursor:grabbing;transition:none}',
       '.df-rings:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}',
       '.df-rings[data-busy="true"]{opacity:.72;cursor:default}',
       '.df-ring-box{position:relative;flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;gap:4px}',
@@ -2662,6 +2663,53 @@ window.__ModuleLoader__.load({
        * resumes on click too. This always-mounted entry also feeds the
        * client-primary running-conversation detector for solo hiding.
        */
+      const RINGS_POSITION_KEY = 'dsh-deep-focus.rings-position'
+      const RINGS_POSITION_MARGIN = 8
+
+      function readRingsPosition() {
+        try {
+          const storage = typeof window !== 'undefined' ? window.localStorage : undefined
+          if (!storage) return null
+          const raw = storage.getItem(RINGS_POSITION_KEY)
+          if (!raw) return null
+          const parsed = JSON.parse(raw)
+          if (!parsed || typeof parsed.x !== 'number' || typeof parsed.y !== 'number') return null
+          return { x: parsed.x, y: parsed.y }
+        } catch (error) {
+          return null
+        }
+      }
+
+      function writeRingsPosition(position) {
+        try {
+          const storage = typeof window !== 'undefined' ? window.localStorage : undefined
+          if (!storage || !position) return
+          storage.setItem(RINGS_POSITION_KEY, JSON.stringify({ x: Math.round(position.x), y: Math.round(position.y) }))
+        } catch (error) {
+          /* private mode / quota: silently keep the in-memory position */
+        }
+      }
+
+      function clampRingsPosition(position, layer) {
+        try {
+          const parent = layer && layer.parentElement ? layer.parentElement : null
+          const width = layer && layer.offsetWidth ? layer.offsetWidth : 200
+          const height = layer && layer.offsetHeight ? layer.offsetHeight : 76
+          const parentWidth =
+            parent && parent.clientWidth ? parent.clientWidth : typeof window !== 'undefined' ? window.innerWidth || 1024 : 1024
+          const parentHeight =
+            parent && parent.clientHeight ? parent.clientHeight : typeof window !== 'undefined' ? window.innerHeight || 768 : 768
+          const maxX = Math.max(RINGS_POSITION_MARGIN, parentWidth - width - RINGS_POSITION_MARGIN)
+          const maxY = Math.max(RINGS_POSITION_MARGIN, parentHeight - height - RINGS_POSITION_MARGIN)
+          return {
+            x: Math.min(Math.max(RINGS_POSITION_MARGIN, numberOr(position && position.x, 0)), maxX),
+            y: Math.min(Math.max(RINGS_POSITION_MARGIN, numberOr(position && position.y, 0)), maxY),
+          }
+        } catch (error) {
+          return position
+        }
+      }
+
       function FloatingRings(props) {
         useLocaleTick()
         const snapshot = useStore(true)
@@ -2748,6 +2796,158 @@ window.__ModuleLoader__.load({
         const setBusy = busyPair[1]
         const busyRef = React.useRef(false)
         const pausedNow = limit.paused === true
+
+        const layerRef = React.useRef(null)
+        const positionPair = React.useState(function () {
+          return readRingsPosition()
+        })
+        const position = positionPair[0]
+        const setPosition = positionPair[1]
+        const positionRef = React.useRef(position)
+        const dragRef = React.useRef(null)
+        const suppressClickRef = React.useRef(false)
+        const draggingPair = React.useState(false)
+        const dragging = draggingPair[0]
+        const setDragging = draggingPair[1]
+        const dragBlocked =
+          !store.isVisible() ||
+          !assistantOn ||
+          limit.paused === true ||
+          limit.resting === true ||
+          limit.dailyLocked === true
+
+        React.useEffect(
+          function () {
+            positionRef.current = position
+          },
+          [position],
+        )
+
+        // Clamp any restored position once the layer has been laid out.
+        React.useEffect(
+          function () {
+            const current = positionRef.current
+            if (!current) return
+            const clamped = clampRingsPosition(current, layerRef.current)
+            if (clamped.x !== current.x || clamped.y !== current.y) {
+              positionRef.current = clamped
+              setPosition(clamped)
+            }
+          },
+          [],
+        )
+
+        // Re-clamp on window resize so the widget always stays fully visible.
+        React.useEffect(
+          function () {
+            const onResize = function () {
+              const current = positionRef.current
+              if (!current) return
+              const clamped = clampRingsPosition(current, layerRef.current)
+              if (clamped.x !== current.x || clamped.y !== current.y) {
+                positionRef.current = clamped
+                setPosition(clamped)
+                writeRingsPosition(clamped)
+              }
+            }
+            try {
+              window.addEventListener('resize', onResize)
+            } catch (error) {
+              /* ignored */
+            }
+            return function () {
+              try {
+                window.removeEventListener('resize', onResize)
+              } catch (error) {
+                /* ignored */
+              }
+            }
+          },
+          [],
+        )
+
+        function onRingPointerDown(event) {
+          if (dragBlocked) return
+          if (event && typeof event.button === 'number' && event.button !== 0) return
+          if (!event || typeof event.clientX !== 'number' || typeof event.clientY !== 'number') return
+          suppressClickRef.current = false
+          const layer = layerRef.current
+          dragRef.current = {
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY,
+            moved: false,
+            startLeft: layer ? numberOr(layer.offsetLeft, 0) : 0,
+            startTop: layer ? numberOr(layer.offsetTop, 0) : 0,
+          }
+          try {
+            if (event.currentTarget && typeof event.currentTarget.setPointerCapture === 'function') {
+              event.currentTarget.setPointerCapture(event.pointerId)
+            }
+          } catch (error) {
+            /* ignored */
+          }
+        }
+
+        function onRingPointerMove(event) {
+          const drag = dragRef.current
+          if (!drag || !event) return
+          if (typeof event.pointerId === 'number' && drag.pointerId !== event.pointerId) return
+          if (typeof event.clientX !== 'number' || typeof event.clientY !== 'number') return
+          const dx = event.clientX - drag.startX
+          const dy = event.clientY - drag.startY
+          if (!drag.moved) {
+            if (Math.sqrt(dx * dx + dy * dy) < 5) return
+            drag.moved = true
+            setDragging(true)
+            suppressClickRef.current = true
+            try {
+              event.preventDefault()
+            } catch (error) {
+              /* ignored */
+            }
+          }
+          const next = clampRingsPosition({ x: drag.startLeft + dx, y: drag.startTop + dy }, layerRef.current)
+          positionRef.current = next
+          setPosition(next)
+        }
+
+        function endRingDrag(event) {
+          const drag = dragRef.current
+          if (!drag) return
+          dragRef.current = null
+          setDragging(false)
+          if (drag.moved) {
+            // A real drag must never toggle pause.
+            suppressClickRef.current = true
+            writeRingsPosition(positionRef.current)
+          }
+          try {
+            if (
+              event &&
+              event.currentTarget &&
+              typeof event.currentTarget.releasePointerCapture === 'function' &&
+              typeof drag.pointerId === 'number'
+            ) {
+              event.currentTarget.releasePointerCapture(drag.pointerId)
+            }
+          } catch (error) {
+            /* ignored */
+          }
+        }
+
+        function onRingClick(event) {
+          if (suppressClickRef.current) {
+            suppressClickRef.current = false
+            if (event && typeof event.preventDefault === 'function') event.preventDefault()
+            return
+          }
+          togglePause(event)
+        }
+
+        const layerStyle = position
+          ? { left: position.x + 'px', top: position.y + 'px', right: 'auto' }
+          : undefined
 
         async function togglePause(event) {
           if (event && typeof event.preventDefault === 'function') event.preventDefault()
@@ -2855,7 +3055,13 @@ window.__ModuleLoader__.load({
           h(Styles),
           h(
             'div',
-            { className: 'df-rings-layer', 'data-df-root': 'rings-layer' },
+            {
+              className: 'df-rings-layer',
+              'data-df-root': 'rings-layer',
+              ref: layerRef,
+              style: layerStyle,
+              'data-dragging': dragging ? 'true' : undefined,
+            },
             h(
               'button',
               {
@@ -2869,7 +3075,13 @@ window.__ModuleLoader__.load({
                 'aria-label': pausedNow ? t('rings.resumeAria') : t('rings.pauseAria'),
                 'aria-pressed': pausedNow ? 'true' : undefined,
                 title: summary,
-                onClick: togglePause,
+                onClick: onRingClick,
+                onPointerDown: onRingPointerDown,
+                onPointerMove: onRingPointerMove,
+                onPointerUp: endRingDrag,
+                onPointerCancel: endRingDrag,
+                onLostPointerCapture: endRingDrag,
+                'data-dragging': dragging ? 'true' : undefined,
                 style: {
                   appearance: 'none',
                   WebkitAppearance: 'none',
@@ -2878,8 +3090,11 @@ window.__ModuleLoader__.load({
                   color: 'var(--dsw-alias-label-primary)',
                   font: 'inherit',
                   background: 'color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent)',
-                  cursor: busy ? 'default' : 'pointer',
+                  cursor: busy ? 'default' : dragging ? 'grabbing' : 'grab',
                   textAlign: 'left',
+                  touchAction: 'none',
+                  userSelect: 'none',
+                  WebkitUserSelect: 'none',
                 },
               },
               h(

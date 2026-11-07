@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.4.29] - 2026-11-07
+
+### Added
+
+- **The floating timer is draggable.** Press and drag the two-ring card anywhere; a real
+  drag suppresses the pause click (a tap still pauses/resumes). The position is saved in
+  `localStorage` (`dsh-deep-focus.rings-position`) and restored across reloads, clamped
+  inside the window (default stays top-right), and kept visible on resize.
+
 ## [0.4.28] - 2026-11-06
 
 ### Fixed
@@ -177,9 +186,8 @@ distribution is GitHub Releases + source only.
 
 ### Added
 
-- Click the two-ring widget to pause manually (and click again to resume) with an
-  in-flight guard, pressed state, keyboard support and pause/resume aria labels; the
-  automatic sustained-idle pause and the smooth clock stay.
+- Click the two-ring widget to pause manually (click again to resume), with in-flight
+  guard, pressed state, keyboard support and pause/resume aria labels.
 
 ## [0.4.9] - 2026-11-05
 
@@ -194,9 +202,7 @@ distribution is GitHub Releases + source only.
 ### Changed
 
 - Rings show their value inside (today minutes; continuous mm:ss) and the continuous
-  clock ticks smoothly instead of stepping with the ~5 s sampler.
-- Sidebar graying is held ~1.5 s after the running set empties, so transient empty
-  polls do not flicker.
+  clock ticks smoothly; sidebar graying is held ~1.5 s after the running set empties.
 
 ### Fixed
 

@@ -74,6 +74,10 @@ dependency installation; disabling or uninstalling removes all UI immediately.
 - [ ] Assistant panel opens; rings are two equal columns with the values inside
       (today minutes / continuous mm:ss), the captions 今日已用 / 连续使用 are
       centered, and the continuous clock ticks every second.
+- [ ] **Drag** the timer card to another spot: a real drag must NOT pause (no card
+      appears) and the card follows the pointer; a plain click/tap still pauses. After
+      a page reload the position is restored from `localStorage`, and shrinking the
+      window clamps it fully inside the viewport (default stays top-right).
 - [ ] Click the rings → pause: the pause card appears **immediately** (the ~0.6 s
       settle guard applies only to the automatic idle pause). The DSH content is
       blocked while shown. Moving the mouse / pressing a key inside DSH resumes almost
@@ -102,7 +106,7 @@ Not committed yet; the READMEs carry a marked placeholder. Capture on DSH
 
 | File | Content |
 | --- | --- |
-| `docs/images/rings-light.png` | two-column two-ring widget (values inside; click = pause) |
+| `docs/images/rings-light.png` | two-column two-ring widget (values inside; draggable; click = pause) |
 | `docs/images/pause-lock-dark.png` | blocking pause card with the 「继续计时」 button |
 | `docs/images/rest-card-dark.png` | rest screen with the shared today-usage card + 「跳过休息」 |
 | `docs/images/daily-overlay-dark.png` | daily overlay on the same card |
