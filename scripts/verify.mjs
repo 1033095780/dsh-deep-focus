@@ -10,10 +10,21 @@
  * size budget.
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+
+/** Tracked in git? Files outside the repo tree do not ship and must not fail the gate. */
+function isTracked(name) {
+  try {
+    execFileSync('git', ['ls-files', '--error-unmatch', name], { cwd: ROOT, stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+}
 const PACKAGE_NAME = 'dsh-deep-focus'
 const ALLOWED_BARE_IMPORTS = new Set(['react', 'react-dom', 'react/jsx-runtime', 'react-dom/client'])
 const REQUIRED_FILES = [
@@ -35,8 +46,8 @@ const REQUIRED_FILES = [
 ]
 const DELETED_FILES = ['PLAN.md', 'PLAN-v0.3.md', 'Agents.md']
 const DOC_SIZE_BUDGET = {
-  'README.md': [4_000, 15_000],
-  'README.zh.md': [4_000, 15_000],
+  'README.md': [4_000, 16_000],
+  'README.zh.md': [4_000, 16_000],
   'docs/design.md': [4_000, 16_000],
   'docs/privacy.md': [2_000, 9_000],
   'docs/publishing.md': [3_000, 10_000],
@@ -309,7 +320,7 @@ check('no pomodoro machinery', () => {
 
 check('internal planning files were removed', () => {
   for (const name of DELETED_FILES) {
-    if (existsSync(abs(name))) fail(`${name} still exists; personal planning/agent files must not ship`)
+    if (existsSync(abs(name)) && isTracked(name)) fail(`${name} is tracked; personal planning/agent files must not ship`)
   }
   const texts = [readText('README.md'), readText('README.zh.md'), readText('docs/design.md'), readText('docs/publishing.md')]
   for (const name of DELETED_FILES) {
@@ -365,6 +376,10 @@ check('READMEs describe the current product', () => {
     [/drag(?:gable|ging)?[^.]{0,120}(?:pause|anywhere|position)/i, 'the draggable timer'],
     [/localStorage[^.]{0,120}(?:position|remember)|position[^.]{0,80}(?:remembered|saved)/i, 'the remembered timer position'],
     [/(?:kept inside|clamped|inside) the window/i, 'the window-clamped timer position'],
+    [/continuous[^.]{0,80}decay|decay[^.]{0,80}(?:pause|rest)/i, 'the continuous decay rule'],
+    [/continuousMinutes\s*\/\s*restMinutes/i, 'the decay rate formula'],
+    [/continues? from the remaining|never zero(?:e)?s|resumes? from the remaining/i, 'resume continues from the remaining value'],
+    [/(?:day rollover|disabling the assistant|assistant[- ]off)[^.]{0,100}reset/i, 'the decay reset conditions'],
     [/sustained idle|two consecutive/i, 'the sustained-idle auto-pause rule'],
     [/held ~1\.5 s|~1\.5 s/i, 'the sidebar gray hysteresis'],
     [/auto(?:matic)?[- ]?(?:rest|pause)|pauses? only after sustained/i, 'the automatic idle rest'],
@@ -425,6 +440,10 @@ check('READMEs describe the current product', () => {
     [/拖动|可拖动/, 'the draggable timer'],
     [/localStorage[^。]{0,80}位置|位置[^。]{0,60}(?:记住|保存)/, 'the remembered timer position'],
     [/限制在窗口|窗口内/, 'the window-clamped timer position'],
+    [/衰减|逐渐减少/, 'the continuous decay rule'],
+    [/continuousMinutes\s*\/\s*restMinutes/, 'the decay rate formula'],
+    [/从剩余值继续|不会清零/, 'resume continues from the remaining value'],
+    [/(?:跨天|关闭助手)[^。]{0,80}(?:清零|重置)/, 'the decay reset conditions'],
     [/持续空闲|连续两个新鲜采样/, 'the sustained-idle auto-pause rule'],
     [/(?:约 )?1\.5 秒/, 'the sidebar gray hysteresis'],
     [/自动休息|自动暂停/, 'the automatic idle rest'],
@@ -498,8 +517,8 @@ check('LICENSE and CHANGELOG', () => {
   if (!changelog.includes('## [Unreleased]')) fail('CHANGELOG.md has no [Unreleased] section')
   const entry = new RegExp(`^## \\[${pkg.version.replace(/\./g, '\\.')}\\] - \\d{4}-\\d{2}-\\d{2}$`, 'm')
   if (!entry.test(changelog)) fail(`CHANGELOG.md needs a dated "[${pkg.version}] - YYYY-MM-DD" entry`)
-  if (pkg.version === '0.4.29' && !changelog.includes('## [0.4.29] - 2026-11-07')) {
-    fail('CHANGELOG.md must date the 0.4.29 entry 2026-11-07')
+  if (pkg.version === '0.4.30' && !changelog.includes('## [0.4.30] - 2026-11-07')) {
+    fail('CHANGELOG.md must date the 0.4.30 entry 2026-11-07')
   }
   for (const heading of ['### Added', '### Changed', '### Fixed']) {
     if (!changelog.includes(heading)) fail(`CHANGELOG.md entry is missing "${heading}"`)

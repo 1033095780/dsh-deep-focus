@@ -17,6 +17,9 @@ export function emptyTrackerState(dayKey) {
  * Fold one idle sample into the counters.
  * Elapsed time only counts while the previous sample said "active", so a sleep
  * or sampler gap never inflates usage; a gap also ends the continuous-work run.
+ * A non-counting sample (pause / rest / idle) does not wipe the continuous run:
+ * it DECAYS by `gap * continuousDecayRate` so a quick pause only removes a
+ * proportional slice (clearing the cap takes roughly `limits.restMinutes`).
  */
 export function applySample(state, sample, config) {
   const dayKeyOf = config.dayKeyOf ?? localDayKey
@@ -36,15 +39,26 @@ export function applySample(state, sample, config) {
   const counted = sample.counted !== false
   const active = counted && idleValid && (config.idleThresholdMs <= 0 || sample.idleMs < config.idleThresholdMs)
   if (!gapValid) {
+    // Sleep / restart / clock jump: never trust the gap, reset the run safely.
     resetContinuous = next.continuousMs > 0
     next.continuousMs = 0
   } else if (active) {
     deltaMs = gap
     next.activeMs += gap
     next.continuousMs += gap
-  } else if (next.continuousMs > 0) {
-    resetContinuous = true
-    next.continuousMs = 0
+  } else {
+    const decayRate = Number.isFinite(config.continuousDecayRate) && config.continuousDecayRate > 0
+      ? config.continuousDecayRate
+      : 0
+    if (decayRate > 0) {
+      const before = next.continuousMs
+      next.continuousMs = Math.max(0, before - gap * decayRate)
+      resetContinuous = before > 0 && next.continuousMs === 0
+    } else if (next.continuousMs > 0) {
+      // No usable rate: keep the old instant-reset behaviour as a safety fallback.
+      resetContinuous = true
+      next.continuousMs = 0
+    }
   }
   next.lastTickAt = sample.now
   return { state: next, deltaMs, active, resetContinuous }
@@ -63,13 +77,23 @@ export function createTracker({ storage = null, settings = null, now = Date.now 
   let flushChain = Promise.resolve()
 
   function config() {
-    const usage = settings?.get?.().usage ?? {}
+    const all = settings?.get?.() ?? {}
+    const usage = all.usage ?? {}
+    const limits = all.limits ?? {}
     const sampleSeconds = Number.isFinite(usage.sampleSeconds) ? usage.sampleSeconds : 5
     const idleThresholdSeconds = Number.isFinite(usage.idleThresholdSeconds) ? usage.idleThresholdSeconds : 60
+    const continuousMinutes = Number.isFinite(limits.continuousMinutes) ? limits.continuousMinutes : 30
+    const restMinutes = Number.isFinite(limits.restMinutes) ? limits.restMinutes : 10
+    // Clearing the whole continuous cap takes `restMinutes` of pause/rest:
+    // usage-ms removed per pause-ms = continuousMinutes / restMinutes (e.g. 20/10 = 2).
+    const continuousDecayRate = restMinutes >= 1 && continuousMinutes > 0
+      ? continuousMinutes / restMinutes
+      : 0
     return {
       idleThresholdMs: idleThresholdSeconds * 1000,
       maxGapMs: Math.max(10_000, sampleSeconds * 4000),
       trackApps: usage.trackApps !== false,
+      continuousDecayRate,
     }
   }
 

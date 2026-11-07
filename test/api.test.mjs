@@ -497,7 +497,8 @@ test('the continuous cap forces a rest that waits for real activity', async () =
   assert.equal(resting.limit.resting, true)
   assert.equal(resting.limit.restRemainingMs, 10 * 60_000)
   assert.equal(resting.limit.restNeedsActivity, false)
-  assert.equal(resting.usage.continuousMs, 0)
+  // No instant reset at rest start: the counter decays during the rest itself.
+  assert.equal(resting.usage.continuousMs, 1_800_000)
   assert.ok(resting.events.some((event) => event.kind === 'rest-started'))
   const usedBefore = resting.usage.activeTodayMs
   assert.ok(usedBefore >= 30 * 60_000)

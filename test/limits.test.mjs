@@ -338,7 +338,8 @@ test('the continuous cap starts a forced rest that still needs activity to end',
   assert.equal(started.resting, true)
   assert.equal(started.restRemainingMs, 10 * 60_000)
   assert.equal(started.restNeedsActivity, false)
-  assert.equal(env.tracker.resets, 1)
+  // The counter is no longer wiped when the rest starts (it decays during the rest).
+  assert.equal(env.tracker.resets, 0)
   assert.equal(env.ring.list().at(-1).kind, EVENT.restStarted)
 
   // Time elapses, but the user is away: the rest keeps waiting, no counting.

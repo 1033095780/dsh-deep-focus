@@ -202,3 +202,86 @@ test('activity auto-resumes a manual pause', async () => {
   const resumed = env.ring.list().filter((event) => event.kind === EVENT.resumed).at(-1)
   assert.equal(resumed.meta.reason, 'activity')
 })
+
+function buildContinuous(env, minutes) {
+  const samples = (minutes * 60_000) / STEP_MS
+  for (let index = 0; index <= samples; index += 1) {
+    env.step(100, BASE + index * STEP_MS)
+  }
+}
+
+test('pausing decays continuous usage instead of resetting it', async () => {
+  const env = makeActivity({ settingsPatch: { limits: { continuousMinutes: 20, restMinutes: 10 } } })
+  await env.ready
+  buildContinuous(env, 10)
+  const start = env.tracker.snapshot(env.clock).continuousMs
+  assert.equal(start, 600_000)
+
+  const pauseAt = env.clock + 1000
+  env.limits.pause(pauseAt)
+  // One paused sample is never an instant reset.
+  env.step(60_000, pauseAt + STEP_MS)
+  assert.ok(env.tracker.snapshot(env.clock).continuousMs > 500_000)
+
+  // One minute paused removes 2 minutes of continuous usage (rate 2).
+  for (let index = 2; index <= 12; index += 1) {
+    env.step(60_000, pauseAt + index * STEP_MS)
+  }
+  assert.equal(env.limits.getView(env.clock).paused, true)
+  const decayed = env.tracker.snapshot(env.clock).continuousMs
+  assert.ok(Math.abs(decayed - 478_000) <= 5000, 'expected ~8min, got ' + decayed)
+
+  // Resuming continues from the decayed value instead of restarting.
+  env.limits.resume(env.clock)
+  env.step(100, env.clock + STEP_MS)
+  assert.equal(env.tracker.snapshot(env.clock).continuousMs, decayed + STEP_MS)
+})
+
+test('a ten-minute rest clears a full 20-minute continuous run', async () => {
+  const env = makeActivity({ settingsPatch: { limits: { continuousMinutes: 20, restMinutes: 10 } } })
+  await env.ready
+  buildContinuous(env, 20)
+  assert.equal(env.limits.getView(env.clock).resting, true)
+  const restStart = env.clock
+  for (let index = 1; index <= 120; index += 1) {
+    env.step(60_000, restStart + index * STEP_MS)
+  }
+  assert.equal(env.limits.getView(env.clock).resting, true)
+  assert.equal(env.tracker.snapshot(env.clock).continuousMs, 0)
+})
+
+test('a five-minute rest leaves about half of a 20-minute continuous run', async () => {
+  const env = makeActivity({ settingsPatch: { limits: { continuousMinutes: 20, restMinutes: 10 } } })
+  await env.ready
+  buildContinuous(env, 20)
+  const restStart = env.clock
+  for (let index = 1; index <= 60; index += 1) {
+    env.step(60_000, restStart + index * STEP_MS)
+  }
+  const remaining = env.tracker.snapshot(env.clock).continuousMs
+  assert.ok(Math.abs(remaining - 600_000) <= 10_000, 'expected ~10min, got ' + remaining)
+})
+
+test('skipping a rest keeps the decayed remainder', async () => {
+  const env = makeActivity({ settingsPatch: { limits: { continuousMinutes: 20, restMinutes: 10 } } })
+  await env.ready
+  buildContinuous(env, 20)
+  const restStart = env.clock
+  for (let index = 1; index <= 24; index += 1) {
+    env.step(60_000, restStart + index * STEP_MS)
+  }
+  const beforeSkip = env.tracker.snapshot(env.clock).continuousMs
+  const skipped = env.limits.finishRest(env.clock)
+  assert.equal(skipped.ok, true)
+  assert.equal(env.tracker.snapshot(env.clock).continuousMs, beforeSkip)
+  assert.ok(beforeSkip > 0)
+})
+
+test('assistant-off still zeroes continuous usage', async () => {
+  const env = makeActivity()
+  await env.ready
+  buildContinuous(env, 5)
+  assert.ok(env.tracker.snapshot(env.clock).continuousMs > 0)
+  env.limits.setAssistantEnabled(false)
+  assert.equal(env.tracker.snapshot(env.clock).continuousMs, 0)
+})

@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.4.30] - 2026-11-07
+
+### Changed
+
+- **Continuous usage decays during pause/rest instead of resetting.** Recovery time now
+  reduces the continuous counter at `continuousMinutes / restMinutes` per minute, so the
+  full cap clears after about `limits.restMinutes` of pause/rest (default 30 min → 10 min;
+  e.g. 20 min used → ~10 min rest → 0). A short pause only reduces it and resuming
+  continues from the remainder — a single click never zeros the run. Day rollover,
+  assistant-off and invalid/sleep sampler gaps still reset it.
+
 ## [0.4.29] - 2026-11-07
 
 ### Added
@@ -29,12 +40,16 @@ Nothing yet.
 
 ### Fixed
 
-- **Legacy mojibake rows are no longer rendered.** Pre-0.4.26 records can contain U+FFFD replacement characters (unrecoverable GBK bytes); the resolver now shows the readable ASCII prefix (`xtitclient_x64…`) or `未知应用` instead of garbage. New samples decode correctly.
+- **Legacy mojibake rows are no longer rendered.** Pre-0.4.26 records can contain U+FFFD
+  replacement characters (unrecoverable GBK bytes); the resolver shows the readable ASCII
+  prefix or `未知应用` instead of garbage. New samples decode correctly.
 ## [0.4.26] - 2026-11-06
 
 ### Fixed
 
-- **Non-ASCII app names showed as mojibake.** PowerShell wrote the process name to redirected stdout in the console code page (GBK) while the Host read UTF-8; the sampler now sends it as base64 UTF-8 (pure ASCII on the wire) and the Host decodes/validates it. Verified end-to-end with a Chinese name.
+- **Non-ASCII app names showed as mojibake.** PowerShell wrote the process name in the
+  console code page (GBK) while the Host read UTF-8; the sampler now sends base64 UTF-8
+  and the Host decodes/validates it (verified with a Chinese name).
 ## [0.4.25] - 2026-11-06
 
 Patch release.
@@ -55,24 +70,21 @@ Patch release.
 
 ### Fixed
 
-- **The floating rings disappeared.** The previous patch wrote the new "keep the display
-  clock ticking" comment with a literal `\n`, which swallowed the following line
-  declaration and made the widget throw at render time. The comment and declaration are
-  proper lines again, and `scripts/verify.mjs` now fails if a line comment in
-  `src/client.js` contains a literal `\n` (that class of corruption previously passed
-  `node --check`).
+- **The floating rings disappeared.** A patch wrote a "keep the display clock ticking"
+  comment with a literal `\n`, swallowing the following declaration and making the
+  widget throw. The lines are proper again and `scripts/verify.mjs` now fails on a
+  literal `\n` inside a `src/client.js` line comment.
 ## [0.4.22] - 2026-11-06
 
 Patch release.
 
 ### Fixed
 
-- **The continuous clock fell back to 5-second steps while the user was idle.** The
-  500 ms interpolation was gated on the "away" check, so as soon as the machine had
-  been quiet for ~30 s the display stopped ticking and only moved with the ~5 s Host
-  sample. The display clock now ticks every 500 ms whenever it is not frozen
-  (paused / resting / daily-locked / hidden / assistant off), independent of the away
-  detection — detection can stay slow, the UI stays smooth.
+- **The continuous clock fell back to 5-second steps while idle.** The 500 ms
+  interpolation was gated on the "away" check, so a quiet machine showed only ~5 s Host
+  updates. The display clock now ticks every 500 ms whenever it is not frozen
+  (paused / resting / daily-locked / hidden / assistant off), independent of away
+  detection.
 ## [0.4.21] - 2026-11-06
 
 ### Changed
@@ -178,9 +190,8 @@ distribution is GitHub Releases + source only.
 
 ### Fixed
 
-- Invisible primary buttons: the host's `brand-primary` token is pure white in the dark
-  theme, so primary buttons/toggles now use an explicit blue accent readable in both
-  themes.
+- Invisible primary buttons: `brand-primary` is pure white in the dark theme, so primary
+  buttons/toggles now use an explicit blue accent readable in both themes.
 
 ## [0.4.10] - 2026-11-05
 

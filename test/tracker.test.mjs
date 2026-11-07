@@ -66,10 +66,13 @@ test('idle threshold 0 disables the idle check', () => {
   assert.equal(result.deltaMs, 5000)
 })
 
-function makeTracker({ usageLast = null, trackApps = true } = {}) {
+function makeTracker({ usageLast = null, trackApps = true, limits = null } = {}) {
   let clock = 0
   const appended = []
-  const settingsValue = { usage: { sampleSeconds: 5, idleThresholdSeconds: 60, trackApps } }
+  const settingsValue = {
+    usage: { sampleSeconds: 5, idleThresholdSeconds: 60, trackApps },
+    ...(limits === null ? {} : { limits }),
+  }
   const settings = { get: () => settingsValue }
   const storage = {
     readUsageDay: async () => usageLast ?? { activeMs: 0, apps: new Map() },
@@ -190,4 +193,48 @@ test('tracker resets the continuous counter for a break', async () => {
   assert.equal(tracker.snapshot(5000).continuousMs, 5000)
   tracker.resetContinuous()
   assert.equal(tracker.snapshot(5000).continuousMs, 0)
+})
+
+
+const DECAY_CONFIG = { idleThresholdMs: 60_000, maxGapMs: 20_000, dayKeyOf: () => '2026-11-05', continuousDecayRate: 2 }
+
+test('a non-counting sample decays the continuous counter proportionally', () => {
+  const state = { ...emptyTrackerState('2026-11-05'), continuousMs: 600_000, lastTickAt: 0 }
+  const result = applySample(state, { now: 5000, idleMs: 120_000 }, DECAY_CONFIG)
+  assert.equal(result.state.continuousMs, 590_000) // 600s - 5s * rate 2
+  assert.equal(result.resetContinuous, false)
+  assert.equal(result.deltaMs, 0)
+})
+
+test('decay clamps at zero and reports the reset', () => {
+  const state = { ...emptyTrackerState('2026-11-05'), continuousMs: 5000, lastTickAt: 0 }
+  const result = applySample(state, { now: 5000, idleMs: 120_000 }, DECAY_CONFIG)
+  assert.equal(result.state.continuousMs, 0)
+  assert.equal(result.resetContinuous, true)
+})
+
+test('a missing decay rate keeps the old instant-reset fallback', () => {
+  const state = { ...emptyTrackerState('2026-11-05'), continuousMs: 600_000, lastTickAt: 0 }
+  const config = { idleThresholdMs: 60_000, maxGapMs: 20_000, dayKeyOf: () => '2026-11-05' }
+  const result = applySample(state, { now: 5000, idleMs: 120_000 }, config)
+  assert.equal(result.state.continuousMs, 0)
+  assert.equal(result.resetContinuous, true)
+})
+
+test('an invalid large gap still resets the continuous counter', () => {
+  const state = { ...emptyTrackerState('2026-11-05'), continuousMs: 600_000, lastTickAt: 0 }
+  const result = applySample(state, { now: 60_000, idleMs: 100 }, DECAY_CONFIG)
+  assert.equal(result.state.continuousMs, 0)
+  assert.equal(result.resetContinuous, true)
+})
+
+test('the tracker derives the decay rate from limits (20min cap / 10min rest = 2x)', async () => {
+  const { tracker: t } = makeTracker({ limits: { continuousMinutes: 20, restMinutes: 10 } })
+  t.sample({ idleMs: 100 }, 0)
+  t.sample({ idleMs: 100 }, 5000)
+  assert.equal(t.snapshot(5000).continuousMs, 5000)
+  // 10s of idle at 2x removes 20s of continuous usage, clamped at 0.
+  const after = t.sample({ idleMs: 120_000 }, 15_000)
+  assert.equal(after.resetContinuous, true)
+  assert.equal(t.snapshot(15_000).continuousMs, 0)
 })

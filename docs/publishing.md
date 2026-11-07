@@ -87,6 +87,10 @@ dependency installation; disabling or uninstalling removes all UI immediately.
 - [ ] Idling for `usage.autoPauseSeconds` auto-pauses with the same blocking card
       (after the ~0.6 s guard) and resumes on keyboard/mouse activity too; rest and
       daily-limit screens use the same today-usage card.
+- [ ] **Continuous decay:** with e.g. 20 min continuous used, a 1-minute pause reduces
+      the value (never zero); about 10 minutes of pause/rest clears the full 20 min;
+      skipping the rest keeps the decayed remainder; day rollover / assistant-off
+      reset it.
 - [ ] Daily overlay has only 「再使用 20 分钟」 and 「跳过」 (skip does not extend); with
       DSH hidden, hitting the cap tries `window.focus()` + one system notification
       (best effort).

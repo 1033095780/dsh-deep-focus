@@ -81,10 +81,20 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
     return true
   }
 
-  function endRest(early, reason, extra = {}) {
+  function endRest(early, reason, extra = {}, options = {}) {
     state = { ...state, resting: false, restUntil: null }
     idleStrike = 0
-    tracker.resetContinuous()
+    // No instant reset by default: the continuous counter keeps whatever the rest
+    // decayed it to (a skipped rest keeps the remainder). Two safety resets remain:
+    // a forced ending (30-minute wait cap / assistant-off) and a completed rest
+    // whose counter still claims a full cap because no samples arrived to decay it
+    // (would otherwise start another rest immediately and loop).
+    if (options.resetContinuous === true) {
+      tracker.resetContinuous()
+    } else if (!early) {
+      const limitMs = Math.max(0, minutes(settings.get().limits.continuousMinutes, 30)) * 60_000
+      if (limitMs > 0 && tracker.snapshot(now()).continuousMs >= limitMs) tracker.resetContinuous()
+    }
     ring.emit(EVENT.restFinished, { early: early === true, reason, ...extra })
     persist()
   }
@@ -102,7 +112,7 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
     }
     restDueEmitted = false
     idleStrike = 0
-    tracker.resetContinuous()
+    // No instant reset: the continuous counter decays while the rest samples arrive.
     ring.emit(EVENT.restStarted, { minutes: restMinutes, reason })
     persist()
   }
@@ -257,19 +267,28 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
     const enabled = s.assistant.enabled === true
     const usage = tracker.snapshot(at)
     let changed = false
+    let restEnded = false
 
     if (state.resting) {
       if (state.restUntil === null) {
         endRest(false, 'elapsed-and-active')
+        restEnded = true
       } else if (at >= state.restUntil) {
         const capped = at > state.restUntil + REST_ACTIVITY_WAIT_CAP_MS
         const cameBack = lastActivityAt !== null && lastActivityAt >= state.restUntil
-        if (capped) endRest(false, 'elapsed-and-active', { capped: true })
-        else if (cameBack) endRest(false, 'elapsed-and-active')
+        if (capped) {
+          endRest(false, 'elapsed-and-active', { capped: true }, { resetContinuous: true })
+          restEnded = true
+        } else if (cameBack) {
+          endRest(false, 'elapsed-and-active')
+          restEnded = true
+        }
       }
     }
 
     if (!enabled) {
+      // Assistant off means no continuous-usage accounting: zero it (safety reset).
+      tracker.resetContinuous()
       if (state.resting) endRest(true, 'assistant-off')
       if (state.paused) state = { ...state, paused: false, pausedAt: null, pausedReason: null }
       if (state.dailyLocked) {
@@ -309,7 +328,9 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
     }
 
     const continuousLimitMs = minutes(s.limits.continuousMinutes, 30) * 60_000
-    if (!state.resting && !state.dailyLocked && !state.paused) {
+    // A rest that just ended in this tick must not instantly re-trigger from the
+    // counters sampled before its end (would loop for skipped/capped rests).
+    if (!state.resting && !state.dailyLocked && !state.paused && !restEnded) {
       if (continuousLimitMs > 0 && usage.continuousMs >= continuousLimitMs) {
         startRest(at, 'continuous')
       } else if (continuousLimitMs > 0 && usage.continuousMs >= continuousLimitMs * REST_DUE_RATIO) {
@@ -447,6 +468,7 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
       lastAssistantEnabled = next
       if (!next) {
         if (state.resting) endRest(true, 'assistant-off')
+        tracker.resetContinuous()
         state = { ...state, dailyLocked: false, paused: false, pausedAt: null, pausedReason: null }
         idleStrike = 0
         lastIdleSampleAt = null

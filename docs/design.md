@@ -21,7 +21,7 @@ closed. A companion desktop guard is a possible later phase and is not included.
 | `src/host/settings.js` | v4 settings merge/clamp; pre-v4 files are discarded. |
 | `src/host/sampler.js` + `win32-idle.ps1` | Idle time + foreground application (`idleMs\|pid\|exeName`). |
 | `src/host/apps.js` | Executable name → stable key + friendly label. |
-| `src/host/tracker.js` | Active total, per-app buckets, daily JSONL aggregate, pause/rest suppression. |
+| `src/host/tracker.js` | Active total, per-app buckets, daily JSONL aggregate, pause/rest suppression, continuous decay during recovery. |
 | `src/host/limits.js` | Daily cap, continuous cap, forced rest, idle pause, extension window. |
 | `src/host/events.js` | Event ring, agent status map, completion alerts. |
 | `src/host/api.js` | Same-origin JSON API. |
@@ -49,8 +49,11 @@ sampling for the session. No window titles are read.
 
 Tracker: a sample counts as active only when idle < `usage.idleThresholdSeconds`;
 active time goes to the day total and the current app bucket. While paused or
-resting the Host calls `tracker.sample(..., { counted: false })`, so those periods
-never accumulate. One aggregate line per minute: `{ t, activeMs, apps: { key: ms } }`.
+resting the Host calls `tracker.sample(..., { counted: false })`: those periods never
+accumulate, and the **continuous counter decays** by `gap * (continuousMinutes /
+restMinutes)` instead of resetting — so recovery time is consumed proportionally and a
+short pause never zeroes the run. One aggregate line per minute:
+`{ t, activeMs, apps: { key: ms } }`.
 
 ## Limits, rest and pause
 
@@ -68,10 +71,14 @@ never accumulate. One aggregate line per minute: `{ t, activeMs, apps: { key: ms
 | `assistant.soloSession` | true | one-conversation pinning (auto-jump + gray + non-clickable); exposed as the eighth UI switch together with `hideOtherSessions` |
 
 - **Continuous cap:** reaching it starts a rest (`resting`, `restUntil`,
-  `rest-started`, continuous counter reset). The rest ends only when its time
-  elapsed **and** activity was seen afterwards (`rest-finished`,
-  `reason: "elapsed-and-active"`), or via `POST /rest/finish`
-  (`reason: "skipped"`); a 30-minute cap prevents a stuck rest.
+  `rest-started`). The continuous counter is **not reset**: during the pause/rest it
+  decays at `continuousMinutes / restMinutes` per minute, so the whole cap clears after
+  roughly `limits.restMinutes` of recovery (default 30 min used → 10 min rest → 0; with
+  20/10, 20 min → 10 min → 0). A skipped or short rest keeps the decayed remainder and
+  resuming continues from it. The rest ends only when its time elapsed **and** activity
+  was seen afterwards (`rest-finished`, `reason: "elapsed-and-active"`), or via
+  `POST /rest/finish` (`reason: "skipped"`); a 30-minute cap prevents a stuck rest.
+  Day rollover, assistant-off and invalid/sleep sampler gaps still reset the counter.
 - **Daily cap:** when active time ≥ cap and no extension grace window is active,
   `dailyLocked` is set once (`daily-locked`). `POST /extend` sets
   `extendedUntil`, increments `extendCountToday` and clears the lock; only a
