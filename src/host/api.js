@@ -253,6 +253,8 @@ export function createApi({
         dayKey: usage.dayKey,
         idleMs: Number.isFinite(idleMs) ? idleMs : null,
         away,
+        // Same convention as limits: true until the first sampler sample arrives.
+        foregroundDsh: limits.isForegroundDsh(),
       },
       appsToday: {
         totalMs: Math.round(appsTotal(usage.apps)),

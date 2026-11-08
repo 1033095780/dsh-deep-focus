@@ -167,8 +167,9 @@ test('GET /state returns the v4 contract shape with root-only sessions and solo'
   const state = result.json
   assert.deepEqual(Object.keys(state).sort(), ['appsToday', 'events', 'limit', 'now', 'sessions', 'settings', 'solo', 'usage'])
   assert.deepEqual(Object.keys(state.usage).sort(), [
-    'activeTodayMs', 'appsSampling', 'away', 'continuousMs', 'dayKey', 'idleMs', 'sampling',
+    'activeTodayMs', 'appsSampling', 'away', 'continuousMs', 'dayKey', 'foregroundDsh', 'idleMs', 'sampling',
   ])
+  assert.equal(state.usage.foregroundDsh, true)
   assert.deepEqual(Object.keys(state.appsToday).sort(), ['top', 'totalMs'])
   assert.deepEqual(Object.keys(state.limit).sort(), [
     'assistantEnabled', 'continuousLimitMs', 'continuousUsedMs', 'dailyLimitMs', 'dailyLocked', 'dailyUsedMs',
@@ -492,6 +493,17 @@ test('tracking-only mode disables enforcement and rejects pause/rest', async () 
   const rest = await call(fixture.api, makeRequest({ method: 'POST', url: ROUTES.restStart, body: '{}' }))
   assert.equal(rest.status, 409)
   assert.equal(rest.json.error.code, 'tracking-only')
+})
+
+test('usage.foregroundDsh reflects the live foreground state', async () => {
+  const fixture = await makeFixture()
+  const readState = async () => (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+  // Same convention as limits: unknown before the first sample is treated as DSH here.
+  assert.equal((await readState()).usage.foregroundDsh, true)
+  fixture.limits.setForegroundDsh(false)
+  assert.equal((await readState()).usage.foregroundDsh, false)
+  fixture.limits.setForegroundDsh(true)
+  assert.equal((await readState()).usage.foregroundDsh, true)
 })
 
 test('usage exposes machine idle time and the away flag', async () => {

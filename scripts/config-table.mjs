@@ -136,8 +136,8 @@ const FIELDS = [
     key: 'alerts.awayIdleSeconds',
     unit: 's',
     note: {
-      en: 'Consider you away (for the completion chime) after this much idle time.',
-      zh: '空闲达到此时长即视为离开（决定完成提示音是否响起）。',
+      en: 'Idle fallback for treating you as away; the system-wide foreground app is the primary signal for the completion notice.',
+      zh: '判断“离开”的空闲回退值；完成提示以系统级前台应用为首要信号。',
     },
   },
   {
@@ -209,8 +209,8 @@ const COLUMNS = {
 }
 
 const FOOTER = {
-  en: '> Times are minutes unless the unit says otherwise. The defaults are the agreed product rules: a 3-hour daily cap, a forced 10-minute rest after 30 continuous minutes, unlimited 20-minute extensions by default (set a positive daily limit to cap them), and a completion chime that only repeats while you are away. The assistant never blocks tools and only enforces inside DSH (see the capability boundary below).',
-  zh: '> 未特别注明时时间单位为分钟。默认值即已确认的产品规则：每日上限 3 小时、连续使用 30 分钟后强制休息 10 分钟、默认不限次数的 20 分钟续期（设置正数才会限制次数），完成提示音只在你离开时重复。助手绝不拦截工具，限制只在 DSH 内生效（见下方能力边界）。',
+  en: '> Times are minutes unless the unit says otherwise. The defaults are the agreed product rules: a 3-hour daily cap, a forced 10-minute rest after 30 continuous minutes, unlimited 20-minute extensions by default (set a positive daily limit to cap them), and a completion notice (chime + notification) when all conversations finish while another app is in front. The assistant never blocks tools and only enforces inside DSH (see the capability boundary below).',
+  zh: '> 未特别注明时时间单位为分钟。默认值即已确认的产品规则：每日上限 3 小时、连续使用 30 分钟后强制休息 10 分钟、默认不限次数的 20 分钟续期（设置正数才会限制次数），以及全部对话完成且另一个应用在前台时的完成提示（提示音 + 系统通知）。助手绝不拦截工具，限制只在 DSH 内生效（见下方能力边界）。',
 }
 
 function loadDefaults() {

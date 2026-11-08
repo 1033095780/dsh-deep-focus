@@ -590,15 +590,18 @@ test('load restores a waiting rest and a pause', async () => {
 
 test('pause/rest are only effective while DSH is foreground', () => {
   const env = makeLimits()
+  assert.equal(env.limits.isForegroundDsh(), true)
   env.limits.pause(BASE)
   assert.equal(env.limits.isPaused(), true)
   assert.equal(env.limits.isPauseEffective(), true)
   assert.equal(env.limits.isRecoveryEffective(), true)
   env.limits.setForegroundDsh(false)
+  assert.equal(env.limits.isForegroundDsh(), false)
   assert.equal(env.limits.isPaused(), true) // raw state survives until the user returns
   assert.equal(env.limits.isPauseEffective(), false)
   assert.equal(env.limits.isRecoveryEffective(), false)
   env.limits.setForegroundDsh(true)
+  assert.equal(env.limits.isForegroundDsh(), true)
   assert.equal(env.limits.isPauseEffective(), true)
 
   const rest = makeLimits()

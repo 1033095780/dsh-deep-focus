@@ -69,6 +69,15 @@ async function patchSettings(patch) {
 async function main() {
   // 1. Contract + health.
   const s0 = await state()
+  const originalAssistant = s0.settings?.assistant || {}
+  // Enforcement tests need normal mode: temporarily leave tracking-only and make
+  // sure the assistant is enabled (both restored at the end of the run).
+  if (originalAssistant.trackingOnly === true) {
+    await patchSettings({ assistant: { trackingOnly: false } })
+  }
+  if (originalAssistant.enabled === false) {
+    await req('POST', '/assistant', { enabled: true })
+  }
   assert(s0.settings?.version === 4, 'state reports settings version 4')
   assert(typeof s0.usage?.sampling === 'string', 'usage.sampling present')
   assert(Array.isArray(s0.sessions), 'sessions is an array')
@@ -187,6 +196,16 @@ async function main() {
   assert(bad.status === 400, 'non-object settings -> 400')
   const unknown = await req('GET', '/nope')
   assert(unknown.status === 404, 'unknown path -> 404')
+
+  // 10. Restore the user's original assistant mode (tracking-only / disabled).
+  if (originalAssistant.trackingOnly === true) {
+    await patchSettings({ assistant: { trackingOnly: true } })
+    const restoredTracking = await state()
+    assert(restoredTracking.settings.assistant.trackingOnly === true, 'tracking-only restored')
+  }
+  if (originalAssistant.enabled === false) {
+    await req('POST', '/assistant', { enabled: false })
+  }
 
   console.log('')
   const passed = results.length - failed

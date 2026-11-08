@@ -71,7 +71,7 @@ the foreground. One aggregate line per minute: `{ t, activeMs, apps: { key: ms }
 | `usage.autoPauseSeconds` | 60 | idle auto-rest threshold; `0` = off |
 | `assistant.enabled` | true | false = statistics only, no enforcement |
 | `assistant.soloSession` | true | one-conversation pinning (auto-jump + gray + non-clickable); exposed as a UI switch together with `hideOtherSessions` |
-| `assistant.trackingOnly` | false | record/display usage only — no daily lock, rest, pause, overlays, chime, background attention or solo restriction |
+| `assistant.trackingOnly` | false | record/display usage only — no daily lock, rest, pause, overlays or solo restriction; limit prompts/chime muted, the informational all-done completion notice still runs |
 
 - **Continuous cap:** reaching it starts a rest (`resting`, `restUntil`,
   `rest-started`). Decay runs **only while the rest screen is effective, i.e. DSH is the
@@ -145,8 +145,9 @@ Base `/plugins/dsh-deep-focus/api`, same-origin only, `cache-control: no-store`,
 | POST | `/extend` | grant the extension window (409 `not-locked` / `extend-limit-reached`) |
 
 `/state`: `{ now, usage:{activeTodayMs, continuousMs, sampling, appsSampling,
-dayKey, idleMs, away}, appsToday:{totalMs, top}, limit, settings, sessions:[{id,
-running}] (root conversations only), solo:{active, primary, sessions}, events }`
+dayKey, idleMs, away, foregroundDsh}, appsToday:{totalMs, top}, limit, settings,
+sessions:[{id, running}] (root conversations only), solo:{active, primary, sessions},
+events }`
 where `solo.primary` is the running root session whose turn started most recently
 (or `null` when none runs), `solo.sessions` lists all running root ids and
 `solo.active` stays true when any root runs. Events:
@@ -209,13 +210,16 @@ Polling is 1 s visible / 5 s hidden with one store and an in-flight guard; after
 failed polls (or a 404) the client hides its UI, restores sidebar styles and keeps
 retrying. Buttons use inline theme colors. The chime is synthesized Web Audio and
 **all-done**: the client tracks the root running set from `state.sessions`; it rings
-only on the edge from non-empty to empty (all running conversations finished) while
-away (unfocused/hidden or idle past `alerts.awayIdleSeconds`). A partial completion
-— some conversations still running — stays silent, and `task-completed` events only
-drive a toast, never sound by themselves. It repeats every
-`alerts.repeatIntervalMs` until input and is hard-capped at ~120 repeats
-(~2 minutes); it stops on `visibilitychange`→visible, window focus, or activity;
-quiet hours/volume apply; audio fails silently.
+only on the edge from non-empty to empty (all running conversations finished). It fires
+when the user is **outside DSH** — `usage.foregroundDsh === false`, with
+unfocused/hidden/idle (`alerts.awayIdleSeconds`) as fallbacks — and then also posts
+**one clickable system notification** 「所有对话已完成 · 点击回到 DeepSeek」 (click →
+focus DSH). No sound/notification when DSH is in front; a partial completion (some
+conversations still running) stays silent. This completion notice is informational, so
+it **also runs in tracking-only mode** (limit prompts/chime stay muted there); the chime
+repeats every `alerts.repeatIntervalMs` until input and is hard-capped at ~120 repeats,
+stopping on `visibilitychange`→visible, focus or activity; quiet hours/volume apply;
+audio fails silently.
 
 ## Data files
 

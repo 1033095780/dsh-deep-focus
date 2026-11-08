@@ -430,6 +430,10 @@ export function createLimits({ settings, tracker, ring, storage = null, now = Da
     setForegroundDsh(isDsh) {
       foregroundDsh = isDsh === true
     },
+    /** Whether DSH is currently the foreground app (same value the pause/rest gating uses). */
+    isForegroundDsh() {
+      return foregroundDsh === true
+    },
 
     /** Manual pause: counting stops immediately and resumes only on real activity. */
     pause(at = now()) {

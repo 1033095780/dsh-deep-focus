@@ -155,6 +155,7 @@ window.__ModuleLoader__.load({
         'foreground.restTitle': '连续使用超时 · 需要休息',
         'foreground.dailyTitle': '今日使用已超时',
         'foreground.pauseTitle': '计时已暂停',
+        'foreground.allDoneTitle': '所有对话已完成',
         'foreground.body': '点击回到 DeepSeek',
         'daily.apps': '应用明细',
         'daily.extend': '再使用 {n} 分钟',
@@ -285,6 +286,7 @@ window.__ModuleLoader__.load({
         'foreground.restTitle': 'Continuous use limit reached · rest needed',
         'foreground.dailyTitle': 'Daily usage time is up',
         'foreground.pauseTitle': 'Tracking paused',
+        'foreground.allDoneTitle': 'All conversations finished',
         'foreground.body': 'Click to return to DeepSeek',
         'daily.apps': 'App breakdown',
         'daily.extend': 'Use {n} more minutes',
@@ -1383,6 +1385,9 @@ window.__ModuleLoader__.load({
             /* ignored */
           }
           const usage = state && state.usage ? state.usage : null
+          // Host-authoritative "outside DSH" signal: the user is in another app
+          // even when the system idle time is low.
+          if (usage && usage.foregroundDsh === false) return true
           if (usage && usage.away === true) return true
           const awaySeconds = clampNumber(alerts && alerts.awayIdleSeconds, 10, 3600, 30)
           const idle = hostIdleMs(state)
@@ -1391,6 +1396,50 @@ window.__ModuleLoader__.load({
         }
 
         return { start: start, isAway: isAway, markActive: markActive }
+      })()
+
+      /** One shared system-notification helper (permission requested at most once). */
+      const systemNotifier = (function createSystemNotifier() {
+        let permissionAsked = false
+
+        function show(title, body) {
+          try {
+            if (typeof Notification === 'undefined') return
+            const showNow = function () {
+              try {
+                const notification = new Notification(title, { body: body })
+                notification.onclick = function () {
+                  try {
+                    window.focus()
+                  } catch (error) {
+                    /* ignored */
+                  }
+                  try {
+                    notification.close()
+                  } catch (error) {
+                    /* ignored */
+                  }
+                }
+              } catch (error) {
+                /* notifications may be unavailable */
+              }
+            }
+            if (Notification.permission === 'granted') {
+              showNow()
+            } else if (Notification.permission === 'default' && !permissionAsked) {
+              permissionAsked = true
+              Promise.resolve(Notification.requestPermission())
+                .then(function (result) {
+                  if (result === 'granted') showNow()
+                })
+                .catch(function () {})
+            }
+          } catch (error) {
+            /* silent fail */
+          }
+        }
+
+        return { show: show }
       })()
 
       const completionChime = (function createCompletionChime() {
@@ -1407,7 +1456,6 @@ window.__ModuleLoader__.load({
         }
 
         function play(alerts) {
-          if (trackingOnlyMode(store.get().state)) return
           if (plays >= REPEAT_LIMIT) return
           plays += 1
           if (!alerts || alerts.sound === false) return
@@ -1526,7 +1574,6 @@ window.__ModuleLoader__.load({
          * that reported running. A single transient empty poll never rings.
          */
         function observeHostState(state, sampledAt) {
-          if (trackingOnlyMode(state)) return
           const at = numberOr(sampledAt, 0)
           if (at <= 0) return
           const soloActive = Boolean(state && state.solo && state.solo.active === true)
@@ -1560,12 +1607,23 @@ window.__ModuleLoader__.load({
           }
         }
 
-        /** Ring only when ALL running root conversations just finished, and never while watching. */
+        /** All-done notice: chime + one clickable system notification, only when outside. */
+        function notifyAllDone(state, alerts) {
+          try {
+            if (isQuietHours(alerts)) return
+            systemNotifier.show(t('foreground.allDoneTitle'), t('foreground.body'))
+          } catch (error) {
+            /* notification is best effort */
+          }
+        }
+
         function triggerAllFinished() {
           const state = store.get().state
-          if (trackingOnlyMode(state)) return
           const alerts = (state && state.settings && state.settings.alerts) || null
           if (!awayTracker.isAway(alerts, state)) return
+          // Information-only notice: it also fires in tracking-only mode, while
+          // restriction prompts stay silent there.
+          notifyAllDone(state, alerts)
           if (alerts && alerts.repeatUntilActive === false) {
             play(alerts)
             return
@@ -1592,7 +1650,6 @@ window.__ModuleLoader__.load({
       // window.focus() (plus two retries) and show one system notification.
       const foregroundAlert = (function createForegroundAlert() {
         let prev = null
-        let permissionAsked = false
         let lastTriggerAt = 0
         let focusTimers = []
 
@@ -1643,46 +1700,13 @@ window.__ModuleLoader__.load({
         }
 
         function showNotification(kind) {
-          try {
-            if (typeof Notification === 'undefined') return
-            const title =
-              kind === 'rest'
-                ? t('foreground.restTitle')
-                : kind === 'daily'
-                  ? t('foreground.dailyTitle')
-                  : t('foreground.pauseTitle')
-            const body = t('foreground.body')
-            const show = function () {
-              try {
-                const notification = new Notification(title, { body: body })
-                notification.onclick = function () {
-                  try {
-                    window.focus()
-                  } catch (error) {
-                    /* ignored */
-                  }
-                  try {
-                    notification.close()
-                  } catch (error) {
-                    /* ignored */
-                  }
-                }
-              } catch (error) {
-                /* notifications may be unavailable */
-              }
-            }
-            if (Notification.permission === 'granted') show()
-            else if (Notification.permission === 'default' && !permissionAsked) {
-              permissionAsked = true
-              Promise.resolve(Notification.requestPermission())
-                .then(function (result) {
-                  if (result === 'granted') show()
-                })
-                .catch(function () {})
-            }
-          } catch (error) {
-            /* silent fail */
-          }
+          const title =
+            kind === 'rest'
+              ? t('foreground.restTitle')
+              : kind === 'daily'
+                ? t('foreground.dailyTitle')
+                : t('foreground.pauseTitle')
+          systemNotifier.show(title, t('foreground.body'))
         }
 
         function observeState(state) {

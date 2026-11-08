@@ -380,6 +380,12 @@ check('READMEs describe the current product', () => {
     [/continues? from the remaining|never zero(?:e)?s|resumes? from the remaining/i, 'resume continues from the remaining value'],
     [/(?:day rollover|disabling the assistant|assistant[- ]off)[^.]{0,100}reset/i, 'the decay reset conditions'],
     [/background[^.]{0,120}(?:limit|rest|pause|daily)/i, 'the background limit-screen attention'],
+    [/completion attention|all running conversations[^.]{0,80}finish/i, 'the completion attention feature'],
+    [/system-level foreground|foreground signal/i, 'the system-level foreground detection'],
+    [/所有对话已完成/, 'the completion notification title'],
+    [/no sound or notification while DSH is in front|DSH in front[^.]{0,80}(?:silent|no)/i, 'silent when DSH is in front'],
+    [/partial completion[^.]{0,100}(?:silent|never prompts)/i, 'partial-completion silence'],
+    [/tracking-only mode[^.]{0,140}(?:completion|still works)|completion notice also works in tracking-only/i, 'the completion notice in tracking-only mode'],
     [/only[^.]{0,80}(?:effective|take effect)[^.]{0,100}foreground/i, 'the foreground-only pause/rest rule'],
     [/another application[^.]{0,140}(?:keeps? counting|continues? (?:counting|accumulating))|today's usage[^.]{0,100}keeps counting/i, 'away usage keeps counting'],
     [/(?:continuous|value)[^.]{0,60}(?:held|frozen)[^.]{0,80}(?:no decay|no reset)|neither decays nor resets/i, 'the frozen continuous counter while away'],
@@ -463,6 +469,12 @@ check('READMEs describe the current product', () => {
     [/从剩余值继续|不会清零/, 'resume continues from the remaining value'],
     [/(?:跨天|关闭助手)[^。]{0,80}(?:清零|重置)/, 'the decay reset conditions'],
     [/后台[^。]{0,80}(?:限制|休息|暂停|每日)/, 'the background limit-screen attention'],
+    [/完成提示|所有正在运行的会话全部结束/, 'the completion attention feature'],
+    [/系统级前台/, 'the system-level foreground detection'],
+    [/所有对话已完成/, 'the completion notification title'],
+    [/DSH 在前台时[^。]{0,40}(?:不响|不提示|静默)/, 'silent when DSH is in front'],
+    [/只完成一部分[^。]{0,30}(?:不提示|从不提示)/, 'partial-completion silence'],
+    [/仅记录模式[^。]{0,80}也生效|在「仅记录模式」下也生效/, 'the completion notice in tracking-only mode'],
     [/只在 DSH (?:是|为)前台|只在 DSH 前台|仅[^。]{0,30}前台[^。]{0,20}生效/, 'the foreground-only pause/rest rule'],
     [/继续计时|继续累计/, 'away usage keeps counting'],
     [/不衰减也不重置|保持不变/, 'the frozen continuous counter while away'],
@@ -498,7 +510,7 @@ check('READMEs describe the current product', () => {
     [/单会话限制/, 'tracking-only disables the solo restriction'],
     [/所有正在运行的会话|运行集合/, 'the all-done chime rule'],
     [/子代理|队友/, 'the subagent/teammate silence rule'],
-    [/只完成了一部分|部分完成/, 'the partial-completion silence rule'],
+    [/只完成一部分|只完成了一部分|部分完成/, 'the partial-completion silence rule'],
     [/(?:约 )?2 分钟/, 'the chime hard cap'],
     [/自动暂停/, 'the unified auto-pause screen'],
     [/同一张(?:今日用量)?卡片/, 'the unified pause/rest/daily card'],
@@ -555,8 +567,8 @@ check('LICENSE and CHANGELOG', () => {
   if (!changelog.includes('## [Unreleased]')) fail('CHANGELOG.md has no [Unreleased] section')
   const entry = new RegExp(`^## \\[${pkg.version.replace(/\./g, '\\.')}\\] - \\d{4}-\\d{2}-\\d{2}$`, 'm')
   if (!entry.test(changelog)) fail(`CHANGELOG.md needs a dated "[${pkg.version}] - YYYY-MM-DD" entry`)
-  if (pkg.version === '0.4.34' && !changelog.includes('## [0.4.34] - 2026-11-07')) {
-    fail('CHANGELOG.md must date the 0.4.34 entry 2026-11-07')
+  if (pkg.version === '0.4.35' && !changelog.includes('## [0.4.35] - 2026-11-08')) {
+    fail('CHANGELOG.md must date the 0.4.35 entry 2026-11-08')
   }
   for (const heading of ['### Added', '### Changed', '### Fixed']) {
     if (!changelog.includes(heading)) fail(`CHANGELOG.md entry is missing "${heading}"`)

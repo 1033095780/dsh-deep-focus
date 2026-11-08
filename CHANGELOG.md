@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.4.35] - 2026-11-08
+
+### Changed
+
+- **Completion attention now works when you are in another app.** When all running
+  conversations have finished, the plugin detects "outside DSH" from the system-level
+  foreground signal (not only idle), rings the chime and shows one clickable system
+  notification 「所有对话已完成 · 点击回到 DeepSeek」 (click returns to DSH). No prompt when
+  DSH is in front; a partial completion stays silent. This informational notice also
+  works in tracking-only mode.
+
 ## [0.4.34] - 2026-11-07
 
 ### Added
@@ -17,7 +28,7 @@ Nothing yet.
   the rings, dashboard, history and per-app breakdown keep working — while disabling the
   daily lock, continuous forced rest, auto/manual pause, rest screens, background
   focus/notification attempts, the completion chime and the one-conversation restriction.
-  Nothing is counted differently; turn it off to restore the normal rules.
+  Nothing is counted differently; turn it off to restore normal rules.
 
 ## [0.4.33] - 2026-11-07
 
@@ -116,25 +127,24 @@ distribution is GitHub Releases + source only.
 
 ### Fixed
 
-- The completion chime could ring before every conversation finished. “All done” now
-  comes from Host state only, requires two consecutive polls without a running root
-  conversation, and no longer relies on `document.hasFocus()` (unreliable in the
-  Electron shell) — being present never rings.
+- The completion chime could ring before every conversation finished; “all done” now
+  comes from Host state only (two consecutive polls without a running root) and no longer
+  relies on `document.hasFocus()`.
 
 ## [0.4.18] - 2026-11-05
 
 ### Fixed
 
-- Today's minutes never move backwards within a day (a new day resets them), and the
-  continuous ring shows real time even when the continuous limit is disabled.
+- Today's minutes never move backwards within a day, and the continuous ring shows real
+  time even when the continuous limit is disabled.
 
 ## [0.4.17] - 2026-11-05
 
 ### Fixed
 
-- The continuous clock is monotonic now: it only advances, drops only on a real reset,
-  ticks every 500 ms instead of stepping against the 5 s sampler, and freezes on the
-  Host value while paused/resting/locked. Today's minutes follow the same rule.
+- The continuous clock is monotonic: it only advances, drops only on a real reset, ticks
+  every 500 ms, and freezes on the Host value while paused/resting/locked. Today's minutes
+  follow the same rule.
 
 ## [0.4.16] - 2026-11-05
 
