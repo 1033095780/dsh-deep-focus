@@ -1582,7 +1582,14 @@ window.__ModuleLoader__.load({
             resetIdleMonitor()
             return
           }
-          const allIdle = runningCount === null ? !soloActive : runningCount === 0 && !soloActive
+          // Host activity flag includes subagent/teammate turns. When present it
+          // is authoritative for "still busy"; when absent we fall back to the
+          // root-session running flags as before.
+          const activity = state && state.activity && typeof state.activity === 'object' ? state.activity : null
+          const activityKnown = Boolean(activity && typeof activity.running === 'boolean')
+          const activityRunning = activityKnown ? activity.running === true : null
+          const rootBusy = runningCount === null ? soloActive : runningCount > 0 || soloActive
+          const allIdle = !rootBusy && (activityKnown ? activityRunning !== true : true)
           if (!allIdle) {
             resetIdleMonitor()
             lastRunningSeen = true

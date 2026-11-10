@@ -78,6 +78,13 @@ async function main() {
   if (originalAssistant.enabled === false) {
     await req('POST', '/assistant', { enabled: true })
   }
+  // Enforcement tests must not collide with the user's current caps: raise the
+  // limits for the run (restored at the end) and clear any live pause/rest.
+  const originalLimits = s0.settings?.limits || {}
+  const originalUsageCfg = s0.settings?.usage || {}
+  await patchSettings({ limits: { dailyMinutes: 100000, continuousMinutes: 100000 } })
+  if (s0.limit?.paused === true) await req('POST', '/resume', {})
+  if (s0.limit?.resting === true) await req('POST', '/rest/finish', {})
   assert(s0.settings?.version === 4, 'state reports settings version 4')
   assert(typeof s0.usage?.sampling === 'string', 'usage.sampling present')
   assert(Array.isArray(s0.sessions), 'sessions is an array')
@@ -163,7 +170,7 @@ async function main() {
 
   // 7. Settings round-trip + limits are accepted (restore afterwards).
   const before = await state()
-  const wanted = before.settings
+  const wanted = { limits: originalLimits, usage: before.settings.usage }
   await patchSettings({ limits: { dailyMinutes: 181, continuousMinutes: 31, restMinutes: 11 }, usage: { autoPauseSeconds: 120 } })
   const after = await state()
   assert(after.settings.limits.dailyMinutes === 181 && after.settings.limits.restMinutes === 11, 'settings round-trip applies values')

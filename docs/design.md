@@ -147,7 +147,7 @@ Base `/plugins/dsh-deep-focus/api`, same-origin only, `cache-control: no-store`,
 `/state`: `{ now, usage:{activeTodayMs, continuousMs, sampling, appsSampling,
 dayKey, idleMs, away, foregroundDsh}, appsToday:{totalMs, top}, limit, settings,
 sessions:[{id, running}] (root conversations only), solo:{active, primary, sessions},
-events }`
+activity:{running}, events }`
 where `solo.primary` is the running root session whose turn started most recently
 (or `null` when none runs), `solo.sessions` lists all running root ids and
 `solo.active` stays true when any root runs. Events:
@@ -209,17 +209,18 @@ and attribute are removed.
 Polling is 1 s visible / 5 s hidden with one store and an in-flight guard; after two
 failed polls (or a 404) the client hides its UI, restores sidebar styles and keeps
 retrying. Buttons use inline theme colors. The chime is synthesized Web Audio and
-**all-done**: the client tracks the root running set from `state.sessions`; it rings
-only on the edge from non-empty to empty (all running conversations finished). It fires
+**all-done**: it requires **no agent turn running at all** — the Host aggregates root
+conversations *and* subagent/teammate child sessions into `activity.running`; the client
+waits until that signal is false (two consecutive idle polls) rather than only looking at
+the visible root sessions. A still-running subagent/teammate keeps it silent. It fires
 when the user is **outside DSH** — `usage.foregroundDsh === false`, with
 unfocused/hidden/idle (`alerts.awayIdleSeconds`) as fallbacks — and then also posts
 **one clickable system notification** 「所有对话已完成 · 点击回到 DeepSeek」 (click →
-focus DSH). No sound/notification when DSH is in front; a partial completion (some
-conversations still running) stays silent. This completion notice is informational, so
-it **also runs in tracking-only mode** (limit prompts/chime stay muted there); the chime
-repeats every `alerts.repeatIntervalMs` until input and is hard-capped at ~120 repeats,
-stopping on `visibilitychange`→visible, focus or activity; quiet hours/volume apply;
-audio fails silently.
+focus DSH). No sound/notification when DSH is in front; a partial completion stays silent.
+This completion notice is informational, so it **also runs in tracking-only mode** (limit
+prompts/chime stay muted there); the chime repeats every `alerts.repeatIntervalMs` until
+input and is hard-capped at ~120 repeats, stopping on `visibilitychange`→visible, focus
+or activity; quiet hours/volume apply; audio fails silently.
 
 ## Data files
 

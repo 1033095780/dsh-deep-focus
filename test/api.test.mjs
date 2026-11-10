@@ -60,6 +60,8 @@ async function makeFixture({
   turnBoundaryOf = null,
   idleMs = null,
   runningAt = {},
+  agentsList = null,
+  withoutAgentList = false,
 } = {}) {
   let clock = new Date(2026, 10, 5, 10, 0, 0).getTime()
   const now = () => clock
@@ -70,9 +72,12 @@ async function makeFixture({
   const ring = createEventRing({ now })
   const statusMap = createStatusMap({ now: () => clock })
   for (const id of running) statusMap.set(id, true, runningAt[id] ?? clock)
+  const liveAgentList = agentsList === null
+    ? [...roots.map((id) => ({ id })), { id: 'subagent-1' }, { id: 'teammate-1' }]
+    : agentsList
   const agents = {
     roots: () => roots.map((id) => ({ id })),
-    list: () => [...roots.map((id) => ({ id })), { id: 'subagent-1' }, { id: 'teammate-1' }],
+    ...(withoutAgentList ? {} : { list: () => liveAgentList }),
     ...(turnBoundaryOf === null ? {} : { turnBoundaryOf }),
   }
   const limits = createLimits({ settings, tracker, ring, storage: null, now })
@@ -165,7 +170,9 @@ test('GET /state returns the v4 contract shape with root-only sessions and solo'
   assert.equal(result.status, 200)
   assert.equal(result.headers['cache-control'], 'no-store')
   const state = result.json
-  assert.deepEqual(Object.keys(state).sort(), ['appsToday', 'events', 'limit', 'now', 'sessions', 'settings', 'solo', 'usage'])
+  assert.deepEqual(Object.keys(state).sort(), ['activity', 'appsToday', 'events', 'limit', 'now', 'sessions', 'settings', 'solo', 'usage'])
+  assert.deepEqual(Object.keys(state.activity).sort(), ['count', 'ids', 'running'])
+  assert.deepEqual(state.activity, { running: true, count: 1, ids: ['root-2'] })
   assert.deepEqual(Object.keys(state.usage).sort(), [
     'activeTodayMs', 'appsSampling', 'away', 'continuousMs', 'dayKey', 'foregroundDsh', 'idleMs', 'sampling',
   ])
@@ -195,6 +202,48 @@ test('GET /state returns the v4 contract shape with root-only sessions and solo'
   ])
   assert.deepEqual(state.solo, { active: true, sessions: ['root-2'], primary: 'root-2' })
   assert.deepEqual(state.events, [])
+})
+
+test('activity reports no running turn when no agent is live', async () => {
+  const fixture = await makeFixture({ roots: [], agentsList: [] })
+  const state = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+  assert.deepEqual(state.activity, { running: false, count: 0, ids: [] })
+})
+
+test('activity sees a subagent open turn even when every root is idle', async () => {
+  const fixture = await makeFixture({
+    running: [],
+    sessionsStore: { get: (id) => ({ id }) },
+    turnBoundaryOf: (live) => ({ openTurnStartSeq: live.id === 'subagent-1' ? 7 : null }),
+  })
+  const state = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+  assert.deepEqual(state.activity, { running: true, count: 1, ids: ['subagent-1'] })
+  // Root-only sessions/solo semantics stay unchanged.
+  assert.deepEqual(state.solo, { active: false, sessions: [], primary: null })
+  assert.deepEqual(state.sessions.filter((session) => session.running), [])
+})
+
+test('activity counts teammates while solo stays root-only', async () => {
+  const fixture = await makeFixture({ running: ['root-1', 'subagent-1'] })
+  const state = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+  assert.deepEqual(state.activity, { running: true, count: 2, ids: ['root-1', 'subagent-1'] })
+  assert.deepEqual(state.solo, { active: true, sessions: ['root-1'], primary: 'root-1' })
+})
+
+test('activity falls back to the legacy root scan without agents.list', async () => {
+  const fixture = await makeFixture({ withoutAgentList: true, running: ['root-2'] })
+  const state = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+  assert.deepEqual(state.activity, { running: true, count: 1, ids: ['root-2'] })
+})
+
+test('activity trusts a closed durable turn over a stale running flag', async () => {
+  const fixture = await makeFixture({
+    running: ['root-1'],
+    sessionsStore: { get: (id) => ({ id }) },
+    turnBoundaryOf: () => ({ openTurnStartSeq: null }),
+  })
+  const state = (await call(fixture.api, makeRequest({ url: ROUTES.state }))).json
+  assert.deepEqual(state.activity, { running: false, count: 0, ids: [] })
 })
 
 test('solo is inactive when no root agent runs', async () => {

@@ -115,8 +115,10 @@ dependency installation; disabling or uninstalling removes all UI immediately.
 - [ ] **Completion attention:** with DSH behind another app (system foreground = other
       app, not merely idle), finish all conversations → chime + **one** clickable
       notification 「所有对话已完成 · 点击回到 DeepSeek」 (click returns to DSH); with DSH
-      in front → silent; finishing only some conversations → silent. Enable 「仅记录模式」
-      and repeat: the completion notice still works while limit prompts stay muted.
+      in front → silent; finishing only some conversations → silent. With a subagent/teammate
+      child still running, it must stay silent until that work also finishes
+      (`state.activity.running === false`). Enable 「仅记录模式」 and repeat: the completion
+      notice still works while limit prompts stay muted.
 - [ ] Chime: with one conversation running, finish it while away → it rings; with
       two running, finishing only one stays silent and the second rings; repeats
       until input, capped ~2 min.

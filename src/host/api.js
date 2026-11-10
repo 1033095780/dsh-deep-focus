@@ -229,6 +229,73 @@ export function createApi({
     }
   }
 
+  /**
+   * Whether ANY agent turn is still running (roots, subagents and teammates alike),
+   * so the UI never announces "all done" while a child task is in flight.
+   * Prefers the durable turn log per live agent, falls back to the event status map,
+   * and keeps the legacy root-only scan when the agents service has no list().
+   */
+  function computeActivity() {
+    let listed = null
+    try {
+      if (typeof agents.list === 'function') {
+        const value = agents.list()
+        if (Array.isArray(value)) listed = value
+      }
+    } catch {
+      listed = null
+    }
+    if (listed === null) {
+      // Agents service unavailable: keep the existing root scan so nothing breaks.
+      try {
+        const roots = agents.roots()
+        const ids = Array.isArray(roots)
+          ? roots
+            .filter((agent) => typeof agent?.id === 'string' && statusMap.isRunning(agent.id))
+            .map((agent) => agent.id)
+            .sort()
+          : []
+        return { running: ids.length > 0, count: ids.length, ids }
+      } catch {
+        return { running: false, count: 0, ids: [] }
+      }
+    }
+    let store = null
+    if (typeof getSessions === 'function' && typeof agents.turnBoundaryOf === 'function') {
+      try {
+        const candidate = getSessions()
+        if (candidate !== null && candidate !== undefined && typeof candidate.get === 'function') store = candidate
+      } catch {
+        store = null
+      }
+    }
+    const ids = []
+    for (const agent of listed) {
+      const id = agent?.id
+      if (typeof id !== 'string') continue
+      let open = statusMap.isRunning(id)
+      if (store !== null) {
+        let live
+        try {
+          live = store.get(id)
+        } catch {
+          live = undefined
+        }
+        if (live !== undefined && live !== null) {
+          try {
+            const boundary = agents.turnBoundaryOf(live)
+            if (boundary !== null && boundary !== undefined) open = boundary.openTurnStartSeq !== null
+          } catch {
+            // Keep the status-map fallback for this agent.
+          }
+        }
+      }
+      if (open) ids.push(id)
+    }
+    ids.sort()
+    return { running: ids.length > 0, count: ids.length, ids }
+  }
+
   function buildState() {
     const at = now()
     // Finish an elapsed rest and re-check the caps before publishing state.
@@ -264,6 +331,7 @@ export function createApi({
       settings: settings.getPublic(),
       sessions,
       solo: { active: running.length > 0, sessions: running, primary: primaryRootSession(running) },
+      activity: computeActivity(),
       events: ring.list(),
     }
   }

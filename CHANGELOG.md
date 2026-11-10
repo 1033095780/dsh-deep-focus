@@ -9,16 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.4.36] - 2026-11-08
+
+### Fixed
+
+- **The all-done prompt could fire while a subagent was still running.** The check now
+  requires **no agent turn running at all** — roots plus subagent/teammate children via the
+  new host signal `state.activity.running` (previously only visible root sessions counted).
+  A still-running subagent keeps it silent.
+
 ## [0.4.35] - 2026-11-08
 
 ### Changed
 
-- **Completion attention now works when you are in another app.** When all running
-  conversations have finished, the plugin detects "outside DSH" from the system-level
-  foreground signal (not only idle), rings the chime and shows one clickable system
-  notification 「所有对话已完成 · 点击回到 DeepSeek」 (click returns to DSH). No prompt when
-  DSH is in front; a partial completion stays silent. This informational notice also
-  works in tracking-only mode.
+- **Completion attention now works when you are in another app.** When no agent turn is
+  running at all, "outside DSH" is detected from the foreground signal and the plugin rings
+  the chime plus one clickable notification 「所有对话已完成 · 点击回到 DeepSeek」 (click
+  returns). Silent when DSH is in front or a subagent is still working. Also works in
+  tracking-only.
 
 ## [0.4.34] - 2026-11-07
 
@@ -34,13 +42,11 @@ Nothing yet.
 
 ### Changed
 
-- **A finished rest no longer auto-resumes counting.** When the rest countdown after a
-  continuous timeout reaches 0, the rest page stays in a “waiting for you” state instead of
-  restarting the timer or a new continuous run (you may still be away). Waiting counts
-  nothing and does not grow/decay the continuous value. The rest ends only when you
-  genuinely come back and use the mouse/keyboard in DSH **after** the countdown (foreground
-  activity); activity in another application does not end it. Skipping the rest still
-  works, and the v0.4.31 best-effort attention behaviour is unchanged.
+- **A finished rest no longer auto-resumes counting.** When the rest countdown reaches 0,
+  the rest page stays in a “waiting for you” state instead of restarting the timer (you may
+  still be away); waiting counts nothing and neither grows nor decays the continuous value.
+  The rest ends only on genuine foreground mouse/keyboard use in DSH after the countdown,
+  or via 「跳过休息」. The v0.4.31 best-effort attention is unchanged.
 
 ## [0.4.32] - 2026-11-07
 
@@ -69,12 +75,11 @@ Nothing yet.
 
 ### Changed
 
-- **Continuous usage decays during pause/rest instead of resetting.** Recovery time now
+- **Continuous usage decays during pause/rest instead of resetting.** Recovery time
   reduces the continuous counter at `continuousMinutes / restMinutes` per minute, so the
-  full cap clears after about `limits.restMinutes` of pause/rest (default 30 min → 10 min;
-  e.g. 20 min used → ~10 min rest → 0). A short pause only reduces it and resuming
-  continues from the remainder — a single click never zeros the run. Day rollover,
-  assistant-off and invalid/sleep sampler gaps still reset it.
+  full cap clears after about `limits.restMinutes` (default 30/10 → 10 min; 20/10 →
+  20 min → ~10 min → 0). A short pause only reduces it and resumes from the remainder.
+  Day rollover, assistant-off and invalid sampler gaps still reset it.
 
 ## [0.4.29] - 2026-11-07
 
