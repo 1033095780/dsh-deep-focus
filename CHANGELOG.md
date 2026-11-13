@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [1.0.1] - 2026-11-13
+
+### Added
+
+- **Local completion reminder**: when a conversation lock completes automatically, the
+  browser shows a computer notification 「会话已完成」 (with the conversation title and
+  elapsed minutes; clicking it returns to DSH) plus an in-page banner for ~5 seconds. It
+  is best effort — without browser notification permission the banner is still shown — and
+  it stays local: no extra network request and no DingTalk token. Clicking 「跳过」 releases
+  without any reminder; the optional DingTalk `[+]` message is unchanged.
+
 ## [1.0.0] - 2026-11-13
 
 Complete rewrite: the plugin now has exactly one job — lock DSH to the conversation you

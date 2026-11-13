@@ -71,6 +71,11 @@ window.__ModuleLoader__.load({
         'settings.privacy': 'token 仅保存在本机 plugin-data，不会上传；消息以「[+] 」开头，只在会话完全完成解锁时发送。',
         'settings.unavailable': '通知服务暂不可用，请稍后再试。',
         'settings.enableHint': '关闭后不会发送任何消息。',
+        'notice.title': '会话已完成',
+        'notice.banner': '会话已完成 · {title}',
+        'notice.bannerNoTitle': '会话已完成',
+        'notice.body': '{title} · 用时 {minutes} 分钟',
+        'notice.bodyNoTitle': '对话已完成',
         'btn.retry': '重试',
       },
       en: {
@@ -105,6 +110,11 @@ window.__ModuleLoader__.load({
         'settings.privacy': 'The token stays on this machine in plugin-data and is never uploaded. Messages start with "[+] " and are sent only when a conversation fully finishes and unlocks.',
         'settings.unavailable': 'Notification service is temporarily unavailable.',
         'settings.enableHint': 'When off, no messages are sent.',
+        'notice.title': 'Conversation finished',
+        'notice.banner': 'Conversation finished · {title}',
+        'notice.bannerNoTitle': 'Conversation finished',
+        'notice.body': '{title} · took {minutes} min',
+        'notice.bodyNoTitle': 'Conversation finished',
         'btn.retry': 'Retry',
       },
     }
@@ -221,6 +231,7 @@ window.__ModuleLoader__.load({
       '.df-hint{font-size:12px;line-height:1.6;margin:0;color:var(--dsw-alias-label-secondary, #94a3b8)}',
       '.df-error{font-size:12px;margin:0;color:var(--dsw-alias-state-error-primary, #f87171)}',
       '.df-ok{font-size:12px;margin:0;color:var(--dsw-alias-state-success-primary, #34d399)}',
+      '.df-banner{position:fixed;top:calc(var(--dsh-frame-top-clearance, 0px) + 16px);left:50%;transform:translateX(-50%);z-index:210;box-sizing:border-box;max-width:min(520px, calc(100vw - 32px));padding:9px 16px;border:1px solid var(--dsw-alias-border-l1, rgba(148,163,184,.35));border-radius:999px;background:var(--dsw-alias-bg-layer-1, #111827);color:var(--dsw-alias-label-primary, #e5e7eb);font-family:inherit;font-size:13px;line-height:1.4;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;box-shadow:0 10px 28px color-mix(in srgb, var(--dsw-alias-bg-overlay, #000) 45%, transparent)}',
     ].join('')
 
     function Styles() {
@@ -304,12 +315,15 @@ window.__ModuleLoader__.load({
         failures: 0,
         skipBusy: false,
         skipError: '',
+        completionNotice: null,
+        lastActiveLock: null,
       }
       const listeners = new Set()
       let timer = 0
       let inFlight = false
       let destroyed = false
       let skippedSession = null
+      let noticeSeq = 0
 
       function get() {
         return snapshot
@@ -389,24 +403,47 @@ window.__ModuleLoader__.load({
 
         const data = result.data
         const clockOffset = typeof data.now === 'number' && Number.isFinite(data.now) ? Date.now() - data.now : 0
+        const receivedAt = Date.now()
         const previousLock = readLock(snapshot.state)
         const nextLock = readLock(data)
-        if (
-          previousLock &&
-          nextLock &&
-          String(previousLock.sessionId || '') === String(nextLock.sessionId || '')
-        ) {
-          // same lock: keep the skip suppression for this session
-        } else if (!nextLock) {
+        let completionNotice = snapshot.completionNotice
+        let lastActiveLock = snapshot.lastActiveLock
+
+        if (nextLock) {
+          const startedAt = numberOr(nextLock.startedAt, null)
+          const elapsedNow =
+            startedAt !== null
+              ? Math.max(0, receivedAt - clockOffset - startedAt)
+              : Math.max(0, numberOr(nextLock.elapsedMs, 0))
+          lastActiveLock = {
+            sessionId: String(nextLock.sessionId || ''),
+            title: typeof nextLock.title === 'string' ? nextLock.title : '',
+            elapsedMs: elapsedNow,
+          }
+          if (skippedSession !== null && skippedSession !== lastActiveLock.sessionId) skippedSession = null
+        } else if (previousLock) {
+          const previousSession = String(previousLock.sessionId || '')
+          const wasSkipped = skippedSession !== null && skippedSession === previousSession
+          if (!wasSkipped) {
+            noticeSeq += 1
+            completionNotice = {
+              id: 'notice-' + noticeSeq,
+              title: lastActiveLock && typeof lastActiveLock.title === 'string' ? lastActiveLock.title : '',
+              elapsedMs: numberOr(lastActiveLock && lastActiveLock.elapsedMs, 0),
+              sessionId: previousSession,
+            }
+          }
           skippedSession = null
         }
         snapshot = Object.assign({}, snapshot, {
           status: 'live',
           state: data,
-          receivedAt: Date.now(),
+          receivedAt: receivedAt,
           clockOffset: clockOffset,
           failures: 0,
           skipError: '',
+          completionNotice: completionNotice,
+          lastActiveLock: lastActiveLock,
         })
         emit()
         schedule(delay())
@@ -532,6 +569,44 @@ window.__ModuleLoader__.load({
 
       const store = createStore(ctx)
 
+      let noticePermissionAsked = false
+      function showSystemNotice(title, body) {
+        try {
+          if (typeof Notification === 'undefined') return
+          const showNow = function () {
+            try {
+              const notification = new Notification(title, { body: body })
+              notification.onclick = function () {
+                try {
+                  window.focus()
+                } catch (error) {
+                  /* ignored */
+                }
+                try {
+                  notification.close()
+                } catch (error) {
+                  /* ignored */
+                }
+              }
+            } catch (error) {
+              /* notifications may be unavailable */
+            }
+          }
+          if (Notification.permission === 'granted') {
+            showNow()
+          } else if (Notification.permission === 'default' && !noticePermissionAsked) {
+            noticePermissionAsked = true
+            Promise.resolve(Notification.requestPermission())
+              .then(function (result) {
+                if (result === 'granted') showNow()
+              })
+              .catch(function () {})
+          }
+        } catch (error) {
+          /* silent */
+        }
+      }
+
       function LockOverlay() {
         useLocaleTick()
         const snapshot = useStore(true)
@@ -574,7 +649,57 @@ window.__ModuleLoader__.load({
           [visible],
         )
 
-        if (!visible || !lock) return null
+        // Completion reminder: one best-effort system notification plus a short
+        // in-page banner while the page is visible. The store guarantees a single
+        // notice per active->inactive transition and skips user-initiated exits.
+        const bannerPair = React.useState(null)
+        const banner = bannerPair[0]
+        const setBanner = bannerPair[1]
+        const notice = snapshot.completionNotice
+        const noticeId = notice && notice.id ? notice.id : ''
+        React.useEffect(
+          function () {
+            if (!noticeId) return undefined
+            const title = typeof notice.title === 'string' ? notice.title.trim() : ''
+            const minutes = Math.max(1, Math.round(numberOr(notice.elapsedMs, 0) / 60000))
+            const body = title ? t('notice.body', { title: title, minutes: minutes }) : t('notice.bodyNoTitle')
+            showSystemNotice(t('notice.title'), body)
+            let bannerTimer = 0
+            try {
+              if (!document.hidden) {
+                setBanner(title ? t('notice.banner', { title: title }) : t('notice.bannerNoTitle'))
+                bannerTimer = setTimeout(function () {
+                  setBanner(null)
+                }, 5000)
+              }
+            } catch (error) {
+              /* page visibility may be unavailable */
+            }
+            return function () {
+              if (bannerTimer) clearTimeout(bannerTimer)
+            }
+          },
+          [noticeId],
+        )
+
+        if (!visible && !banner) return null
+        if (!visible || !lock) {
+          return h(
+            Fragment,
+            null,
+            h(Styles),
+            h(
+              'div',
+              {
+                className: 'df-banner',
+                'data-dsh-deep-focus-root': 'banner',
+                role: 'status',
+                'aria-live': 'polite',
+              },
+              banner,
+            ),
+          )
+        }
 
         const startedAt = numberOr(lock.startedAt, null)
         const baseElapsed = numberOr(lock.elapsedMs, 0)
@@ -597,6 +722,18 @@ window.__ModuleLoader__.load({
           Fragment,
           null,
           h(Styles),
+          banner
+            ? h(
+                'div',
+                {
+                  className: 'df-banner',
+                  'data-dsh-deep-focus-root': 'banner',
+                  role: 'status',
+                  'aria-live': 'polite',
+                },
+                banner,
+              )
+            : null,
           h(
             'div',
             {

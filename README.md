@@ -3,9 +3,10 @@
 A one-feature bundle for DeepSeek Harness (repository:
 <https://github.com/1033095780/dsh-deep-focus>): after you **send a message in a
 conversation**, the UI locks to that conversation until it **and all of its
-subagents/child sessions are completely finished**. Then it unlocks automatically and,
-when configured, sends a **DingTalk completion message** starting with `[+] `. A
-「跳过」 button on the overlay unlocks immediately.
+subagents/child sessions are completely finished**. Then it unlocks automatically, shows a
+**local computer notification** 「会话已完成」 plus a short in-page banner, and when
+configured sends a **DingTalk completion message** starting with `[+] `. A 「跳过」 button
+on the overlay unlocks immediately without any reminder.
 
 English | [简体中文](README.zh.md)
 
@@ -16,12 +17,16 @@ English | [简体中文](README.zh.md)
    elapsed time. Other conversations cannot be used while it is up.
 3. When that conversation's turn **and every subagent/child session it started** have
    finished, the overlay disappears automatically.
-4. If DingTalk is configured, one text message is sent to your DingTalk robot:
+4. On that automatic release the plugin also shows a **local computer notification**
+   「会话已完成」 (browser/desktop notification, best effort) and an in-page banner for
+   ~5 seconds; clicking the notification returns to DSH.
+5. If DingTalk is configured, one text message is sent to your DingTalk robot:
    `[+] 会话已完成：<title>，用时 <n> 分钟，完成时间 HH:MM`
    (the time comes from the host clock; the token never leaves your machine).
 
 Partial completion does not unlock: while any child session is still working the overlay
-stays up. Errors also end the turn and unlock.
+stays up. Errors also end the turn and unlock. Clicking 「跳过」 releases without any
+computer notification, banner or DingTalk message.
 
 ## Why
 
@@ -78,8 +83,23 @@ It begins with `[+] ` so your DingTalk filter can find it.
 
 ## Skipping
 
-Click 「跳过」 on the overlay to unlock immediately. No DingTalk message is sent on skip;
-the current conversation keeps running — the overlay only stops blocking the UI.
+Click 「跳过」 on the overlay to unlock immediately. Skipping releases the lock with **no
+completion reminder at all** — no computer notification, no in-page banner and no DingTalk
+message; the current conversation keeps running, the overlay only stops blocking the UI.
+
+## Completion reminders
+
+When the lock is released **automatically** (the conversation and all its subagents are
+finished), the plugin reminds you locally even if DingTalk is not configured:
+
+- a **local computer notification** 「会话已完成」 with the conversation title and elapsed
+  minutes; clicking it returns to DSH. It is **best effort**: if the browser cannot show
+  notifications (permission denied or unsupported environment) the plugin silently skips it;
+- an **in-page banner** 「会话已完成 · <title>」 for about 5 seconds (always shown while the
+  page is visible, auto-dismissed, non-blocking).
+
+Reminders are local-only: they never contain the DingTalk token or message content, and
+they add no network requests. Skipping the lock never shows them.
 
 ## Privacy
 
@@ -89,6 +109,10 @@ the current conversation keeps running — the overlay only stops blocking the U
   DingTalk webhook when a completion message or test message is sent.
 - The only network requests are to `oapi.dingtalk.com` for those messages. There is no
   telemetry, no account, no analytics and no background sampling.
+- The local completion notification and the in-page banner are rendered by the browser:
+  they use only the browser notification permission, contain just the conversation title
+  and elapsed minutes, are shown only on automatic completion (never on skip), and make no
+  network requests. They never include the DingTalk token.
 - Completion messages contain the conversation title, elapsed minutes and finish time —
   no message content, file paths, code or browsing activity.
 
@@ -101,6 +125,8 @@ See [docs/privacy.md](docs/privacy.md).
   locked, 3 s when idle, 5 s when the window is hidden. No intervals are left running.
 - If the Host becomes unreachable, the overlay hides after three consecutive failed polls
   so a broken connection cannot block the UI forever.
+- The completion notification and the ~5 s banner are fired from the same poll transition;
+  they add no timers or requests of their own, and the banner auto-dismisses.
 
 ## Limitations
 
@@ -109,7 +135,9 @@ See [docs/privacy.md](docs/privacy.md).
 - A conversation is considered finished when the turn closes; a model/network error also
   closes it and unlocks.
 - DingTalk messages need a working network path and a valid robot token; when DingTalk is
-  not configured, the product is lock + skip only.
+  not configured, the product is lock + skip + local completion reminder.
+- The local computer notification is best effort: without browser notification permission
+  (or in an environment that cannot show them) only the in-page banner appears.
 - The token is stored in a local JSON file readable by your user account; treat
   `plugin-data/dsh-deep-focus` as private.
 
@@ -121,7 +149,16 @@ while it is up. The locked conversation itself is the only usable one.
 **What counts as “finished”?** The root turn closed **and** every subagent/child session
 it started is idle. While any child works, the overlay stays.
 
-**Can I skip?** Yes — 「跳过」 unlocks at once and sends nothing to DingTalk.
+**Can I skip?** Yes — 「跳过」 unlocks at once with no computer notification, banner or
+DingTalk message.
+
+**Will my computer notify me when it finishes?** Yes, automatically: a local notification
+「会话已完成」 plus a ~5 s in-page banner, if your browser allows notifications. If it does
+not, the banner still appears. Reminders never fire on skip.
+
+**Why did no computer notification appear?** Allow notifications for DSH in your browser/OS
+settings; unsupported or denied environments fall back to the in-page banner. No network
+or token is involved either way.
 
 **Why did no DingTalk message arrive?** Check the enable switch, the token, the robot's
 security settings and the network. Press 「发送测试消息」 first.

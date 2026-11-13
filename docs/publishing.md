@@ -71,6 +71,12 @@ Then enable the bundle on the Plugins page.
       subagent and the root turn are both done the overlay disappears automatically.
 - [ ] With DingTalk enabled and a token configured, auto-release sends one `[+] ` message
       (`[+] 会话已完成：…`); pressing 「跳过」 releases immediately **without** a message.
+- [ ] On automatic completion, besides the optional `[+]` DingTalk message, a local
+      computer notification 「会话已完成」 appears and an in-page banner shows for ~5 s;
+      clicking the notification returns to DSH. Denying the browser notification
+      permission must still show the banner (best effort).
+- [ ] Pressing 「跳过」 releases immediately with **no** computer notification, banner or
+      DingTalk message.
 - [ ] Settings page: enable switch, password token field (shows “set / last 4 chars” when
       stored), save keeps an empty token, 「清除」 removes it, and 「发送测试消息」 sends one
       `[+]` test message (disabled/rejected when unconfigured).

@@ -22,7 +22,7 @@ completion notice**. The code is the source of truth; this page explains the sha
 | `src/host/dingtalk.js` | DingTalk webhook sender (timeout, retries, `[+]` messages). |
 | `src/host/api.js` | Same-origin JSON API (`/state`, `/settings`, `/lock/skip`, `/notifications/test`). |
 | `src/shared/contract.js` | Wire contract v5: routes, defaults, settings patching, message builders. |
-| `src/client.js` | Self-contained browser bundle: lock overlay + minimal DingTalk settings page. |
+| `src/client.js` | Self-contained browser bundle: lock overlay, completion reminder (local notification + banner) and minimal DingTalk settings page. |
 | `scripts/verify.mjs` / `scripts/e2e.mjs` | Offline release checks / live API smoke test. |
 
 No build step: the Host is plain ESM; the browser half is one
@@ -98,7 +98,26 @@ lightweight store drives it with a chained `setTimeout` poll: 1 s while locked, 
 idle, 5 s while `document.hidden`. No intervals survive unmount. If the API fails three
 polls in a row (or returns 404), the overlay is hidden and the store keeps the last good
 state, so an unreachable Host cannot block the UI forever. Inline zh/en strings are used;
-there is no audio and no browser notification permission request.
+there is no audio.
+
+### Completion reminder
+
+On the lock transition `active → inactive` the client fires a local reminder, unless the
+transition came from the user's 「跳过」 (the client suppresses the session whose skip it
+sent):
+
+- **one local notification** via the browser `Notification` API, title 「会话已完成」 /
+  "Conversation finished" and body `<title> · 用时 X 分钟`, using the elapsed value from the
+  last active state. It is **best effort**: `permission === 'granted'` shows it,
+  `default` requests permission once and shows it if granted, denied/unsupported is silent;
+  `onclick` focuses the DSH window and closes the notification;
+- **one in-page banner** 「会话已完成 · <title>」 for ~5 s, always shown while the page is
+  visible, theme-styled, non-blocking, auto-dismissed. It is the fallback when the browser
+  notification cannot be shown.
+
+No reminder is shown on boot with an already-inactive state, on skip, or for repeated
+polls of the same transition (deduped by session/timestamp). Reminders are local-only:
+they involve no network request and never contain the DingTalk token or message content.
 
 ## Data file
 

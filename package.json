@@ -1,6 +1,6 @@
 {
   "name": "dsh-deep-focus",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A DSH bundle plugin: lock the UI to one conversation until it fully finishes, then release it with an optional DingTalk completion notification.",
   "type": "module",
   "license": "MIT",

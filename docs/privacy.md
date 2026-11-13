@@ -26,6 +26,16 @@ $DSH_HOME/plugin-data/dsh-deep-focus/
 The file is written atomically and is readable by your user account. The lock overlay is
 never persisted; restarting DSH always starts unlocked.
 
+## Local completion reminder
+
+On an automatic lock completion (never on 「跳过」) the browser may show a local computer
+notification 「会话已完成」 and always shows a ~5 s in-page banner. They are rendered by the
+browser and need only the optional browser notification permission: the title/body contain
+just the conversation title and elapsed minutes, they make **no network requests**, and
+they never include the DingTalk token or message content. If the browser denies the
+permission or cannot show notifications, the plugin silently falls back to the in-page
+banner.
+
 ## Network and permissions
 
 - The only outbound requests are DingTalk webhook posts for a completion message or a

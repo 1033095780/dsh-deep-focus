@@ -265,6 +265,15 @@ check('READMEs describe the new product', () => {
     [/test message/i, 'the DingTalk test message'],
     [/limitations/i, 'the limitations section'],
     [/FAQ/i, 'the FAQ section'],
+    [/(?:local|computer|desktop) notification/i, 'the local computer notification'],
+    [/会话已完成/, 'the completion notification title'],
+    [/\bbanner\b/i, 'the in-page banner'],
+    [/(?:~|about )?\s*5 (?:s|sec|seconds)/i, 'the ~5 s banner'],
+    [/skip[^.]{0,120}(?:no|not|without)[^.]{0,80}(?:notification|reminder|banner)/i, 'no reminder on skip'],
+    [/best[- ]effort/i, 'the best-effort notification'],
+    [/(?:permission|unsupported)[^.]{0,140}(?:banner|fallback)/i, 'the banner fallback'],
+    [/(?:no|without)[^.]{0,80}(?:extra )?network/i, 'no extra network for reminders'],
+    [/never include[^.]{0,80}token|no[^.]{0,40}token/i, 'no token in reminders'],
   ]
   const requiredZh = [
     [/锁定/, 'the conversation lock'],
@@ -282,6 +291,15 @@ check('READMEs describe the new product', () => {
     [/测试消息/, 'the DingTalk test message'],
     [/限制/, 'the limitations section'],
     [/FAQ/, 'the FAQ section'],
+    [/电脑通知|本机通知/, 'the local computer notification'],
+    [/会话已完成/, 'the completion notification title'],
+    [/横幅/, 'the in-page banner'],
+    [/约 ?5 秒/, 'the ~5 s banner'],
+    [/跳过[^。]{0,60}(?:不会提醒|不提醒|没有)[^。]{0,20}/, 'no reminder on skip'],
+    [/best-effort|尽力而为/, 'the best-effort notification'],
+    [/权限[^。]{0,60}(?:横幅|退回)|不支持[^。]{0,60}横幅/, 'the banner fallback'],
+    [/不产生网络请求|不联网|不额外联网/, 'no extra network for reminders'],
+    [/不含钉钉 token|不包含钉钉 token|不涉及 token/, 'no token in reminders'],
   ]
   for (const [pattern, label] of requiredEn) {
     if (!pattern.test(en)) fail(`README.md no longer documents ${label}`)
@@ -347,7 +365,9 @@ check('CHANGELOG has a dated current release', () => {
   if (!changelog.includes('## [Unreleased]')) fail('CHANGELOG.md has no [Unreleased] section')
   const heading = new RegExp(`^## \\[${pkg.version.replace(/\./g, '\\.')}\\] - \\d{4}-\\d{2}-\\d{2}$`, 'm')
   if (!heading.test(changelog)) fail(`CHANGELOG.md needs a dated "[${pkg.version}] - YYYY-MM-DD" entry`)
-  if (!changelog.includes('## [1.0.0] - 2026-11-13')) fail('CHANGELOG.md must date the 1.0.0 entry 2026-11-13')
+  if (pkg.version === '1.0.1' && !changelog.includes('## [1.0.1] - 2026-11-13')) {
+    fail('CHANGELOG.md must date the 1.0.1 entry 2026-11-13')
+  }
   for (const section of ['### Added', '### Changed', '### Removed']) {
     if (!changelog.includes(section)) fail(`CHANGELOG.md is missing "${section}"`)
   }
