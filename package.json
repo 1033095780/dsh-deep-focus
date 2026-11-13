@@ -1,7 +1,7 @@
 {
   "name": "dsh-deep-focus",
-  "version": "0.4.36",
-  "description": "Focus assistant for DeepSeek Harness: per-application usage statistics, a floating dual-ring usage widget, a 3-hour daily cap, a 30-minute continuous-use cap with an activity-gated forced rest, and a gentle one-conversation-at-a-time sidebar. Pure plugin: never blocks tools and only enforces inside DSH.",
+  "version": "1.0.0",
+  "description": "A DSH bundle plugin: lock the UI to one conversation until it fully finishes, then release it with an optional DingTalk completion notification.",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -16,7 +16,6 @@
   "exports": {
     ".": "./src/index.js",
     "./client": "./src/client.js",
-    "./locale/*.json": "./src/locale/*.json",
     "./icon": "./src/icon.svg",
     "./package.json": "./package.json"
   },
@@ -46,10 +45,9 @@
     "dsh",
     "deepseek-harness",
     "dsh-plugin",
-    "focus",
-    "pomodoro",
-    "deep-work",
-    "screen-time"
+    "conversation-lock",
+    "dingtalk",
+    "task-completion"
   ],
   "scripts": {
     "check": "node --check src/index.js && node --check src/client.js",

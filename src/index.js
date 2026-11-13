@@ -1,21 +1,17 @@
 /**
- * dsh-deep-focus Host entry: foreground-app usage sampler, tracker, limits/rest
- * state machine and HTTP API. Nothing here intercepts other conversations' work.
+ * dsh-deep-focus Host entry (v1 product): conversation task lock plus optional
+ * DingTalk completion notification. Fully event-driven — no sampler process, no
+ * usage/timer/limit state machine.
  */
-import { createStorage, localDayKey, pluginDataDir } from './host/storage.js'
+import { API_BASE } from './shared/contract.js'
+import { createStorage, pluginDataDir } from './host/storage.js'
 import { createSettingsStore } from './host/settings.js'
-import { createSampler } from './host/sampler.js'
-import { createTracker } from './host/tracker.js'
-import { createLimits } from './host/limits.js'
-import { isDshForegroundName } from './host/apps.js'
-import { createEventRing, createStatusMap, installHostEventListeners } from './host/events.js'
+import { createLockController, createLockStore } from './host/lock.js'
+import { createNotifier } from './host/dingtalk.js'
 import { createApi, registerApi } from './host/api.js'
 
 export const name = 'dsh-deep-focus'
 export const inject = ['agents', 'webServer']
-
-const LIMITS_INTERVAL_MS = 1000
-const FLUSH_INTERVAL_MS = 10_000
 
 export function apply(ctx) {
   let runtime
@@ -41,129 +37,192 @@ function createRuntime(ctx) {
   const now = () => Date.now()
   const storage = createStorage({ dir: pluginDataDir() })
   const settings = createSettingsStore({ storage })
-  const ring = createEventRing({ now })
-  const statusMap = createStatusMap()
-  const tracker = createTracker({ storage, settings, now })
-  const limits = createLimits({ storage, settings, tracker, ring, now })
-
-  function onSample(sample, sampledAt) {
-    // Pause/rest only stop the clock while the DSH window is the foreground app;
-    // using another application keeps counting (and keeps the continuous run frozen).
-    limits.setForegroundDsh(isDshForegroundName(sample?.app))
-    limits.evaluate(sampledAt)
-    limits.applySample(sample, sampledAt)
-    const counted = !limits.isPauseEffective() && !limits.isRestEffective()
-    tracker.sample(sample, sampledAt, { counted, recovering: limits.isRecoveryEffective() })
-    // The sample may have reached the continuous cap; enforce immediately.
-    limits.evaluate(sampledAt)
-  }
-
-  let degradedLogged = false
-  function onSamplerState(state, detail) {
-    const suffix = detail ? ` (${detail})` : ''
-    if (state === 'ok') {
-      degradedLogged = false
-      return
-    }
-    if (state === 'off') {
-      warn(ctx, `foreground sampling is off; usage statistics will not advance${suffix}`)
-      return
-    }
-    if (!degradedLogged) {
-      degradedLogged = true
-      warn(ctx, `foreground sampling is degraded${suffix}`)
-    }
-  }
-
-  const sampler = createSampler({
-    sampleSeconds: settings.get().usage.sampleSeconds,
+  const titleCache = new Map()
+  let controllerRef = null
+  const lockStore = createLockStore({
+    storage,
     now,
-    onSample,
-    onStateChange: onSamplerState,
+    onChange: () => {
+      try {
+        controllerRef?.onLockChanged()
+      } catch (error) {
+        warn(ctx, 'lock change could not be applied', error)
+      }
+    },
   })
+
+  function optionalService(name) {
+    try {
+      return typeof ctx.get === 'function' ? ctx.get(name) ?? null : null
+    } catch {
+      return null
+    }
+  }
+
+  function sessionOf(sessionId) {
+    const sessions = optionalService('sessions')
+    if (sessions === null || typeof sessions.get !== 'function') return undefined
+    try {
+      return sessions.get(sessionId)
+    } catch {
+      return undefined
+    }
+  }
+
+  /**
+   * Only a top-level conversation may take the lock. Root agents carry no owning
+   * agent context; when the registry cannot answer, fall back to the session's
+   * header (no parentSession and not a subagent origin).
+   */
+  function isRootSession(sessionId) {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) return false
+    try {
+      const roots = ctx.agents?.roots?.()
+      if (Array.isArray(roots) && roots.length > 0) return roots.some((agent) => agent?.id === sessionId)
+    } catch {
+      // Fall through to the session header.
+    }
+    const session = sessionOf(sessionId)
+    if (session === undefined || session === null) return false
+    const header = session.header ?? {}
+    return header.parentSession === undefined && header.origin !== 'subagent'
+  }
+
+  function cacheTitle(sessionId, title) {
+    if (typeof title !== 'string') return
+    const trimmed = title.trim().slice(0, 120)
+    if (trimmed.length > 0) titleCache.set(sessionId, trimmed)
+  }
+
+  /** Title for the overlay notification: cached, then sessionTitle, then cwd basename. */
+  function titleFor(sessionId) {
+    const cached = titleCache.get(sessionId)
+    if (typeof cached === 'string' && cached.length > 0) return cached
+    const session = sessionOf(sessionId)
+    if (session === undefined || session === null) return ''
+    const titles = optionalService('sessionTitle')
+    if (titles !== null && typeof titles.get === 'function') {
+      try {
+        const snapshot = titles.get(session)
+        if (snapshot !== null && snapshot !== undefined && typeof snapshot.title === 'string') {
+          const title = snapshot.title.trim().slice(0, 120)
+          if (title.length > 0) {
+            cacheTitle(sessionId, title)
+            return title
+          }
+        }
+      } catch {
+        // Fall through to the directory fallback.
+      }
+    }
+    const cwd = session.header?.cwd
+    if (typeof cwd === 'string' && cwd.length > 0) {
+      const base = cwd.split(/[\\/]/).filter((part) => part.length > 0).at(-1)
+      if (typeof base === 'string' && base.length > 0) {
+        const title = base.slice(0, 80)
+        cacheTitle(sessionId, title)
+        return title
+      }
+    }
+    return ''
+  }
+
+  const notifier = createNotifier({ settings, now })
+
+  const controller = createLockController({
+    lockStore,
+    agents: ctx.agents,
+    getSessions: () => optionalService('sessions'),
+    getSubagents: () => optionalService('subagents'),
+    getTitle: titleFor,
+    notify: async (lock) => {
+      if (!notifier.enabled()) return
+      await notifier.sendCompletion(lock)
+    },
+    now,
+    warn: (message, error) => warn(ctx, message, error),
+  })
+  controllerRef = controller
+
+  const api = createApi({ settings, controller, notifier, now })
+
+  /** A user-authored durable message: lock (or move/refresh) the conversation. */
+  function onUserActivity(sessionId) {
+    if (!isRootSession(sessionId)) return
+    try {
+      lockStore.set(sessionId, titleFor(sessionId), now())
+    } catch (error) {
+      warn(ctx, 'lock could not be set', error)
+    }
+  }
+
+  function onSessionAdded(summary) {
+    const sessionId = summary?.sessionId
+    if (typeof sessionId !== 'string' || sessionId.length === 0) return
+    if (summary?.running === true || summary?.agentAvailable === true) {
+      const title = titleFor(sessionId)
+      if (title.length > 0) cacheTitle(sessionId, title)
+    }
+  }
 
   return {
     start() {
       let stopped = false
       const disposers = []
-      const timers = []
-      const api = createApi({
-        settings,
-        tracker,
-        limits,
-        sampler,
-        ring,
-        statusMap,
-        agents: ctx.agents,
-        storage,
-        now,
-        // Optional: lets /state recover a running session missed during a reload.
-        getSessions: () => ctx.get('sessions'),
-        onChange(next) {
-          try {
-            sampler.setSampleSeconds(next.usage.sampleSeconds)
-            limits.setAssistantEnabled(next.assistant.enabled === true)
-            limits.evaluate(now())
-          } catch (error) {
-            warn(ctx, 'settings change could not be applied live', error)
-          }
-        },
-      })
 
-      try {
-        // Root ids come from the live agent registry; a subagent/teammate turn must
-        // never ring the user's completion chime.
-        const isRootSession = (sessionId) => {
-          try {
-            const roots = ctx.agents.roots()
-            return Array.isArray(roots) && roots.some((agent) => agent?.id === sessionId)
-          } catch {
-            return false
-          }
+      const listen = (event, handler) => {
+        try {
+          const dispose = ctx.on(event, handler)
+          if (typeof dispose === 'function') disposers.push(dispose)
+        } catch (error) {
+          warn(ctx, `event listener "${event}" could not be installed`, error)
         }
-        disposers.push(installHostEventListeners({ ctx, ring, statusMap, isRootSession }))
-      } catch (error) {
-        warn(ctx, 'event listeners could not be installed', error)
       }
 
+      listen('api-session/activity', (sessionId) => {
+        onUserActivity(sessionId)
+      })
+      listen('api-session/added', (summary) => {
+        onSessionAdded(summary)
+      })
+      listen('api-session/removed', (sessionId) => {
+        if (typeof sessionId === 'string') {
+          titleCache.delete(sessionId)
+          controller.handleGone(sessionId)
+        }
+      })
+      listen('session/disposed', (session) => {
+        const sessionId = session?.id
+        if (typeof sessionId === 'string') {
+          titleCache.delete(sessionId)
+          controller.handleGone(sessionId)
+        }
+      })
+      // Early completion checks: a burst of turn/subagent transitions coalesces
+      // into one debounced reconcile. The 1.5s timer remains the safety net.
+      listen('session/event', (session, event) => {
+        if (event?.type === 'turn/start' || event?.type === 'turn/end') controller.poke()
+      })
+      listen('agent/status', () => controller.poke())
+      listen('agent/disposed', () => controller.poke())
+      listen('subagent/start', () => controller.poke())
+      listen('subagent/end', () => controller.poke())
+
       try {
-        disposers.push(registerApi({ ctx, api }))
+        disposers.push(registerApi({ ctx, api, base: API_BASE }))
       } catch (error) {
         warn(ctx, 'HTTP API could not be registered', error)
       }
 
-      // One-second enforcement tick: a rest window must end promptly even if the
-      // sampler stalls, the daily cap should react without waiting for a sample,
-      // and auto-pause uses the latest accepted idle value together with the time
-      // it was sampled (an idle value older than the last resume must not re-pause).
-      timers.push(setInterval(() => {
-        try {
-          limits.evaluate(now(), {
-            idleMs: sampler.lastIdleMs(),
-            sampleAt: sampler.lastSampleAt(),
-          })
-        } catch {
-          // A single bad tick must not stop the timer loop.
-        }
-      }, LIMITS_INTERVAL_MS))
-      timers.push(setInterval(() => {
-        void tracker.flushIfDue()
-      }, FLUSH_INTERVAL_MS))
-      for (const timer of timers) timer.unref?.()
-
       const boot = (async () => {
         try {
           await settings.load()
-          await tracker.load()
-          await limits.load()
+          await lockStore.load()
+          await storage.cleanupLegacyData().catch(() => {})
           if (stopped) return
-          await storage.prune({
-            retentionDays: settings.get().usage.retentionDays,
-            dayKey: localDayKey(now()),
-          }).catch(() => {})
-          sampler.setSampleSeconds(settings.get().usage.sampleSeconds)
-          sampler.start()
-          limits.evaluate(now())
+          controller.onLockChanged()
+          // A restored lock reconciles immediately, then follows the cadence.
+          if (lockStore.get() !== null) void controller.reconcile()
         } catch (error) {
           warn(ctx, 'initialisation failed; running with defaults', error)
         }
@@ -172,12 +231,7 @@ function createRuntime(ctx) {
       return async () => {
         if (stopped) return
         stopped = true
-        for (const timer of timers) clearInterval(timer)
-        try {
-          sampler.stop()
-        } catch {
-          // The child process may already be gone.
-        }
+        controller.dispose()
         for (const dispose of disposers.splice(0).reverse()) {
           try {
             dispose()
@@ -186,7 +240,7 @@ function createRuntime(ctx) {
           }
         }
         try {
-          await Promise.all([tracker.flush(), limits.flush()])
+          await lockStore.flush()
           await storage.flush()
         } catch {
           // Losing a final flush is better than failing unload.

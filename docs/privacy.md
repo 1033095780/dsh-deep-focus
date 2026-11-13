@@ -1,90 +1,51 @@
 # Privacy
 
-`dsh-deep-focus` runs locally inside the DeepSeek Harness Host process, stores a small
-amount of JSON under your DSH home directory, and **never makes a network request**.
+`dsh-deep-focus` runs locally inside the DeepSeek Harness Host, stores two settings on
+your machine, and contacts exactly one remote endpoint — the DingTalk webhook — and only
+when you ask it to send a notification.
 
 | Question | Answer |
 | --- | --- |
 | Telemetry? | No analytics, no crash reporting, no accounts. |
-| Sent anywhere? | No. The Host has no outbound HTTP client or socket. |
-| What does the sampler read? | Idle time and the **foreground application's process name** only. |
-| Any window titles / keystrokes? | **No.** Never. |
-| Blocks other applications? | No — overlays are drawn only inside the DSH window. |
-| Stored data? | App key + display name + duration, focus/limit state, settings. |
-| Data location? | `$DSH_HOME/plugin-data/dsh-deep-focus/`, local disk only. |
-| Delete it? | Delete that directory or uninstall the plugin. |
+| What is stored? | DingTalk enabled flag + robot token, in a local JSON file. |
+| Where? | `$DSH_HOME/plugin-data/dsh-deep-focus/settings.json` (`$DSH_HOME` defaults to `~/.dsh`). |
+| Is the token sent to the browser? | No. The API exposes only “configured” and the last 4 characters. |
+| What leaves the machine? | Only DingTalk text messages you configured: `[+] 会话已完成：<title>，用时 <n> 分钟，完成时间 HH:MM` and the `[+]` test message. |
+| To where? | `https://oapi.dingtalk.com/robot/send?access_token=<your token>` only. |
+| Message content included? | No — only the conversation title, elapsed minutes and finish time. No prompts, replies, files or code. |
+| Background activity? | None. No sampling, no network polling, no access to other apps. |
+| Delete data? | Delete `$DSH_HOME/plugin-data/dsh-deep-focus/` or uninstall the plugin. |
 
 ## What is stored
 
 ```text
 $DSH_HOME/plugin-data/dsh-deep-focus/
-├── settings.json          # runtime settings (mode 0600)
-├── limits.json            # daily lock/extension, rest and pause state
-└── usage/
-    └── YYYY-MM-DD.jsonl   # ~1 aggregate line per minute: { t, activeMs, apps }
+└── settings.json   # { version, notifications: { dingtalkEnabled, dingtalkToken } }
 ```
 
-- `$DSH_HOME` is the DSH home; unset means `~/.dsh`.
-- A usage line contains only a timestamp, an active-time total and a map of
-  lowercase executable names to milliseconds. **No window titles, URLs, keystrokes,
-  file paths or screen content.**
-- The browser keeps one `localStorage` item: the per-day daily-overlay “跳过”
-  acknowledgment flag (`dsh-deep-focus.ack.YYYY-MM-DD`). No usage data.
-- Settings files from v1–v3 are discarded and replaced by v4 defaults (never
-  migrated).
+The file is written atomically and is readable by your user account. The lock overlay is
+never persisted; restarting DSH always starts unlocked.
 
-## What the sampler reads
+## Network and permissions
 
-| OS | Mechanism | Data read |
-| --- | --- | --- |
-| Windows | `GetLastInputInfo` + `GetTickCount64`; `GetForegroundWindow` + `GetWindowThreadProcessId` + `Process.GetProcessById(pid).ProcessName` | idle ms; foreground process name |
-| macOS | `ioreg` `HIDIdleTime`; `osascript` frontmost app (best effort) | idle ns; app name |
-| Linux | `xprintidle`; `xdotool getactivewindow getwindowpid` + `/proc/<pid>/comm` | idle ms; process name |
+- The only outbound requests are DingTalk webhook posts for a completion message or a
+  test message. They carry the token in the URL, as DingTalk robots require.
+- No browser notification permission, no microphone/camera/clipboard/file access, no
+  native code, no helper processes.
+- The Host sends no data at all while the plugin is idle or locked.
 
-Commands are fixed strings (no user data interpolated); the sampler child is
-killed when the plugin unloads. Foreground detection is best effort on macOS/Linux;
-when it fails, total idle-based activity keeps counting and app sampling reports
-`off`.
+## DingTalk side
 
-A sample counts as active only when idle < `usage.idleThresholdSeconds`. **The
-automatic rest and the away-aware completion chime reuse this same signal — no new
-data is recorded** — and paused/resting time is excluded from the daily total.
-
-## Bringing you back at the daily cap
-
-If the daily cap is reached while DSH is hidden/unfocused, the client may call
-`window.focus()` and show one system notification (“今日使用已超时 · 点击回到
-DeepSeek”; clicking focuses DSH) per lock transition. The notification text contains
-no usage details, permission is requested once when available and denial is silent,
-and nothing is recorded or sent — it is best effort only, because a pure plugin
-**cannot force the operating system to bring DSH to the foreground**.
-
-## Retention and network
-
-- Usage files are pruned after `usage.retentionDays` (default 30); legacy `stats/`
-  files are pruned too. `settings.json` and `limits.json` stay until you delete them.
-- No data is copied outside the data directory.
-- The plugin calls no remote API, downloads nothing, bundles no analytics/crash SDK,
-  and has no runtime npm dependencies.
-
-## Removing your data
-
-1. Disable or uninstall the plugin — all its UI disappears immediately and the
-   sidebar returns to normal.
-2. Delete `$DSH_HOME/plugin-data/dsh-deep-focus/` (on Windows e.g.
-   `%USERPROFILE%\.dsh\plugin-data\dsh-deep-focus`).
-
-Nothing is uploaded, so nothing else needs revoking.
+DingTalk receives the message above and the robot token; retention and visibility there
+are governed by your DingTalk organisation, not by this plugin. Use a robot dedicated to
+this purpose and rotate the token if it leaks. Messages start with `[+] ` so they are easy
+to filter in DingTalk.
 
 ## Security notes
 
-This is a self-discipline aid, not a security boundary:
-
-- It never blocks tool calls or interrupts another conversation's agent.
-- It cannot bring DSH to the front, block other applications, or count/enforce while
-  DSH is closed; rest and pause are not enforced outside DSH.
-- Data is readable by your user account — treat it as personal activity metadata,
-  not sensitive content.
-
-Please do not paste the data files into public issue reports; timestamps and app
-durations can reveal your working hours.
+- Treat `plugin-data/dsh-deep-focus` as private: anyone with read access to your user
+  files can see the robot token.
+- The plugin never prints the token to logs or error messages.
+- It cannot stop the model or other applications; skipping the overlay does not cancel
+  the running work.
+- Do not paste the settings file into public issue reports.

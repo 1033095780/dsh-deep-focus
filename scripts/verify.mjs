@@ -1,13 +1,10 @@
 #!/usr/bin/env node
 /**
- * Offline packaging and release-readiness smoke test for dsh-deep-focus.
+ * Offline release gate for dsh-deep-focus v1 (conversation lock + DingTalk notice).
  *
- * Plain `node scripts/verify.mjs` — no install step, no network. It exits non-zero
- * when the published package would be broken or the release docs contradict the
- * code: missing entry points, unparsable JSON, locale drift, a wrong v4 contract,
- * a reintroduced pomodoro/tool-blocking/password concept, stale planning files,
- * READMEs that no longer describe the current product, or docs that outgrow their
- * size budget.
+ * Plain `node scripts/verify.mjs` — no install step, no network. It fails when the
+ * package would ship stale files/features, when the contract and docs disagree, when a
+ * DingTalk token appears in the repository, or when the release docs are stale.
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
@@ -15,27 +12,17 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
-
-/** Tracked in git? Files outside the repo tree do not ship and must not fail the gate. */
-function isTracked(name) {
-  try {
-    execFileSync('git', ['ls-files', '--error-unmatch', name], { cwd: ROOT, stdio: 'ignore' })
-    return true
-  } catch {
-    return false
-  }
-}
 const PACKAGE_NAME = 'dsh-deep-focus'
-const ALLOWED_BARE_IMPORTS = new Set(['react', 'react-dom', 'react/jsx-runtime', 'react-dom/client'])
 const REQUIRED_FILES = [
   'README.md',
   'README.zh.md',
   'LICENSE',
   'CHANGELOG.md',
-  '.gitignore',
   'cordis.patch.yml',
-  'src/host/apps.js',
-  'src/host/limits.js',
+  'src/index.js',
+  'src/client.js',
+  'src/shared/contract.js',
+  'src/icon.svg',
   'scripts/verify.mjs',
   'scripts/config-table.mjs',
   'scripts/e2e.mjs',
@@ -44,14 +31,25 @@ const REQUIRED_FILES = [
   'docs/publishing.md',
   '.github/workflows/ci.yml',
 ]
-const DELETED_FILES = ['PLAN.md', 'PLAN-v0.3.md', 'Agents.md']
+/** Files/paths from the removed focus/timer product; their presence is a failure. */
+const LEGACY_PATHS = [
+  'src/host/sampler.js',
+  'src/host/tracker.js',
+  'src/host/limits.js',
+  'src/host/apps.js',
+  'src/host/events.js',
+  'src/host/win32-idle.ps1',
+  'docs/images/rings-widget.png',
+  'docs/images/clock-verification.png',
+]
+const CLIENT_MAX_BYTES = 80_000
 const DOC_SIZE_BUDGET = {
-  'README.md': [4_000, 19_000],
-  'README.zh.md': [4_000, 19_000],
-  'docs/design.md': [4_000, 18_000],
-  'docs/privacy.md': [2_000, 9_000],
-  'docs/publishing.md': [3_000, 10_000],
-  'CHANGELOG.md': [600, 10_000],
+  'README.md': [3_000, 12_000],
+  'README.zh.md': [2_500, 12_000],
+  'docs/design.md': [2_000, 10_000],
+  'docs/privacy.md': [1_500, 6_000],
+  'docs/publishing.md': [2_000, 8_000],
+  'CHANGELOG.md': [400, 6_000],
 }
 
 const checks = []
@@ -61,26 +59,19 @@ function check(name, fn) {
 function fail(message) {
   throw new Error(message)
 }
-function abs(relativePath) {
-  return join(ROOT, relativePath)
+function abs(relative) {
+  return join(ROOT, relative)
 }
-function readText(relativePath) {
-  if (!existsSync(abs(relativePath))) fail(`missing file: ${relativePath}`)
-  return readFileSync(abs(relativePath), 'utf8')
+function readText(relative) {
+  if (!existsSync(abs(relative))) fail(`missing file: ${relative}`)
+  return readFileSync(abs(relative), 'utf8')
 }
-function readJson(relativePath) {
-  const text = readText(relativePath)
+function readJson(relative) {
   try {
-    return JSON.parse(text)
+    return JSON.parse(readText(relative))
   } catch (error) {
-    fail(`${relativePath} is not valid JSON: ${error.message}`)
+    fail(`${relative} is not valid JSON: ${error.message}`)
   }
-}
-function isPlainObject(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
-function getPath(object, dottedKey) {
-  return dottedKey.split('.').reduce((value, part) => (value === undefined || value === null ? undefined : value[part]), object)
 }
 function walkFiles(directory) {
   const found = []
@@ -94,582 +85,295 @@ function walkFiles(directory) {
 function stripComments(code) {
   return code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
 }
-
-/** Very small SVG sanity check: root element, namespace, balanced tags, no script. */
-function assertSvg(text, label) {
-  const trimmed = text.trim()
-  if (!/^<svg[\s>]/.test(trimmed)) fail(`${label}: does not start with an <svg> root element`)
-  if (!/<\/svg>\s*$/.test(trimmed)) fail(`${label}: does not end with </svg>`)
-  if (!/xmlns\s*=\s*["']http:\/\/www\.w3\.org\/2000\/svg["']/.test(trimmed)) {
-    fail(`${label}: SVG root must declare the SVG namespace`)
-  }
-  if (!/viewBox\s*=|width\s*=/.test(trimmed)) fail(`${label}: needs a viewBox or width`)
-  if (/<script[\s>]/i.test(trimmed)) fail(`${label}: an icon must not contain scripts`)
-  const opens = [...trimmed.matchAll(/<([A-Za-z][\w:-]*)(?![^>]*\/>)/g)].length
-  const closes = [...trimmed.matchAll(/<\/([A-Za-z][\w:-]*)>/g)].length
-  if (opens !== closes) fail(`${label}: unbalanced tags (${opens} open, ${closes} close)`)
-}
-
-function assertLocalLinks(relativePath) {
-  const text = readText(relativePath)
+function assertLocalLinks(relative) {
+  const text = readText(relative)
   for (const match of text.matchAll(/!?\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)) {
     const target = match[1]
     if (/^(?:https?:|mailto:|#)/i.test(target)) continue
     const pathPart = target.split('#')[0]
     if (!pathPart) continue
-    if (!existsSync(resolve(dirname(abs(relativePath)), pathPart))) {
-      fail(`${relativePath}: link target does not exist: ${target}`)
+    if (!existsSync(resolve(dirname(abs(relative)), pathPart))) {
+      fail(`${relative}: link target does not exist: ${target}`)
     }
   }
 }
 
 let pkg
+let contract
 
 // --- packaging ---------------------------------------------------------------
 
 check('package.json parses', () => {
   pkg = readJson('package.json')
-  if (pkg.name !== PACKAGE_NAME) fail(`package.json name is "${pkg.name}", expected "${PACKAGE_NAME}"`)
-  if (typeof pkg.version !== 'string' || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(pkg.version)) {
-    fail(`package.json version is not valid SemVer: ${pkg.version}`)
+  if (pkg.name !== PACKAGE_NAME) fail(`package name is "${pkg.name}", expected "${PACKAGE_NAME}"`)
+  if (typeof pkg.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(pkg.version)) {
+    fail(`package version is not a plain SemVer: ${pkg.version}`)
   }
-  if (!/^0\.4\.\d+$/.test(pkg.version)) fail(`package.json version "${pkg.version}" is outside the documented 0.4.x series`)
+  if (!/^1\.\d+\.\d+$/.test(pkg.version)) fail(`expected a 1.x version, found ${pkg.version}`)
   if (pkg.license !== 'MIT') fail('package.json must declare the MIT license')
   if (pkg.type !== 'module') fail('package.json must declare "type": "module"')
   return pkg.version
 })
 
-check('entry points exist', () => {
-  const resolved = []
-  const checkTarget = (target, label, requireDotSlash) => {
-    if (typeof target !== 'string') fail(`package.json "${label}" must be a path string`)
-    if (requireDotSlash && !target.startsWith('./')) fail(`package.json "${label}" must start with "./"`)
-    const clean = target.replace(/^\.\//, '')
-    if (clean.includes('*')) {
-      const directory = dirname(clean)
-      const suffix = clean.slice(clean.indexOf('*') + 1)
-      if (!existsSync(abs(directory))) fail(`package.json "${label}" wildcard directory is missing: ${directory}`)
-      const matches = readdirSync(abs(directory)).filter((name) => name.endsWith(suffix))
-      if (matches.length === 0) fail(`package.json "${label}" wildcard matches no file`)
-      resolved.push(...matches)
-      return
-    }
-    if (!existsSync(abs(clean))) fail(`package.json "${label}" points at a missing file: ${target}`)
-    resolved.push(clean)
+check('entry points and published files exist', () => {
+  const targets = [pkg.main]
+  for (const value of Object.values(pkg.exports ?? {})) {
+    if (typeof value === 'string') targets.push(value.replace(/^\.\//, ''))
   }
-  checkTarget(pkg.main, 'main', false)
-  for (const [key, value] of Object.entries(pkg.exports ?? {})) checkTarget(value, `exports["${key}"]`, true)
-  return `${resolved.length} paths`
-})
-
-check('package files exist', () => {
+  for (const target of targets) {
+    if (typeof target !== 'string' || target === '') fail('package.json has an empty entry point')
+    if (!existsSync(abs(target.replace(/^\.\//, '')))) fail(`entry point missing: ${target}`)
+  }
   if (!Array.isArray(pkg.files) || pkg.files.length === 0) fail('package.json "files" must be a non-empty array')
-  const missing = pkg.files.filter((entry) => !existsSync(abs(entry)))
-  if (missing.length) fail(`package.json "files" entries missing: ${missing.join(', ')}`)
-  if (pkg.files.some((entry) => entry.includes('node_modules'))) fail('package.json "files" must not include node_modules')
-  return `${pkg.files.length} entries`
+  for (const entry of pkg.files) {
+    if (!existsSync(abs(entry))) fail(`package.json "files" entry missing: ${entry}`)
+  }
+  for (const shared of ['src/index.js', 'src/client.js', 'src/shared/contract.js']) {
+    if (!pkg.files.some((entry) => shared === entry || shared.startsWith(`${entry}/`))) {
+      fail(`package.json "files" does not include ${shared}`)
+    }
+  }
+  return `${targets.length} entry points, ${pkg.files.length} files entries`
 })
 
-check('DSH bundle manifest', () => {
-  if (!isPlainObject(pkg.dsh)) fail('package.json has no "dsh" manifest section')
-  if (!isPlainObject(pkg.dsh.bundle) || typeof pkg.dsh.bundle.patch !== 'string') {
-    fail('package.json is missing dsh.bundle.patch')
-  }
+check('DSH bundle manifest and patch', () => {
+  if (!pkg.exports?.['./client'] || !pkg.exports?.['./icon']) fail('exports must include "./client" and "./icon"')
+  if (pkg.dsh?.client?.platform !== 'web') fail('dsh.client.platform must be "web"')
+  if (typeof pkg.dsh?.bundle?.patch !== 'string') fail('dsh.bundle.patch is missing')
   const patch = readText(pkg.dsh.bundle.patch.replace(/^\.\//, ''))
   for (const field of ['id', 'name']) {
     if (!new RegExp(`^\\s*-?\\s*${field}:\\s*${PACKAGE_NAME}\\s*$`, 'm').test(patch)) {
-      fail(`bundle patch does not include "${field}: ${PACKAGE_NAME}"`)
+      fail(`bundle patch must contain "${field}: ${PACKAGE_NAME}"`)
     }
   }
-  if (!isPlainObject(pkg.dsh.client) || pkg.dsh.client.platform !== 'web') {
-    fail('package.json must declare dsh.client with platform "web"')
-  }
-  if (typeof pkg.exports?.['./client'] !== 'string') fail('package.json exports has no "./client" entry')
-  return 'bundle + client'
+  if (typeof pkg.engines?.node !== 'string') fail('engines.node is missing')
+  if (typeof pkg.engines?.dsh !== 'string' || pkg.engines.dsh.trim() === '') fail('engines.dsh is missing')
+  return 'bundle patch, web client, engines'
 })
 
-check('engines declared', () => {
-  if (!isPlainObject(pkg.engines)) fail('package.json has no engines section')
-  if (typeof pkg.engines.node !== 'string') fail('engines.node is missing')
-  if (typeof pkg.engines.dsh !== 'string' || pkg.engines.dsh.trim() === '') fail('engines.dsh is missing')
-  return `node ${pkg.engines.node}, dsh ${pkg.engines.dsh}`
+check('required release files exist', () => {
+  const missing = REQUIRED_FILES.filter((file) => !existsSync(abs(file)))
+  if (missing.length) fail(`missing files: ${missing.join(', ')}`)
+  return `${REQUIRED_FILES.length} files`
 })
 
-check('locale files parse and match', () => {
-  const directory = abs('src/locale')
-  if (!existsSync(directory)) fail('src/locale is missing')
-  const files = readdirSync(directory).filter((name) => name.endsWith('.json'))
-  if (files.length < 2) fail('need at least English and Chinese locale files')
-  const flatten = (object, prefix = '') => {
-    const keys = []
-    for (const [key, value] of Object.entries(object)) {
-      const path = prefix ? `${prefix}.${key}` : key
-      if (isPlainObject(value)) keys.push(...flatten(value, path))
-      else keys.push(path)
-    }
-    return keys
-  }
-  const locales = Object.fromEntries(files.map((file) => [file, readJson(`src/locale/${file}`)]))
-  const baseKeys = new Set(flatten(locales['en.json'] ?? {}))
-  for (const [file, locale] of Object.entries(locales)) {
-    const keys = new Set(flatten(locale))
-    const missing = [...baseKeys].filter((key) => !keys.has(key))
-    const extra = [...keys].filter((key) => !baseKeys.has(key))
-    if (missing.length || extra.length) fail(`${file} locale keys differ from en.json (missing: ${missing.join(', ') || 'none'}; extra: ${extra.join(', ') || 'none'})`)
-    for (const required of ['meta.title', 'meta.description']) {
-      if (!keys.has(required)) fail(`${file} has no ${required}`)
-    }
-    for (const key of keys) {
-      const value = key.split('.').reduce((node, part) => node?.[part], locale)
-      if (typeof value !== 'string' || value.trim() === '') fail(`${file}: "${key}" must be a non-empty string`)
-    }
-  }
-  if (typeof pkg.exports?.['./locale/*.json'] !== 'string') fail('package.json exports has no "./locale/*.json" entry')
-  return `${files.length} locales, ${baseKeys.size} keys`
+check('legacy focus/timer product files are gone', () => {
+  const present = LEGACY_PATHS.filter((file) => existsSync(abs(file)))
+  if (present.length) fail(`old product files still exist: ${present.join(', ')}`)
+  const oldTests = walkFiles(abs('test')).filter((file) =>
+    /(sampler|tracker|limits|apps|events|activity)\.test\.mjs$/.test(file),
+  )
+  if (oldTests.length) fail(`old product tests still exist: ${oldTests.map((file) => file.slice(ROOT.length + 1)).join(', ')}`)
+  return 'no sampler/tracker/limits/apps/events/win32-idle leftovers'
 })
 
-check('icon is a valid SVG', () => {
-  const iconExport = pkg.exports?.['./icon']
-  const iconPath = typeof iconExport === 'string' ? iconExport.replace(/^\.\//, '') : pkg.icon
-  if (typeof iconPath !== 'string') fail('package.json exports no "./icon" entry')
-  assertSvg(readText(iconPath), iconPath)
-  return iconPath
-})
+// --- contract ----------------------------------------------------------------
 
-// --- contract and behavioural guarantees -------------------------------------
-
-check('contract.js is a sane v4 contract', async () => {
-  const contract = await import(pathToFileURL(abs('src/shared/contract.js')).href).catch((error) => {
-    fail(`src/shared/contract.js cannot be imported: ${error.message}`)
+check('contract is the v5 notification contract', async () => {
+  contract = await import(pathToFileURL(abs('src/shared/contract.js')).href).catch((error) => {
+    fail(`contract.js cannot be imported: ${error.message}`)
   })
+  if (contract.CONTRACT_VERSION !== 5) fail(`CONTRACT_VERSION must be 5, found ${contract.CONTRACT_VERSION}`)
+  if (contract.SETTINGS_VERSION !== 5) fail(`SETTINGS_VERSION must be 5, found ${contract.SETTINGS_VERSION}`)
   const defaults = contract.DEFAULT_SETTINGS
-  if (!isPlainObject(defaults)) fail('contract.js does not export DEFAULT_SETTINGS')
-  if (defaults.version !== 4) fail(`DEFAULT_SETTINGS.version is ${defaults.version}, expected 4`)
-  for (const section of ['limits', 'assistant', 'alerts', 'usage']) {
-    if (!isPlainObject(defaults[section])) fail(`DEFAULT_SETTINGS.${section} is missing`)
+  if (defaults?.version !== 5) fail('DEFAULT_SETTINGS.version must be 5')
+  const notifications = defaults?.notifications
+  if (!notifications || typeof notifications !== 'object') fail('DEFAULT_SETTINGS.notifications is missing')
+  const keys = Object.keys(notifications)
+  if (keys.length !== 2 || !keys.includes('dingtalkEnabled') || !keys.includes('dingtalkToken')) {
+    fail(`notifications must have exactly dingtalkEnabled and dingtalkToken, found: ${keys.join(', ')}`)
   }
-  for (const removed of ['focus', 'lock', 'security']) {
-    if (removed in defaults) fail(`DEFAULT_SETTINGS.${removed} must not exist in the v4 contract`)
+  if (notifications.dingtalkEnabled !== false) fail('dingtalkEnabled default must be false')
+  if (notifications.dingtalkToken !== '') fail('dingtalkToken default must be empty')
+  const routeValues = Object.values(contract.ROUTES ?? {})
+  for (const route of ['/state', '/settings', '/lock/skip', '/notifications/test']) {
+    if (!routeValues.includes(route)) fail(`contract ROUTES is missing ${route}`)
   }
-  const expected = {
-    'limits.dailyMinutes': 180,
-    'limits.continuousMinutes': 30,
-    'limits.restMinutes': 10,
-    'limits.extendMinutes': 20,
-    'limits.dailyExtendLimit': 0,
-    'alerts.repeatIntervalMs': 1000,
-    'alerts.awayIdleSeconds': 30,
-    'usage.autoPauseSeconds': 60,
-    'assistant.enabled': true,
-  }
-  for (const [key, value] of Object.entries(expected)) {
-    if (getPath(defaults, key) !== value) fail(`DEFAULT_SETTINGS.${key} is ${getPath(defaults, key)}, expected ${value}`)
-  }
-  const serialized = JSON.stringify(defaults).toLowerCase()
-  if (serialized.includes('password') || serialized.includes('security')) fail('DEFAULT_SETTINGS must not contain password/security fields')
-  for (const route of ['state', 'apps', 'settings', 'assistant', 'pause', 'resume', 'restStart', 'restFinish', 'extend']) {
-    if (typeof contract.ROUTES?.[route] !== 'string') fail(`contract.js ROUTES.${route} is missing`)
-  }
-  for (const event of ['taskCompleted', 'paused', 'resumed', 'restStarted', 'restFinished', 'dailyLocked', 'extended', 'assistantOff', 'assistantOn']) {
-    if (typeof contract.EVENT?.[event] !== 'string') fail(`contract.js EVENT.${event} is missing`)
-  }
-  if ('PHASE' in contract) fail('contract.js still exports the removed pomodoro PHASE enum')
-  return `v${defaults.version}: ${Object.keys(contract.ROUTES).length} routes`
+  if (routeValues.length !== 4) fail(`contract ROUTES must have exactly 4 entries, found ${routeValues.length}`)
+  if (typeof contract.publicSettings !== 'function') fail('publicSettings() is missing')
+  const publicView = contract.publicSettings(defaults)
+  if ('dingtalkToken' in (publicView.notifications ?? {})) fail('publicSettings must never expose the token')
+  if (publicView.notifications?.dingtalkTokenSet !== false) fail('publicSettings must expose dingtalkTokenSet')
+  if (typeof contract.applySettingsPatch !== 'function') fail('applySettingsPatch() is missing')
+  const base = { version: 5, notifications: { dingtalkEnabled: true, dingtalkToken: 'keep-me' } }
+  const kept = contract.applySettingsPatch(base, { notifications: { dingtalkToken: '' } })
+  if (kept.notifications.dingtalkToken !== 'keep-me') fail('empty token patch must keep the stored token')
+  const cleared = contract.applySettingsPatch(base, { notifications: { dingtalkToken: null } })
+  if (cleared.notifications.dingtalkToken !== '') fail('null token patch must clear the token')
+  const replaced = contract.applySettingsPatch(base, { notifications: { dingtalkToken: 'new-token' } })
+  if (replaced.notifications.dingtalkToken !== 'new-token') fail('non-empty token patch must replace the token')
+  if (contract.DINGTALK_PREFIX !== '[+] ') fail('DINGTALK_PREFIX must be "[+] "')
+  if (!contract.DINGTALK_WEBHOOK.endsWith('access_token=')) fail('DINGTALK_WEBHOOK must end with access_token=')
+  const message = contract.buildCompletionMessage({ title: 'Demo', minutes: 3, finishedAt: new Date() })
+  if (!message.startsWith('[+] ')) fail('completion message must start with "[+] "')
+  if (!message.includes('Demo')) fail('completion message must include the conversation title')
+  return 'v5, two notification fields, token never exposed'
 })
 
-check('v0.4 ships no tool blocking', () => {
-  if (existsSync(abs('src/host/lock.js'))) fail('src/host/lock.js exists; the tool guard must stay deleted')
-  for (const file of walkFiles(abs('src')).filter((entry) => entry.endsWith('.js'))) {
+check('no legacy feature wording in shipped source', () => {
+  const sourceFiles = walkFiles(abs('src')).filter((file) => /\.(js|json|svg|ps1|css)$/.test(file))
+  // storage.js intentionally references the old data-file names to clean them up; the
+  // cleanup block is asserted separately below instead of being word-scanned.
+  const scanned = sourceFiles.filter((file) => file.slice(ROOT.length + 1).split('\\').join('/') !== 'src/host/storage.js')
+  const forbidden = [
+    [/\bpomodor/i, 'pomodoro'],
+    [/\brings?\b/i, 'rings'],
+    [/\btracking[- ]?only\b/i, 'tracking-only'],
+    [/\b(?:dailyLimit|continuousMinutes|restMinutes|autoPauseSeconds|showRings|soloSession|hideOtherSessions|extendMinutes)\b/, 'old settings'],
+    [/\bwin32-idle\b/, 'win32-idle'],
+    [/\b(?:sampler|tracker)\b/i, 'sampler/tracker'],
+    [/\busage\b/i, 'usage'],
+    [/\bpaused?\b/i, 'pause'],
+    [/\brest(?:ing|s|ed)?\b/i, 'rest'],
+    [/\blimits?\b/i, 'limit'],
+  ]
+  const hits = []
+  for (const file of scanned) {
     const relative = file.slice(ROOT.length + 1).split('\\').join('/')
-    const code = stripComments(readFileSync(file, 'utf8'))
-    if (/\btools\s*\.\s*guard\s*\(/.test(code) || /\bregisterToolGuard\b|\bdecideToolDenial\b|\bdenialReason\b/.test(code)) {
-      fail(`${relative}: reintroduced tool-denial logic`)
+    const text = stripComments(readFileSync(file, 'utf8'))
+    for (const [pattern, label] of forbidden) {
+      const match = text.match(pattern)
+      if (match) hits.push(`${relative}: "${match[0]}" (${label})`)
     }
   }
-  const index = stripComments(readText('src/index.js'))
-  const inject = index.match(/export\s+const\s+inject\s*=\s*\[([\s\S]*?)\]/)
-  if (inject !== null && /['"]tools['"]/.test(inject[1])) fail("src/index.js still injects 'tools'")
-  return 'no tool guard, no tools injection'
-})
-
-check('v0.4 has no password support', () => {
-  for (const file of walkFiles(abs('src')).filter((entry) => entry.endsWith('.js'))) {
-    const relative = file.slice(ROOT.length + 1).split('\\').join('/')
-    const code = stripComments(readFileSync(file, 'utf8'))
-    if (/\bscrypt\b|\bpasswordHash\b|\bpasswordSalt\b|\bverifyPassword\b|\bsetPassword\b|\bclearPassword\b/.test(code)) {
-      fail(`${relative}: password code is present`)
-    }
+  if (hits.length) fail(`old product wording in src/: ${hits.slice(0, 8).join('; ')}`)
+  const storage = readText('src/host/storage.js')
+  if (!/removed timing\/focus product/i.test(storage)) {
+    fail('src/host/storage.js must only mention the old product in its explicit cleanup block')
   }
-  return 'no password code'
-})
-
-check('no pomodoro machinery', () => {
-  if (existsSync(abs('src/host/focus.js'))) fail('src/host/focus.js exists; the pomodoro state machine was removed')
-  const banned = [/pomodoro/i, /番茄/, /\bworkMinutes\b|\bbreakMinutes\b|\blongBreak/, /pomodorosToday/, /\bPHASE\b/, /\/focus\/(?:start|pause|resume|stop|complete)/]
-  for (const file of walkFiles(abs('src')).filter((entry) => entry.endsWith('.js') || entry.endsWith('.ps1'))) {
-    const relative = file.slice(ROOT.length + 1).split('\\').join('/')
-    const code = file.endsWith('.js') ? stripComments(readFileSync(file, 'utf8')) : readFileSync(file, 'utf8')
-    for (const pattern of banned) {
-      if (pattern.test(code)) fail(`${relative}: still contains a removed pomodoro concept (${pattern})`)
-    }
-  }
-  return 'no pomodoro code or strings'
+  return `${scanned.length} source files clean (storage cleanup excepted)`
 })
 
 // --- release docs ------------------------------------------------------------
 
-check('internal planning files were removed', () => {
-  for (const name of DELETED_FILES) {
-    if (existsSync(abs(name)) && isTracked(name)) fail(`${name} is tracked; personal planning/agent files must not ship`)
+check('READMEs describe the new product', () => {
+  const en = readText('README.md')
+  const zh = readText('README.zh.md')
+  const requiredEn = [
+    [/lock/i, 'the conversation lock'],
+    [/after (?:you )?send(?:ing)? a message|send a message[^.]{0,100}lock|sending a message/i, 'the lock trigger'],
+    [/(?:full[- ]screen|overlay)/i, 'the full-screen overlay'],
+    [/subagents?|child sessions?/i, 'subagent-inclusive completion'],
+    [/unlocks? automatically|automatically unlocks?|auto-?unlock/i, 'automatic release'],
+    [/DingTalk/i, 'DingTalk notifications'],
+    [/\[\+\]/i, 'the [+] message prefix'],
+    [/skip|跳过/i, 'the skip action'],
+    [/not published to npm/i, 'the source-only distribution'],
+    [/dsh plugin[^\n]*add/i, 'the source install command'],
+    [/token[^.]{0,160}(?:local|this machine|plugin-data|never)[^.]{0,80}/i, 'token stored locally only'],
+    [/no telemetry|no analytics/i, 'the no-telemetry statement'],
+    [/test message/i, 'the DingTalk test message'],
+    [/limitations/i, 'the limitations section'],
+    [/FAQ/i, 'the FAQ section'],
+  ]
+  const requiredZh = [
+    [/锁定/, 'the conversation lock'],
+    [/(?:发(?:送)?消息|发消息)/, 'the lock trigger'],
+    [/(?:全屏|遮罩)/, 'the full-screen overlay'],
+    [/子代理|子会话/, 'subagent-inclusive completion'],
+    [/自动解锁|自动解除/, 'automatic release'],
+    [/钉钉/, 'DingTalk notifications'],
+    [/\[\+\]/, 'the [+] message prefix'],
+    [/跳过/, 'the skip action'],
+    [/不发布到 npm/, 'the source-only distribution'],
+    [/dsh plugin[^\n]*add/, 'the source install command'],
+    [/token[^。]{0,120}(?:本机|本地|plugin-data|不会)/, 'token stored locally only'],
+    [/没有遥测|无遥测|没有分析|无分析/, 'the no-telemetry statement'],
+    [/测试消息/, 'the DingTalk test message'],
+    [/限制/, 'the limitations section'],
+    [/FAQ/, 'the FAQ section'],
+  ]
+  for (const [pattern, label] of requiredEn) {
+    if (!pattern.test(en)) fail(`README.md no longer documents ${label}`)
   }
-  const texts = [readText('README.md'), readText('README.zh.md'), readText('docs/design.md'), readText('docs/publishing.md')]
-  for (const name of DELETED_FILES) {
-    for (const text of texts) {
-      if (text.includes(name)) fail(`release docs still reference removed file ${name}`)
-    }
+  for (const [pattern, label] of requiredZh) {
+    if (!pattern.test(zh)) fail(`README.zh.md no longer documents ${label}`)
   }
-  return 'PLAN.md, PLAN-v0.3.md and Agents.md are gone'
+  const forbidden = [
+    /\bpomodoro/i,
+    /\brings?\b/i,
+    /\btracking[- ]?only\b/i,
+    /\busage\b/i,
+    /\bpaused?\b/i,
+    /\brest(?:ing|s|ed)?\b/i,
+    /\blimits?\b/i,
+    /计时|用量|双环|番茄钟|仅记录|暂停|休息/,
+  ]
+  for (const pattern of forbidden) {
+    if (pattern.test(en) || pattern.test(zh)) fail(`README still carries removed product wording: ${pattern}`)
+  }
+  return 'lock/skip/subagents/DingTalk [+] documented'
 })
 
-check('repository URLs are real', () => {
-  const combined = ['README.md', 'README.zh.md', 'docs/publishing.md'].map((file) => readText(file)).join('\n')
-  if (/<\/?OWNER>|\bOWNER\b/.test(combined)) fail('release docs still contain OWNER placeholder links')
-  if (!combined.includes('https://github.com/1033095780/dsh-deep-focus')) {
-    fail('release docs must link to https://github.com/1033095780/dsh-deep-focus')
-  }
-  if (!combined.includes('https://github.com/1033095780/dsh-deep-focus/releases')) {
-    fail('release docs must link to the GitHub releases page')
-  }
-  return 'https://github.com/1033095780/dsh-deep-focus'
-})
-
-check('README settings tables match contract.js', async () => {
+check('README settings table matches contract.js', async () => {
   const module = await import(pathToFileURL(abs('scripts/config-table.mjs')).href).catch((error) => {
     fail(`scripts/config-table.mjs cannot be imported: ${error.message}`)
   })
   return module.checkConfigTables()
 })
 
-check('READMEs describe the current product', () => {
-  const en = readText('README.md')
-  const zh = readText('README.zh.md')
-  const required = [
-    [/focus assistant/i, 'the Focus assistant panel'],
-    [/(?:3 hours|180 minutes)/i, 'the 3-hour daily cap'],
-    [/30 (?:continuous )?minutes/i, 'the 30-minute continuous cap'],
-    [/10-minute (?:forced )?rest/i, 'the 10-minute forced rest'],
-    [/(?:value inside|values? inside each ring|number in the middle)/i, 'the in-ring values'],
-    [/(?:once per second|every second)/i, 'the smooth continuous clock'],
-    [/click(?:ing)? the (?:rings|widget|card)/i, 'click-to-pause on the rings'],
-    [/(?:continue|继续计时)/i, 'the explicit Continue action'],
-    [/Enter\/Space\/Escape|Enter, Space|Enter \/ Space \/ Escape/i, 'the keyboard resume shortcuts'],
-    [/(?:blocking (?:lock|card)|content is not interactive|not clickable|no hover)/i, 'the blocking pause lock'],
-    [/automatic idle pause|idle auto-pause|auto-?pause/i, 'the automatic idle pause'],
-    [/(?:immediately|at once)[^.]{0,60}(?:pause card|paused card|shown)|click[^.]{0,60}(?:immediately|at once)/i, 'the immediate manual pause card'],
-    [/0\.6 s[^.]{0,50}(?:automatic|only)/i, 'the 0.6 s guard only for the automatic pause'],
-    [/(?:inside DSH|in DSH)[^.]{0,100}(?:posts?|resumes?)|posts? `?\/resume`?/i, 'the instant in-DSH resume'],
-    [/any pause[^.]{0,80}resumes?|(?:manual|automatic)[^.]{0,80}resume[^.]{0,80}activity|activity[^.]{0,60}resume/i, 'pause resumes on keyboard/mouse activity'],
-    [/system-wide|another application|other application/i, 'system-wide activity resumption'],
-    [/two equal columns|equal columns|equal-width columns/i, 'the equal-column ring layout'],
-    [/centered|center(?:ed)? captions/i, 'the centered ring captions'],
-    [/drag(?:gable|ging)?[^.]{0,120}(?:pause|anywhere|position)/i, 'the draggable timer'],
-    [/localStorage[^.]{0,120}(?:position|remember)|position[^.]{0,80}(?:remembered|saved)/i, 'the remembered timer position'],
-    [/(?:kept inside|clamped|inside) the window/i, 'the window-clamped timer position'],
-    [/continuous[^.]{0,80}decay|decay[^.]{0,80}(?:pause|rest)/i, 'the continuous decay rule'],
-    [/continuousMinutes\s*\/\s*restMinutes/i, 'the decay rate formula'],
-    [/continues? from the remaining|never zero(?:e)?s|resumes? from the remaining/i, 'resume continues from the remaining value'],
-    [/(?:day rollover|disabling the assistant|assistant[- ]off)[^.]{0,100}reset/i, 'the decay reset conditions'],
-    [/background[^.]{0,120}(?:limit|rest|pause|daily)/i, 'the background limit-screen attention'],
-    [/completion attention|all running conversations[^.]{0,80}finish/i, 'the completion attention feature'],
-    [/system-level foreground|foreground signal/i, 'the system-level foreground detection'],
-    [/所有对话已完成/, 'the completion notification title'],
-    [/no sound or notification while DSH is in front|DSH in front[^.]{0,80}(?:silent|no)/i, 'silent when DSH is in front'],
-    [/partial completion[^.]{0,100}(?:silent|never prompts)/i, 'partial-completion silence'],
-    [/tracking-only mode[^.]{0,140}(?:completion|still works)|completion notice also works in tracking-only/i, 'the completion notice in tracking-only mode'],
-    [/only[^.]{0,80}(?:effective|take effect)[^.]{0,100}foreground/i, 'the foreground-only pause/rest rule'],
-    [/another application[^.]{0,140}(?:keeps? counting|continues? (?:counting|accumulating))|today's usage[^.]{0,100}keeps counting/i, 'away usage keeps counting'],
-    [/(?:continuous|value)[^.]{0,60}(?:held|frozen)[^.]{0,80}(?:no decay|no reset)|neither decays nor resets/i, 'the frozen continuous counter while away'],
-    [/(?:return|back in front)[^.]{0,120}(?:stops? counting|decay)/i, 'returning to DSH gives effect'],
-    [/waiting for you[^.]{0,100}(?:state|rest)|rest page[^.]{0,100}wait/i, 'the waiting-for-you rest state'],
-    [/does not (?:auto-?)?(?:resume|restart)[^.]{0,100}(?:counting|continuous)/i, 'no auto-resume after the rest countdown'],
-    [/only (?:a genuine |real )?(?:mouse|keyboard)[^.]{0,140}after the countdown|after the countdown[^.]{0,100}(?:ends?|resumes?)/i, 'foreground input after the countdown is required'],
-    [/window\.focus\(\)[^.]{0,80}(?:couple|retr)/i, 'the window.focus retries'],
-    [/(?:one )?clickable system notification|system notification[^.]{0,40}click/i, 'the clickable system notification'],
-    [/cannot force the OS[^.]{0,80}(?:raise|topmost|foreground)/i, 'the honest best-effort limitation'],
-    [/Windows[^.]{0,100}(?:another application|another app|front)/i, 'the Windows foreground caveat'],
-    [/notification[^.]{0,80}reliable fallback/i, 'the reliable notification fallback'],
-    [/best[- ]effort/i, 'the best-effort switching disclaimer'],
-    [/prompt(?:s|ing)? (?:you|the user) to return|prompts? you back/i, 'the notification prompts the user to return'],
-    [/no native code[^.]{0,120}(?:notification permission|permission)/i, 'the no-new-permissions statement'],
-    [/sustained idle|two consecutive/i, 'the sustained-idle auto-pause rule'],
-    [/held ~1\.5 s|~1\.5 s/i, 'the sidebar gray hysteresis'],
-    [/auto(?:matic)?[- ]?(?:rest|pause)|pauses? only after sustained/i, 'the automatic idle rest'],
-    [/usage\.autoPauseSeconds/i, 'the autoPauseSeconds setting'],
-    [/jump(?:s)? back|auto-jump/i, 'the auto-jump behaviour'],
-    [/(?:single primary|one primary|primary conversation)/i, 'the single-primary pinning'],
-    [/most recent(?:ly)?|newest/i, 'the newest-turn primary rule'],
-    [/including other running|other running conversations/i, 'graying other running conversations'],
-    [/(?:today[- ]usage|shared .{0,20}card|same .{0,20}card)/i, 'the shared today-usage card'],
-    [/gray(?:s|ed)? out|dim(?:s|med)?/i, 'the grayed sidebar rows'],
-    [/not clickable|non-clickable|cannot be clicked/i, 'the non-clickable sidebar rows'],
-    [/0\s*=\s*unlimited/i, 'unlimited daily extensions (0 = unlimited)'],
-    [/nine (?:common )?(?:settings|controls)/i, 'the nine exposed settings'],
-    [/assistant\.soloSession|one conversation at a time/i, 'the solo-mode setting switch'],
-    [/tracking[- ]only mode/i, 'the tracking-only mode'],
-    [/record and display[^.]{0,140}(?:usage|rings)/i, 'tracking-only records/displays usage'],
-    [/daily[- ](?:limit )?lock[^.]{0,140}(?:disabl|off)|disabl[^.]{0,120}daily[- ]lock/i, 'tracking-only disables the daily lock'],
-    [/one-conversation restriction/i, 'tracking-only disables the solo restriction'],
-    [/(?:all .{0,30}running|running .{0,20}set)/i, 'the all-done chime rule'],
-    [/subagent|teammate/i, 'the subagent/teammate silence rule'],
-    [/(?:only some|partial)/i, 'the partial-completion silence rule'],
-    [/(?:2 minutes|~2 min)/i, 'the chime hard cap'],
-    [/auto-?pause|automatic pause/i, 'the unified auto-pause screen'],
-    [/same .{0,40}card|unified .{0,20}card/i, 'the unified pause/rest/daily card'],
-    [/window\.focus\(\)/i, 'the background bring-back attempt'],
-    [/system notification|Notification API|notification/i, 'the system notification'],
-    [/cannot force the OS|cannot force .{0,40}foreground/i, 'the pure-plugin foreground limitation'],
-    [/never blocks?/i, 'the no-tool-blocking guarantee'],
-    [/cannot bring DSH to the front/i, 'the capability boundary'],
-    [/cannot block other applications/i, 'the capability boundary'],
-    [/DSH is closed/i, 'the capability boundary'],
-    [/e2e\.mjs/, 'the e2e smoke script'],
-    [/not published to npm/i, 'the GitHub-only distribution note'],
-    [/dsh plugin[^\n]*add/i, 'source install instructions'],
-    [/node --test/i, 'the test command'],
-    [/scripts\/verify\.mjs/, 'the verify command'],
+check('docs describe the current product', () => {
+  const design = readText('docs/design.md')
+  const privacy = readText('docs/privacy.md')
+  const publishing = readText('docs/publishing.md')
+  const requiredDesign = [
+    [/lock (?:lifecycle|state machine)|lock is (?:created|released)/i, 'the lock lifecycle'],
+    [/\/state/, 'the /state route'],
+    [/\/lock\/skip/, 'the /lock/skip route'],
+    [/\/notifications\/test/, 'the test notification route'],
+    [/DingTalk/i, 'the DingTalk sender'],
+    [/subagents?|child sessions?/i, 'subagent-inclusive release'],
   ]
-  for (const [pattern, label] of required) {
-    if (!pattern.test(en)) fail(`README.md no longer documents ${label}`)
+  for (const [pattern, label] of requiredDesign) {
+    if (!pattern.test(design)) fail(`docs/design.md no longer documents ${label}`)
   }
-  const requiredZh = [
-    [/专注助手/, 'the Focus assistant panel'],
-    [/(?:3 小时|180 分钟)/, 'the 3-hour daily cap'],
-    [/30 分钟/, 'the 30-minute continuous cap'],
-    [/10 分钟/, 'the 10-minute forced rest'],
-    [/(?:中间显示数值|数值)/, 'the in-ring values'],
-    [/(?:每秒平滑走动|每秒走)/, 'the smooth continuous clock'],
-    [/点击(?:卡片|双环|小组件)/, 'click-to-pause on the rings'],
-    [/继续计时/, 'the explicit Continue action'],
-    [/Enter\/Space\/Escape|Enter、Space、Escape/, 'the keyboard resume shortcuts'],
-    [/不可交互|阻断/, 'the blocking pause lock'],
-    [/自动(?:空闲)?暂停/, 'the automatic idle pause'],
-    [/立即(?:显示|出现)|点击[^。]{0,30}立即/, 'the immediate manual pause card'],
-    [/0\.6 秒[^。]{0,40}(?:自动|仅)/, 'the 0.6 s guard only for the automatic pause'],
-    [/(?:DSH 内)[^。]{0,80}\/resume|第一次输入/, 'the instant in-DSH resume'],
-    [/其它软件|其他软件|别的软件|DSH 外|其它应用/, 'external activity detection'],
-    [/任何暂停|(?:手动|自动)[^。]{0,40}暂停[^。]{0,60}恢复/, 'pause resumes on keyboard/mouse activity'],
-    [/整机|其它软件|其他软件/, 'system-wide activity resumption'],
-    [/两等宽列|等宽.*列/, 'the equal-column ring layout'],
-    [/居中/, 'the centered ring captions'],
-    [/拖动|可拖动/, 'the draggable timer'],
-    [/localStorage[^。]{0,80}位置|位置[^。]{0,60}(?:记住|保存)/, 'the remembered timer position'],
-    [/限制在窗口|窗口内/, 'the window-clamped timer position'],
-    [/衰减|逐渐减少/, 'the continuous decay rule'],
-    [/continuousMinutes\s*\/\s*restMinutes/, 'the decay rate formula'],
-    [/从剩余值继续|不会清零/, 'resume continues from the remaining value'],
-    [/(?:跨天|关闭助手)[^。]{0,80}(?:清零|重置)/, 'the decay reset conditions'],
-    [/后台[^。]{0,80}(?:限制|休息|暂停|每日)/, 'the background limit-screen attention'],
-    [/完成提示|所有正在运行的会话全部结束/, 'the completion attention feature'],
-    [/系统级前台/, 'the system-level foreground detection'],
-    [/所有对话已完成/, 'the completion notification title'],
-    [/DSH 在前台时[^。]{0,40}(?:不响|不提示|静默)/, 'silent when DSH is in front'],
-    [/(?:只完成一部分|部分完成)[^。]{0,40}(?:不提示|从不提示|静默)/, 'partial-completion silence'],
-    [/仅记录模式[^。]{0,80}也生效|在「仅记录模式」下也生效/, 'the completion notice in tracking-only mode'],
-    [/只在 DSH (?:是|为)前台|只在 DSH 前台|仅[^。]{0,30}前台[^。]{0,20}生效/, 'the foreground-only pause/rest rule'],
-    [/继续计时|继续累计/, 'away usage keeps counting'],
-    [/不衰减也不重置|保持不变/, 'the frozen continuous counter while away'],
-    [/回到 DSH[^。]{0,80}(?:停止计时|衰减)/, 'returning to DSH gives effect'],
-    [/等待你回来|等待[^。]{0,10}回来/, 'the waiting-for-you rest state'],
-    [/不会自动恢复|不会自己重新计时|不会自动重新/, 'no auto-resume after the rest countdown'],
-    [/倒计时结束后[^。]{0,60}(?:动键鼠|键鼠|前台)/, 'foreground input after the countdown is required'],
-    [/重试[^。]{0,30}window\.focus\(\)|window\.focus\(\)[^。]{0,30}(?:重试|几次)/, 'the window.focus retries'],
-    [/可点击的系统通知|系统通知[^。]{0,20}点击/, 'the clickable system notification'],
-    [/无法强制[^。]{0,50}(?:置顶|前台)/, 'the honest best-effort limitation'],
-    [/Windows[^。]{0,50}(?:别的|其它|其他)[^。]{0,20}前面/, 'the Windows foreground caveat'],
-    [/通知[^。]{0,20}(?:可靠|兜底)/, 'the reliable notification fallback'],
-    [/best-effort|尽力而为/, 'the best-effort switching disclaimer'],
-    [/提示你回到 DeepSeek|提示[^。]{0,10}回到/, 'the notification prompts the user to return'],
-    [/只用浏览器通知权限|仅浏览器通知权限/, 'the no-new-permissions statement'],
-    [/持续空闲|连续两个新鲜采样/, 'the sustained-idle auto-pause rule'],
-    [/(?:约 )?1\.5 秒/, 'the sidebar gray hysteresis'],
-    [/自动休息|自动暂停/, 'the automatic idle rest'],
-    [/usage\.autoPauseSeconds/, 'the autoPauseSeconds setting'],
-    [/自动跳回|跳回/, 'the auto-jump behaviour'],
-    [/(?:唯一.*主会话|主会话（primary）|primary)/, 'the single-primary pinning'],
-    [/最近开始运行|最近.*开始/, 'the newest-turn primary rule'],
-    [/包括正在运行的其它会话|其它正在运行的/, 'graying other running conversations'],
-    [/(?:今日用量|共用|同一张)/, 'the shared today-usage card'],
-    [/置灰|变灰/, 'the grayed sidebar rows'],
-    [/不可点|无法点击|不可点击/, 'the non-clickable sidebar rows'],
-    [/0\s*=\s*不限/, 'unlimited daily extensions (0 = unlimited)'],
-    [/(?:9|九) ?(?:个|项)/, 'the nine exposed settings'],
-    [/assistant\.soloSession|专注时只允许一个对话/, 'the solo-mode setting switch'],
-    [/仅记录模式/, 'the tracking-only mode'],
-    [/只记录和显示用时/, 'tracking-only records/displays usage'],
-    [/每日超时锁[^。]{0,80}(?:关闭|不起作用)|关闭每日超时锁/, 'tracking-only disables the daily lock'],
-    [/单会话限制/, 'tracking-only disables the solo restriction'],
-    [/所有正在运行的会话|运行集合/, 'the all-done chime rule'],
-    [/子代理|队友/, 'the subagent/teammate silence rule'],
-    [/(?:只完成一部分|部分完成)[^。]{0,40}(?:不提示|从不提示|静默)/, 'the partial-completion silence rule'],
-    [/(?:约 )?2 分钟/, 'the chime hard cap'],
-    [/自动暂停/, 'the unified auto-pause screen'],
-    [/同一张(?:今日用量)?卡片/, 'the unified pause/rest/daily card'],
-    [/window\.focus\(\)/, 'the background bring-back attempt'],
-    [/系统通知/, 'the system notification'],
-    [/无法强制操作系统/, 'the pure-plugin foreground limitation'],
-    [/绝不(?:拦截|拒绝)/, 'the no-tool-blocking guarantee'],
-    [/不能把 DSH|不能把DSH/, 'the capability boundary'],
-    [/不能阻止其它应用/, 'the capability boundary'],
-    [/DSH 关闭时|DSH关闭时/, 'the capability boundary'],
-    [/e2e\.mjs/, 'the e2e smoke script'],
-    [/不发布到 npm/, 'the GitHub-only distribution note'],
-    [/dsh plugin[^\n]*add/, 'source install instructions'],
-  ]
-  for (const [pattern, label] of requiredZh) {
-    if (!pattern.test(zh)) fail(`README.zh.md no longer documents ${label}`)
+  for (const [pattern, label] of [
+    [/token/i, 'the token'],
+    [/plugin-data/, 'the local data directory'],
+    [/oapi\.dingtalk\.com/, 'the only remote endpoint'],
+    [/no telemetry|no analytics/i, 'the no-telemetry statement'],
+  ]) {
+    if (!pattern.test(privacy)) fail(`docs/privacy.md no longer documents ${label}`)
   }
-  const forbidden = [
-    /25\s*[\/:]\s*5/,
-    /pomodoro timer/i,
-    /display[- ]only/i,
-    /仅显示/,
-    /your own \(root\) conversation's turn/i,
-    /你的（root）会话整轮完成|your own \(root\) conversation's turn/i,
-    /manual pause[^.]{0,40}(?:needs|must)[^.]{0,30}(?:continue|resume)/i,
-    /手动[^。]{0,30}(?:必须|才能)[^。]{0,20}继续/i,
-    /countdown chip/i,
-    /seven (?:common )?(?:settings|controls)/i,
-    /7 个设置/,
-    /sidebar hiding|hide other conversations/i,
-    /enter (?:your |the )?password/i,
-    /tool calls are refused/i,
-  ]
-  for (const pattern of forbidden) {
-    if (pattern.test(en) || pattern.test(zh)) fail(`README still advertises a removed concept: ${pattern}`)
+  if (!/GitHub/i.test(publishing) || !/not published to npm/i.test(publishing)) {
+    fail('docs/publishing.md must describe GitHub-only distribution')
   }
-  return 'pitch, rules, boundary, settings, commands'
+  if (/npm\s+publish/i.test(publishing)) fail('docs/publishing.md must not describe an npm publish step')
+  return 'design/privacy/publishing aligned'
 })
 
-check('release docs stay concise', () => {
-  for (const [file, [min, max]] of Object.entries(DOC_SIZE_BUDGET)) {
-    const size = readText(file).length
-    if (size < min) fail(`${file} looks truncated (${size} bytes < ${min})`)
-    if (size > max) fail(`${file} is too large (${size} bytes > ${max}); keep the release docs tight`)
-  }
-  return 'READMEs and docs within the size budget'
-})
-
-check('LICENSE and CHANGELOG', () => {
-  const license = readText('LICENSE')
-  if (!license.startsWith('MIT License')) fail('LICENSE does not start with "MIT License"')
-  if (!license.includes('Copyright (c) 2026 dsh-deep-focus contributors')) fail('LICENSE has an unexpected copyright line')
+check('CHANGELOG has a dated current release', () => {
   const changelog = readText('CHANGELOG.md')
   if (!changelog.includes('## [Unreleased]')) fail('CHANGELOG.md has no [Unreleased] section')
-  const entry = new RegExp(`^## \\[${pkg.version.replace(/\./g, '\\.')}\\] - \\d{4}-\\d{2}-\\d{2}$`, 'm')
-  if (!entry.test(changelog)) fail(`CHANGELOG.md needs a dated "[${pkg.version}] - YYYY-MM-DD" entry`)
-  if (pkg.version === '0.4.35' && !changelog.includes('## [0.4.35] - 2026-11-08')) {
-    fail('CHANGELOG.md must date the 0.4.35 entry 2026-11-08')
+  const heading = new RegExp(`^## \\[${pkg.version.replace(/\./g, '\\.')}\\] - \\d{4}-\\d{2}-\\d{2}$`, 'm')
+  if (!heading.test(changelog)) fail(`CHANGELOG.md needs a dated "[${pkg.version}] - YYYY-MM-DD" entry`)
+  if (!changelog.includes('## [1.0.0] - 2026-11-13')) fail('CHANGELOG.md must date the 1.0.0 entry 2026-11-13')
+  for (const section of ['### Added', '### Changed', '### Removed']) {
+    if (!changelog.includes(section)) fail(`CHANGELOG.md is missing "${section}"`)
   }
-  for (const heading of ['### Added', '### Changed', '### Fixed']) {
-    if (!changelog.includes(heading)) fail(`CHANGELOG.md entry is missing "${heading}"`)
-  }
-  if (!/0\.1\.0[^\n]*0\.4\.[0-9][^\n]*never published/i.test(changelog)) {
-    fail('CHANGELOG.md must note that 0.1.0–0.4.x were never published')
-  }
-  return `MIT, dated ${pkg.version} entry`
+  if (/npm\s+publish/i.test(changelog)) fail('CHANGELOG.md must not describe an npm publish step')
+  return `dated ${pkg.version} entry`
 })
 
-check('required files exist', () => {
-  const missing = REQUIRED_FILES.filter((file) => !existsSync(abs(file)))
-  if (missing.length) fail(`missing release files: ${missing.join(', ')}`)
-  return `${REQUIRED_FILES.length} files`
-})
-
-check('source imports are resolvable', () => {
-  const sourceFiles = walkFiles(abs('src')).filter((file) => file.endsWith('.js'))
-  if (sourceFiles.length === 0) fail('no JavaScript source files found under src/')
-  const relativeSpecifier = (specifier) => specifier.startsWith('./') || specifier.startsWith('../')
-  for (const file of sourceFiles) {
-    const relative = file.slice(ROOT.length + 1).split('\\').join('/')
-    const code = stripComments(readFileSync(file, 'utf8'))
-    const specifiers = new Set()
-    for (const pattern of [
-      /\bimport\s*\(\s*['"]([^'"]+)['"]/g,
-      /\bimport\s+(?:[\w*{}\s,$]+?\s+from\s+)?['"]([^'"]+)['"]/g,
-      /\bexport\s+(?:\*|\{[\s\S]*?\})\s+from\s+['"]([^'"]+)['"]/g,
-      /\brequire\s*\(\s*['"]([^'"]+)['"]/g,
-    ]) {
-      for (const match of code.matchAll(pattern)) specifiers.add(match[1])
-    }
-    for (const specifier of specifiers) {
-      if (specifier.startsWith('node:')) continue
-      if (relativeSpecifier(specifier)) {
-        if (!existsSync(resolve(dirname(file), specifier))) fail(`${relative}: relative import "${specifier}" does not exist`)
-        continue
-      }
-      if (ALLOWED_BARE_IMPORTS.has(specifier)) continue
-      fail(`${relative}: imports "${specifier}", which is not a DSH-resolvable dependency`)
-    }
+check('LICENSE and local links', () => {
+  const license = readText('LICENSE')
+  if (!license.startsWith('MIT License')) fail('LICENSE must start with "MIT License"')
+  const markdown = ['README.md', 'README.zh.md']
+  for (const file of walkFiles(abs('docs')).map((path) => path.slice(ROOT.length + 1).split('\\').join('/'))) {
+    if (file.endsWith('.md')) markdown.push(file)
   }
-  return `${sourceFiles.length} files`
-})
-
-check('source entry exports', () => {
-  const index = readText('src/index.js')
-  if (!/\bexport\s+(?:async\s+)?function\s+apply\b|\bexport\s+(?:const|let)\s+apply\b/.test(index)) {
-    fail('src/index.js must export apply(ctx)')
-  }
-  if (!/\binject\b/.test(index)) fail('src/index.js must declare injected services')
-  const client = readText('src/client.js')
-  if (!client.includes('__ModuleLoader__')) fail('src/client.js must be a DSH browser module')
-  if (!/\bapply\s*\(/.test(client.match(/__ModuleLoader__[\s\S]*/)?.[0] ?? '')) {
-    fail('src/client.js does not expose apply(ctx)')
-  }
-  return 'apply + inject + client registration'
-})
-
-check('client bundle has no escaped-newline corruption', () => {
-  // A literal "\n" inside a // comment swallows the following line, which once
-  // removed a declaration and crashed the widget at runtime.
-  const client = readText('src/client.js')
-  const lines = client.split(/\r?\n/)
-  for (let index = 0; index < lines.length; index += 1) {
-    if (/\/\/[^\n]*\\n/.test(lines[index])) {
-      fail(`src/client.js:${index + 1} has a literal \\n inside a line comment (code after it is swallowed)`)
-      break
-    }
-  }
-  return 'line comments are clean'
-})
-
-check('tests and e2e exist', () => {
-  const testFiles = walkFiles(abs('test')).filter((file) => file.endsWith('.test.mjs') || file.endsWith('.test.js'))
-  if (testFiles.length === 0) fail('test/ contains no test files')
-  if (!existsSync(abs('scripts/e2e.mjs'))) fail('scripts/e2e.mjs is missing')
-  return `${testFiles.length} test files + e2e script`
-})
-
-check('markdown links and screenshot placeholder', () => {
-  const markdown = ['README.md', 'README.zh.md', ...walkFiles(abs('docs')).map((file) => file.slice(ROOT.length + 1).split('\\').join('/')).filter((file) => file.endsWith('.md'))]
   for (const file of markdown) assertLocalLinks(file)
-  for (const file of ['README.md', 'README.zh.md']) {
-    const text = readText(file)
-    if (text.includes('<!-- screenshots:pending -->')) continue
-    const images = [...text.matchAll(/!\[[^\]]*\]\(([^)\s]+)\)/g)].map((match) => match[1]).filter((target) => !/^https?:/i.test(target))
-    if (images.length === 0) fail(`${file}: keep the screenshots placeholder until real images exist`)
-  }
-  return `${markdown.length} markdown files`
+  return `${markdown.length} markdown files, MIT license`
 })
 
-check('GitHub-only release workflows', () => {
-  const workflowDirectory = abs('.github/workflows')
-  const workflowFiles = readdirSync(workflowDirectory).filter((name) => name.endsWith('.yml') || name.endsWith('.yaml'))
-  if (existsSync(abs('.github/workflows/publish.yml'))) {
-    fail('.github/workflows/publish.yml must not exist (npm publishing was removed)')
-  }
-  for (const file of workflowFiles) {
+// --- workflows ---------------------------------------------------------------
+
+check('GitHub-only CI workflow', () => {
+  if (existsSync(abs('.github/workflows/publish.yml'))) fail('.github/workflows/publish.yml must not exist')
+  const workflows = readdirSync(abs('.github/workflows')).filter((name) => /\.ya?ml$/.test(name))
+  for (const file of workflows) {
     if (/\bnpm\s+publish\b/i.test(readText(`.github/workflows/${file}`))) {
-      fail(`.github/workflows/${file} still runs npm publish`)
+      fail(`.github/workflows/${file} runs npm publish`)
     }
   }
   const ci = readText('.github/workflows/ci.yml')
@@ -677,27 +381,112 @@ check('GitHub-only release workflows', () => {
   for (const step of ['node scripts/verify.mjs', 'npm test', '--check']) {
     if (!ci.includes(step)) fail(`ci.yml does not run "${step}"`)
   }
-  const publishing = readText('docs/publishing.md')
-  for (const forbidden of [/npm\s+publish/i, /trusted publishing/i, /\bprovenance\b/i, /\bOIDC\b/i]) {
-    if (forbidden.test(publishing)) fail(`docs/publishing.md still describes a removed npm publishing flow (${forbidden})`)
-  }
-  if (!/not published to npm|不发布到 npm/i.test(publishing)) fail('docs/publishing.md must state the project is not published to npm')
-  if (!/dsh plugin[^\n]*add/i.test(publishing)) fail('docs/publishing.md must document installing with dsh plugin add <repo or path>')
-  return `CI on Node 20/22, no npm publishing (${workflowFiles.length} workflow file)`
+  return `CI on Node 20/22, no npm publishing (${workflows.length} workflow)`
 })
 
-check('privacy docs match the data collection', () => {
-  const combined = readText('README.md') + readText('README.zh.md') + readText('docs/privacy.md')
-  if (!combined.includes('$DSH_HOME/plugin-data/dsh-deep-focus')) fail('must document the plugin data directory')
-  if (!/no network|不联网|never makes a network/i.test(combined)) fail('must state the plugin never uses the network')
-  if (!/foreground|前台/.test(combined)) fail('must describe foreground-application sampling')
-  if (!/window title|窗口标题/.test(combined)) fail('must state window titles are not recorded')
-  if (!/app name|应用名/.test(combined)) fail('must state only app names and durations are stored')
-  if (!/limits\.json/.test(combined)) fail('must document limits.json')
-  if (!/rest[^.]{0,60}(?:excluded|not (?:counted|added))/i.test(combined)) fail('must state rest time is excluded')
-  if (!/pause|暂停/i.test(combined)) fail('must mention the automatic rest/pause')
-  if (!/no new data|nothing new is recorded|不新增/i.test(combined)) fail('must state the auto-rest/away logic records no new data')
-  return 'local-only, foreground names, rest excluded'
+// --- security ----------------------------------------------------------------
+
+function trackedFiles() {
+  try {
+    const output = execFileSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' })
+    return output.split('\0').filter(Boolean)
+  } catch {
+    return walkFiles(ROOT)
+      .map((path) => path.slice(ROOT.length + 1).split('\\').join('/'))
+      .filter((file) => !file.startsWith('.git/') && !file.startsWith('node_modules/') && !file.startsWith('.tmp/'))
+  }
+}
+
+check('no DingTalk token or secret literal is committed', () => {
+  const files = trackedFiles()
+  const textFiles = files
+    .filter((file) => /\.(md|json|js|mjs|cjs|yml|yaml|txt|ps1|svg|html)$/i.test(file))
+    .filter((file) => existsSync(abs(file)))
+  const patterns = [
+    [/access_token=[A-Za-z0-9._-]{16,}/, 'DingTalk access_token value'],
+    [/dingtalkToken["']?\s*[:=]\s*["'][A-Za-z0-9._-]{24,}["']/i, 'hard-coded DingTalk token'],
+    [/["'][A-Za-z0-9]{32,}["']/, 'a 32+ char secret-like literal'],
+  ]
+  const hits = []
+  for (const file of textFiles) {
+    if (file === 'scripts/verify.mjs') continue
+    const text = readText(file)
+    for (const [pattern, label] of patterns) {
+      const match = text.match(pattern)
+      if (match) hits.push(`${file}: ${label} (${match[0].slice(0, 12)}…)`)
+    }
+  }
+  if (hits.length) fail(`possible committed token/secret: ${hits.join('; ')}`)
+  return `${textFiles.length} tracked text files clean of token literals`
+})
+
+// --- client ------------------------------------------------------------------
+
+check('client bundle is self-contained', () => {
+  const client = readText('src/client.js')
+  if (Buffer.byteLength(client) > CLIENT_MAX_BYTES) {
+    fail(`src/client.js is too large (${Buffer.byteLength(client)} bytes > ${CLIENT_MAX_BYTES})`)
+  }
+  if (!client.includes('__ModuleLoader__')) fail('src/client.js must be a DSH browser module')
+  const imports = [...client.matchAll(/\brequire\(\s*['"]([^'"]+)['"]\s*\)/g)].map((match) => match[1])
+  const allowed = new Set(['react', 'react-dom', 'react/jsx-runtime', 'react-dom/client'])
+  for (const specifier of imports) {
+    if (!allowed.has(specifier)) fail(`client requires "${specifier}", which is not a DSH-resolvable dependency`)
+  }
+  const esm = [...client.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)].map((match) => match[1])
+  for (const specifier of esm) {
+    if (!allowed.has(specifier)) fail(`client imports "${specifier}", which is not a DSH-resolvable dependency`)
+  }
+  if (/https?:\/\//.test(stripComments(client))) fail('client must not contact external URLs directly')
+  if (!client.includes('dsh-deep-focus-lock')) fail('client must register the dsh-deep-focus-lock overlay')
+  for (const legacy of [/\brings?\b/i, /\bpomodor/i, /\busage\b/i, /\bpaused?\b/i, /\brest(?:ing|s)?\b/i, /\blimits?\b/i]) {
+    if (legacy.test(stripComments(client))) fail(`client still contains removed feature wording: ${legacy}`)
+  }
+  return `${Buffer.byteLength(client)} bytes, react-only, lock overlay registered`
+})
+
+// --- sizes and extra scripts -------------------------------------------------
+
+check('release docs stay within budget', () => {
+  for (const [file, [min, max]] of Object.entries(DOC_SIZE_BUDGET)) {
+    const size = readText(file).length
+    if (size < min) fail(`${file} looks truncated (${size} chars < ${min})`)
+    if (size > max) fail(`${file} is too large (${size} chars > ${max})`)
+  }
+  return 'READMEs, docs and changelog within budget'
+})
+
+check('host API wiring is present', () => {
+  const api = readText('src/host/api.js')
+  for (const route of ['ROUTES.state', 'ROUTES.settings', 'ROUTES.skip', 'ROUTES.testNotify']) {
+    if (!api.includes(route)) fail(`src/host/api.js does not use ${route}`)
+  }
+  if (!api.includes('registerApi')) fail('src/host/api.js must export registerApi')
+  const index = readText('src/index.js')
+  for (const wiring of ['createStorage', 'createSettingsStore', 'createLockController', 'createApi', 'registerApi', 'cleanupLegacyData']) {
+    if (!index.includes(wiring)) fail(`src/index.js is missing ${wiring}`)
+  }
+  const lock = readText('src/host/lock.js')
+  if (!/skip/i.test(lock) || !/active/.test(lock)) fail('src/host/lock.js must expose a skippable active lock view')
+  const dingtalk = readText('src/host/dingtalk.js')
+  if (!/sendCompletion/.test(dingtalk) || !/sendTest/.test(dingtalk)) {
+    fail('src/host/dingtalk.js must expose sendCompletion and sendTest')
+  }
+  return 'routes registered, controller/notifier wired'
+})
+
+check('helper scripts are present and syntax-clean', async () => {
+  for (const file of ['scripts/e2e.mjs', 'scripts/config-table.mjs']) {
+    const code = readText(file)
+    if (!/node scripts\//.test(code) && !/process\.argv/.test(code)) fail(`${file} does not look runnable`)
+  }
+  const e2e = readText('scripts/e2e.mjs')
+  for (const expected of ['/state', '/settings', '/lock/skip', '/notifications/test']) {
+    if (!e2e.includes(expected)) fail(`scripts/e2e.mjs does not exercise ${expected}`)
+  }
+  const tests = walkFiles(abs('test')).filter((file) => file.endsWith('.test.mjs'))
+  if (tests.length === 0) fail('test/ contains no test files')
+  return `${tests.length} test files, e2e covers all routes`
 })
 
 // --- runner ------------------------------------------------------------------

@@ -1,138 +1,136 @@
 # dsh-deep-focus
 
-A focus assistant for DeepSeek Harness: a **two-ring widget** shows today's usage and continuous time (click it to pause or resume), an **automatic rest** pauses after 60 s of sustained idle, a **3-hour daily cap** and **30-minute continuous cap** keep the day bounded, and **one conversation at a time** keeps the sidebar focused — all inside DSH, never blocking a tool call.
+A one-feature bundle for DeepSeek Harness (repository:
+<https://github.com/1033095780/dsh-deep-focus>): after you **send a message in a
+conversation**, the UI locks to that conversation until it **and all of its
+subagents/child sessions are completely finished**. Then it unlocks automatically and,
+when configured, sends a **DingTalk completion message** starting with `[+] `. A
+「跳过」 button on the overlay unlocks immediately.
 
 English | [简体中文](README.zh.md)
 
-## Features
+## What it does
 
-| Feature | What it does |
-| --- | --- |
-| Two-ring widget | Two **equal columns**, each a ring with its **value inside** (today: minutes; continuous: mm:ss), centered captions 今日已用 / 连续使用, and a continuous clock ticking **once per second**. **Drag the card anywhere** — a real drag does not pause, a tap still pauses/resumes. The position is remembered across reloads (`localStorage`) and kept inside the window; default is top-right. |
-| Automatic rest | After `usage.autoPauseSeconds` of sustained idle (default 60 s) the pause card appears; the ~0.6 s settle guard exists only for this automatic pause, to avoid flashing. Clicking the rings pauses **immediately** (card shown at once). A pause/rest screen is only **effective while DSH is the foreground app**: if you switch to another application, today's usage keeps counting and the continuous counter is held (no decay, no reset) — the screen waits for you, and returning to DSH makes it effective. While DSH is in front, any pause resumes as soon as you use the keyboard/mouse: the client posts `/resume` on the first input, near-instantly (no wait for the ~5 s sampler). |
-| Daily cap | Whole-machine active time while DSH runs; at 180 min the today-usage card appears with 「再使用 20 分钟」/「跳过」. |
-| Continuous cap | 30 continuous minutes → a 10-minute rest on the same card (rest time is not counted). **After the countdown reaches 0 the rest page waits for you** — it does not restart counting or a new continuous run; only real mouse/keyboard use in DSH after the countdown ends it. **Continuous usage decays during an effective pause/rest** (DSH on the pause/rest page) at `continuousMinutes / restMinutes`; elsewhere it is held, and a short pause only reduces the remainder. |
-| Background limit alert | When a limit screen appears (continuous timeout → rest/pause page, or the daily lock) while DSH is behind another app, the plugin retries `window.focus()` a couple of times and, when it cannot bring DSH forward, posts **one clickable system notification** prompting you to return (clicking it returns to DSH). Switching back is **best effort** only: a pure plugin cannot force the OS, Windows may keep another app in front, and the notification is the reliable fallback. No native code; only the browser notification permission. |
-| One conversation at a time | Pins the UI to exactly **one primary conversation** — the running conversation whose turn started most recently. Every other row (including **other running conversations**) is grayed and not clickable; the UI auto-jumps to the primary. When the running set empties, the gray state is **held ~1.5 s** before restoring, so it no longer flickers. Nothing is hidden. |
-| Completion attention | When **no agent turn is running at all** — every root conversation finished **and no subagent/teammate child session is still working** (host `state.activity.running`) — and another application is in the foreground, the plugin rings the chime and shows **one clickable system notification** 「所有对话已完成 · 点击回到 DeepSeek」. DSH in front → silent; a subagent still running → silent. Repeats until input, capped ~2 minutes. |
-| Shared usage card | Auto-pause, forced rest and the daily-limit screen all render the **same today-usage card** (title/reason + today's total + per-app breakdown); only the title and buttons differ. |
-| Per-app statistics + assistant panel | Sidebar hub with overview, 7-day trend, short settings and an enable/pause switch. |
-| Tracking-only mode | `assistant.trackingOnly`: record and display usage only — rings, dashboard, history and per-app breakdown keep working. Disables the daily lock, continuous forced rest, auto/manual pause, rest screens, background limit focus/notification attempts and the one-conversation restriction. The informational “all conversations finished” notice still works; limit prompts/chime stay muted. |
+1. You send a message in a conversation.
+2. A full-screen overlay covers DSH, showing 「任务进行中」, the conversation title and the
+   elapsed time. Other conversations cannot be used while it is up.
+3. When that conversation's turn **and every subagent/child session it started** have
+   finished, the overlay disappears automatically.
+4. If DingTalk is configured, one text message is sent to your DingTalk robot:
+   `[+] 会话已完成：<title>，用时 <n> 分钟，完成时间 HH:MM`
+   (the time comes from the host clock; the token never leaves your machine).
 
-## Screenshots
+Partial completion does not unlock: while any child session is still working the overlay
+stays up. Errors also end the turn and unlock.
 
-<!-- screenshots:pending -->
+## Why
 
-> No screenshots are committed yet. The capture list (two-ring widget, shared today-usage card, automatic-rest state, assistant panel) is in [docs/publishing.md](docs/publishing.md#readme-screenshots).
+Long agent runs are easy to leave unattended, and it is easy to accidentally start a
+second task in another conversation meanwhile. This plugin makes one conversation the
+only usable one until its whole task tree is done, then pings you on DingTalk so you can
+come back at the right moment.
+
+## Requirements
+
+- DeepSeek Harness `0.2.2-rc.1` (also accepts `0.2.0-rc.2` / `0.2.1-rc.2`), desktop install.
+- Node 20+ is only needed for development; the plugin ships as source and has no build step.
+- A DingTalk group robot (optional) if you want completion messages.
 
 ## Install
 
-Requires DeepSeek Harness `0.2.2-rc.1` (also accepts `0.2.0-rc.2` / `0.2.1-rc.2`) and a desktop DSH install. This project is **not published to npm** — install it from the repository or a local checkout.
+This project is **not published to npm**. Install it from the repository or a local
+checkout:
 
-1. From the Plugins page, add the repository as a source (or use the CLI below) and enable the bundle.
-2. `dsh plugin --profile desktop add https://github.com/1033095780/dsh-deep-focus`
-3. Local checkout: `dsh plugin --profile desktop add /absolute/path/to/dsh-deep-focus`.
+```bash
+dsh plugin --profile desktop add https://github.com/1033095780/dsh-deep-focus
+# or
+dsh plugin --profile desktop add /absolute/path/to/dsh-deep-focus
+```
 
-No build step and no runtime dependencies. Disabling or uninstalling removes all UI immediately and stops tracking.
+No runtime dependencies and no build step; disabling or uninstalling removes the overlay
+and settings page immediately.
 
-## Quick start
+## Enable
 
-1. Open the **Focus assistant** entry in the sidebar (below Plugins).
-2. The two rings show today's and continuous progress in two equal columns, each with its value inside. Click the card to pause — the pause card appears immediately — and the pause takes effect while DSH is in front; switch to another app and today's usage keeps counting (the continuous counter is held) until you return to the pause page. Any keyboard/mouse input while DSH is focused resumes it almost instantly. Idling for 60 s pauses automatically too.
-3. At 30 continuous minutes a 10-minute rest screen appears (shared usage card + 「跳过休息」).
-4. At 3 hours of daily use a gray overlay offers only 「再使用 20 分钟」 and 「跳过」 (skip just dismisses today's reminder).
-5. Use the panel switch to pause enforcement; the short settings form changes the common limits.
+Open the **Plugins** page, enable the bundle, then restart/reload the DSH window if the
+overlay does not appear on the next message.
 
-## How the rules work
+## Settings
 
-- **What counts:** whole-machine active time while DSH runs; a sample counts only when input was recent (`usage.idleThresholdSeconds`).
-- **Daily cap:** default `limits.dailyMinutes` 180. At the cap the shared today-usage card appears; 「再使用 20 分钟」 grants `limits.extendMinutes` (20) immediately, unlimited per day by default (`limits.dailyExtendLimit` 0 = unlimited, a positive value caps it). 「跳过」 only dismisses today's reminder in this browser, it never extends.
-- **Background limit screens:** when a limit screen appears while DSH is behind another application — a continuous timeout → the rest/pause page, or the daily-limit lock — the plugin retries `window.focus()` a couple of times (~1.2 s apart). **Switching back to the foreground is best effort**: a pure plugin cannot force the OS to raise a window, so when that fails it posts **one clickable system notification** (「连续使用超时 · 需要休息」 / 「今日使用已超时」) prompting you to return to DeepSeek — clicking it focuses DSH. Windows may still keep another application in front; **the notification is the reliable fallback**. It adds no native code and no permission beyond the browser notification permission.
-- **Continuous rest / decay:** at `limits.continuousMinutes` (30) a rest of `limits.restMinutes` (10) starts on the same today-usage card; it can also be ended early via 「跳过休息」. **When the countdown reaches 0 the rest page does not auto-resume counting**: it stays in a “waiting for you to come back” state, because you may still be away — no time is counted and no new continuous run starts while it waits. Only a genuine mouse/keyboard input **in DSH after the countdown finished** (foreground activity) ends the rest and resumes counting. **Decay only runs while the pause/rest page is effective, i.e. DSH is the foreground application.** If you are in another app, today's usage keeps counting and the continuous counter is frozen — no decay, no reset — until you actually return to the DSH screen. Then the counter **decays gradually** instead of resetting, at `continuousMinutes / restMinutes` per minute (default 30/10 → 1 min of rest removes 3 min of continuous use; with a 20/10 setup, 20 min → ~10 min rest → 0). A short pause only reduces the value proportionally, and resuming continues from the remaining value — a single click never zeros the run. Day rollover, disabling the assistant and invalid/sleep sampler gaps still reset it. Rest time is excluded from the daily total.
-- **Unified screens:** idle auto-pause, manual pause, the forced rest and the daily cap all use the same today-usage card with their own title/actions — there is no separate gray-only pause layer any more.
-- **Tracking-only mode:** set `assistant.trackingOnly` (or use the 「仅记录模式」/“Tracking only” switch in settings) to only **record and display** usage — the rings, dashboard, history and per-app breakdown all keep working. In this mode the plugin disables the daily-limit lock, the continuous forced rest, auto and manual pause, rest screens, background limit `window.focus()`/system-notification attempts and the one-conversation restriction. The informational completion notice (all conversations finished) is **not** a limit prompt, so it still works; limit-related prompts and their chime stay muted. Nothing is counted differently. Turn it off to restore the normal rules.
-- **Moving the timer:** press and drag the two-ring card with the mouse or finger — movement beyond a few pixels becomes a drag and suppresses the pause click, while a normal click/tap still toggles pause/resume. The position is saved in `localStorage` across reloads, clamped to stay inside the window on drag and resize, and defaults to the top-right corner.
-- **Automatic rest / pause:** the pause card appears after **sustained idle** — at least two consecutive fresh samples show `usage.autoPauseSeconds` (60, `0` = off) of idleness — and for this automatic pause only, the card shows after the state settles (~0.6 s) so a single stale sample cannot flash it; prior activity resets the idle counter. **Clicking the two-ring widget pauses immediately** (`POST /pause`) and shows the card at once — the 0.6 s guard is not used there. **A pause/rest is only effective while DSH is the foreground app:** while you are in another application, today's usage continues accumulating and the continuous counter is held (no decay/reset); the paused screen simply waits for you. Once DSH is back in front, counting stops and (for a rest) decay begins. While DSH is focused, any pause resumes as soon as keyboard/mouse activity is detected — the client posts `/resume` on the first input after a short guard, near-instantly. The card blocks the DSH UI while shown and disappears immediately on resume (「继续计时」/Enter/Space/Escape remain optional explicit paths).
-- **One conversation at a time:** exactly one **primary conversation** is active — the running root conversation whose turn started most recently (`/state.solo.primary`). The UI auto-jumps to it; every other conversation and folder row, **including other running conversations**, is grayed and non-clickable, and a visible non-primary conversation gets the veil. When the running set becomes empty the gray state is held for ~1.5 s before restoring, so transient empty polls do not flicker. Background agents keep running; no tool call is blocked, and nothing is hidden.
-- **Completion attention (all done):** it fires only when **no agent turn is running at all** — every running root conversation has finished **and no subagent/teammate child session is still working** (the host signal `state.activity.running` is false). If any subagent/teammate turn is still running, it stays silent. When you are **outside DSH** (another application is in the foreground — detected from the system-level foreground signal, not only from idle) it rings the chime and shows **one clickable system notification** 「所有对话已完成 · 点击回到 DeepSeek」; clicking it returns to DSH. There is no sound or notification while DSH is in front, and a partial completion never prompts. The chime repeats every `alerts.repeatIntervalMs` until you move the mouse or type, with a hard cap of ~2 minutes (`alerts.repeatUntilActive` disables the repeat). This completion notice also works in tracking-only mode (limit prompts stay muted there).
-- **Assistant off:** statistics only — no rings, rest or overlays.
+Open the **Conversation lock** sidebar entry (「会话锁」) → 「DingTalk notification」:
 
-## Usage panel
+| Control | Meaning |
+| --- | --- |
+| Enable DingTalk notification | Turns completion messages on/off. The lock works either way. |
+| DingTalk robot access_token | Paste the `access_token=...` value from your DingTalk group robot webhook. It is stored only in the local plugin data directory and is never sent back to the browser (only “set / last 4 characters” is shown). Leave the field empty to keep the current token; use 「清除」 to remove it. |
+| Save | Stores the settings locally. |
+| Send test message | Sends a `[+] ` test message now; it is disabled until a token is configured and reports success/failure inline. |
 
-Sidebar → `专注助手` / “Focus assistant”: today vs. daily cap, continuous vs. continuous cap, rest status, per-app breakdown (top 8 + 7-day trend), the enable/pause switch and the short settings form with a right-aligned save/discard row. Foreground app name + duration only — no window titles, no keystrokes, no network.
-
-## Configuration
-
-The assistant page exposes exactly nine settings: daily limit, continuous limit, rest length, extension length, auto-rest idle seconds, sound, app tracking, 「专注时只允许一个对话」/“One conversation at a time” (`assistant.soloSession`) and 「仅记录模式」/“Tracking only” (`assistant.trackingOnly`). Everything else (extension cap, quiet hours, away/repeat chime, sampling intervals, retention, ring toggle) stays in the settings JSON and plugin API but is **not shown in the UI**.
+The completion message is sent only when a locked conversation finishes (never on skip).
+It begins with `[+] ` so your DingTalk filter can find it.
 
 <!-- config-table:start -->
 | Setting | Default | Unit | Notes |
 | --- | ---: | ---: | --- |
-| `limits.dailyMinutes` | 180 | min | Daily whole-machine active-time cap while DSH runs; 0 = no daily cap. |
-| `limits.continuousMinutes` | 30 | min | Continuous-use cap before the assistant forces a rest; 0 = no forced rest. |
-| `limits.restMinutes` | 10 | min | Length of a forced rest. Rest time is not counted toward the daily cap. |
-| `limits.extendMinutes` | 20 | min | Extra usage granted by one click on “Use 20 more minutes”. |
-| `limits.dailyExtendLimit` | 0 | count | Extensions per day; 0 = unlimited, a positive value is the daily maximum. |
-| `assistant.enabled` | On | — | Track and enforce the rules; off = keep statistics only (nothing enforces). |
-| `assistant.soloSession` | On | — | Pin the UI to one primary conversation while a root conversation is running. |
-| `assistant.hideOtherSessions` | On | — | Gray out the other conversation and workspace folder rows while a primary conversation runs (visible but not clickable). |
-| `assistant.showRings` | On | — | Show the floating top-right widget with the two usage rings. |
-| `assistant.trackingOnly` | Off | — | Record and display usage only; disables the daily lock, forced rest, pause, overlays, background attention, chime and one-conversation restriction. |
-| `alerts.sound` | On | — | Play the short chime for rest, pause and completion alerts. |
-| `alerts.volume` | 0.6 | 0–1 | Chime volume. |
-| `alerts.quietHoursStart` | null | HH:MM | Start of quiet hours (sound suppressed); null = off. |
-| `alerts.quietHoursEnd` | null | HH:MM | End of quiet hours; null = off. |
-| `alerts.awayIdleSeconds` | 30 | s | Idle fallback for treating you as away; the system-wide foreground app is the primary signal for the completion notice. |
-| `alerts.repeatUntilActive` | On | — | Repeat the completion chime while you are away until input returns. |
-| `alerts.repeatIntervalMs` | 1000 | ms | Chime repeat interval while away (clamped to 500–10000 ms). |
-| `usage.sampleSeconds` | 5 | s | How often the foreground app and idle time are sampled. |
-| `usage.idleThresholdSeconds` | 60 | s | Idle time below this counts as active. |
-| `usage.retentionDays` | 30 | days | Days of local usage history kept. |
-| `usage.trackApps` | On | — | Record which foreground application is active (app name + duration only; no window titles). |
-| `usage.autoPauseSeconds` | 60 | s | Pause counting automatically after this much keyboard/mouse idle; 0 = off. |
-
-> Times are minutes unless the unit says otherwise. The defaults are the agreed product rules: a 3-hour daily cap, a forced 10-minute rest after 30 continuous minutes, unlimited 20-minute extensions by default (set a positive daily limit to cap them), and a completion notice (chime + notification) when all conversations finish while another app is in front. The assistant never blocks tools and only enforces inside DSH (see the capability boundary below).
+| `notifications.dingtalkEnabled` | Off | — | Send a completion message to DingTalk when a locked conversation finishes. The lock itself works either way. |
+| `notifications.dingtalkToken` | (unset) | — | DingTalk group-robot access token. Stored only in the local plugin data directory; the browser only sees “set” and the last 4 characters. |
 <!-- config-table:end -->
 
-## Data & privacy
+## Skipping
 
-- Local only: `$DSH_HOME/plugin-data/dsh-deep-focus/` (`settings.json` mode 0600, `limits.json`, daily `usage/YYYY-MM-DD.jsonl`). No network, no telemetry, no accounts.
-- The sampler reads idle time and the foreground application's process name only; the automatic rest and the completion notice (system-wide foreground signal + idle fallback) reuse that signal. No new data is recorded for either.
-- Only app names and durations are stored. Rest time is excluded; history is pruned after `usage.retentionDays` (30). Delete the directory to remove everything.
+Click 「跳过」 on the overlay to unlock immediately. No DingTalk message is sent on skip;
+the current conversation keeps running — the overlay only stops blocking the UI.
+
+## Privacy
+
+- The DingTalk robot token is stored in `$DSH_HOME/plugin-data/dsh-deep-focus/settings.json`
+  on your machine. It is never included in the browser state (only “configured” and the
+  last 4 characters) and is never uploaded anywhere except, at your request, to the
+  DingTalk webhook when a completion message or test message is sent.
+- The only network requests are to `oapi.dingtalk.com` for those messages. There is no
+  telemetry, no account, no analytics and no background sampling.
+- Completion messages contain the conversation title, elapsed minutes and finish time —
+  no message content, file paths, code or browsing activity.
 
 See [docs/privacy.md](docs/privacy.md).
 
-## Pure-plugin boundary
+## Performance
 
-It cannot bring DSH to the front, cannot block other applications, and cannot count usage while DSH is closed. When a limit screen appears in the background it only *attempts* `window.focus()` (with a couple of retries) plus one system notification; the OS may ignore the focus attempt and Windows may keep another application in front — the notification is the reliable fallback (and only the browser notification permission is used). The rest visuals only cover the DSH window. A companion desktop guard for those cases is a possible later phase and is not included.
+- The Host is event-driven: it reacts to session/turn events and keeps no sampler process.
+- The client uses one lightweight state store and a chained `setTimeout` poll: 1 s while
+  locked, 3 s when idle, 5 s when the window is hidden. No intervals are left running.
+- If the Host becomes unreachable, the overlay hides after three consecutive failed polls
+  so a broken connection cannot block the UI forever.
 
-| Works inside DSH | Cannot do |
-| --- | --- |
-| usage counting, rings, unified pause/rest/daily cards, auto-jump sidebar | force the OS foreground (focus/notification are best effort), block other apps, count while DSH is closed, draw outside DSH |
+## Limitations
 
-## Compatibility
+- Best effort, pure plugin: it cannot stop the model, kill a run, control other
+  applications or force the DSH window to the foreground. Closing DSH ends the lock.
+- A conversation is considered finished when the turn closes; a model/network error also
+  closes it and unlocks.
+- DingTalk messages need a working network path and a valid robot token; when DingTalk is
+  not configured, the product is lock + skip only.
+- The token is stored in a local JSON file readable by your user account; treat
+  `plugin-data/dsh-deep-focus` as private.
 
-| Item | Status |
-| --- | --- |
-| DSH | verified on `0.2.2-rc.1`; engines `^0.2.0-rc.2 \|\| ^0.2.1-rc.2 \|\| ^0.2.2-rc.1` |
-| OS | Windows tested; macOS/Linux foreground sampling best effort |
-| Node (dev) | 20+; CI runs 20 and 22 |
-| Build | none — source is the artifact |
+## FAQ
 
-## Development
+**Does it lock other conversations?** They are behind the overlay and cannot be used
+while it is up. The locked conversation itself is the only usable one.
 
-```bash
-node --check src/index.js src/client.js   # syntax
-node --test                               # host unit tests
-node scripts/verify.mjs                  # offline packaging smoke
-node scripts/e2e.mjs http://127.0.0.1:<port>/plugins/dsh-deep-focus/api  # live API smoke
-```
+**What counts as “finished”?** The root turn closed **and** every subagent/child session
+it started is idle. While any child works, the overlay stays.
 
-`scripts/e2e.mjs` exercises the running plugin over HTTP (state, apps, settings, rest/extend/pause paths) and restores what it changes.
+**Can I skip?** Yes — 「跳过」 unlocks at once and sends nothing to DingTalk.
 
-## Publishing
+**Why did no DingTalk message arrive?** Check the enable switch, the token, the robot's
+security settings and the network. Press 「发送测试消息」 first.
 
-Repository: **https://github.com/1033095780/dsh-deep-focus** (releases: [releases](https://github.com/1033095780/dsh-deep-focus/releases), issues: [issues](https://github.com/1033095780/dsh-deep-focus/issues)). Distribution is **GitHub-only**: this project is not published to npm. Push a tag, create a **GitHub Release** with the changelog as release notes, and users install from the repository or tag. See [docs/publishing.md](docs/publishing.md) for the release checklist and source-install instructions.
+**Where is the token stored?** `$DSH_HOME/plugin-data/dsh-deep-focus/settings.json`
+(defaults to `~/.dsh`). Delete that directory to remove it.
+
+**Does it read my messages?** No. It only uses conversation titles and turn events; the
+settings page and overlay never receive message content.
 
 ## License
 

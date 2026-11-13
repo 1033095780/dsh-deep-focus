@@ -21,290 +21,111 @@ const END = '<!-- config-table:end -->'
 const README_FILES = { en: 'README.md', zh: 'README.zh.md' }
 
 /**
- * Documented fields, in reading order. A key missing here fails the coverage
- * check, so a new setting must be described (with its unit) before it ships.
- * The internal `version` field is intentionally not user-facing.
+ * Documented settings, in reading order. Every leaf of `DEFAULT_SETTINGS.notifications`
+ * must have an entry here and vice versa (checked by `--check`).
  */
 const FIELDS = [
   {
-    key: 'limits.dailyMinutes',
-    unit: 'min',
+    key: 'notifications.dingtalkEnabled',
     note: {
-      en: 'Daily whole-machine active-time cap while DSH runs; 0 = no daily cap.',
-      zh: 'DSH 运行期间整机活跃时长的每日上限；0 = 不限制。',
+      en: 'Send a completion message to DingTalk when a locked conversation finishes. The lock itself works either way.',
+      zh: '被锁定的会话完成时向钉钉发送完成消息；锁定功能不依赖它。',
     },
   },
   {
-    key: 'limits.continuousMinutes',
-    unit: 'min',
+    key: 'notifications.dingtalkToken',
     note: {
-      en: 'Continuous-use cap before the assistant forces a rest; 0 = no forced rest.',
-      zh: '触发强制休息的连续使用时长的上限；0 = 不强制休息。',
-    },
-  },
-  {
-    key: 'limits.restMinutes',
-    unit: 'min',
-    note: {
-      en: 'Length of a forced rest. Rest time is not counted toward the daily cap.',
-      zh: '强制休息时长。休息时间不计入每日上限。',
-    },
-  },
-  {
-    key: 'limits.extendMinutes',
-    unit: 'min',
-    note: {
-      en: 'Extra usage granted by one click on “Use 20 more minutes”.',
-      zh: '点击一次「再使用 20 分钟」增加的时长。',
-    },
-  },
-  {
-    key: 'limits.dailyExtendLimit',
-    unit: 'count',
-    note: {
-      en: 'Extensions per day; 0 = unlimited, a positive value is the daily maximum.',
-      zh: '每日可续期次数；0 = 不限次数，正数才是每日上限。',
-    },
-  },
-  {
-    key: 'assistant.enabled',
-    unit: '',
-    note: {
-      en: 'Track and enforce the rules; off = keep statistics only (nothing enforces).',
-      zh: '统计并执行限制；关闭后只做统计，不做任何限制。',
-    },
-  },
-  {
-    key: 'assistant.soloSession',
-    unit: '',
-    note: {
-      en: 'Pin the UI to one primary conversation while a root conversation is running.',
-      zh: '有根会话在运行时把 UI 固定到唯一主会话。',
-    },
-  },
-  {
-    key: 'assistant.hideOtherSessions',
-    unit: '',
-    note: {
-      en: 'Gray out the other conversation and workspace folder rows while a primary conversation runs (visible but not clickable).',
-      zh: '有主会话在运行时把其它会话与工作区文件夹行置灰（可见但不可点击）。',
-    },
-  },
-  {
-    key: 'assistant.showRings',
-    unit: '',
-    note: {
-      en: 'Show the floating top-right widget with the two usage rings.',
-      zh: '在 DSH 右上角显示悬浮双环小组件。',
-    },
-  },
-  {
-    key: 'assistant.trackingOnly',
-    unit: '',
-    note: {
-      en: 'Record and display usage only; disables the daily lock, forced rest, pause, overlays, background attention, chime and one-conversation restriction.',
-      zh: '只记录和显示用时；关闭每日锁、强制休息、暂停、遮罩、后台提醒、提示音与单会话限制。',
-    },
-  },
-  {
-    key: 'alerts.sound',
-    unit: '',
-    note: {
-      en: 'Play the short chime for rest, pause and completion alerts.',
-      zh: '休息、暂停与完成提醒时播放短提示音。',
-    },
-  },
-  {
-    key: 'alerts.volume',
-    unit: 'ratio',
-    note: { en: 'Chime volume.', zh: '提示音音量。' },
-  },
-  {
-    key: 'alerts.quietHoursStart',
-    unit: 'clock',
-    note: {
-      en: 'Start of quiet hours (sound suppressed); null = off.',
-      zh: '静音时段的开始时间（该时段内不播放提示音）；null = 关闭。',
-    },
-  },
-  {
-    key: 'alerts.quietHoursEnd',
-    unit: 'clock',
-    note: { en: 'End of quiet hours; null = off.', zh: '静音时段的结束时间；null = 关闭。' },
-  },
-  {
-    key: 'alerts.awayIdleSeconds',
-    unit: 's',
-    note: {
-      en: 'Idle fallback for treating you as away; the system-wide foreground app is the primary signal for the completion notice.',
-      zh: '判断“离开”的空闲回退值；完成提示以系统级前台应用为首要信号。',
-    },
-  },
-  {
-    key: 'alerts.repeatUntilActive',
-    unit: '',
-    note: {
-      en: 'Repeat the completion chime while you are away until input returns.',
-      zh: '离开期间重复播放完成提示音，直到你回来操作。',
-    },
-  },
-  {
-    key: 'alerts.repeatIntervalMs',
-    unit: 'ms',
-    note: {
-      en: 'Chime repeat interval while away (clamped to 500–10000 ms).',
-      zh: '离开期间提示音的重复间隔（限制在 500–10000 毫秒）。',
-    },
-  },
-  {
-    key: 'usage.sampleSeconds',
-    unit: 's',
-    note: {
-      en: 'How often the foreground app and idle time are sampled.',
-      zh: '前台应用与空闲时长的采样间隔。',
-    },
-  },
-  {
-    key: 'usage.idleThresholdSeconds',
-    unit: 's',
-    note: { en: 'Idle time below this counts as active.', zh: '空闲时长低于此值算作活跃。' },
-  },
-  {
-    key: 'usage.retentionDays',
-    unit: 'days',
-    note: { en: 'Days of local usage history kept.', zh: '本地使用记录保留天数。' },
-  },
-  {
-    key: 'usage.trackApps',
-    unit: '',
-    note: {
-      en: 'Record which foreground application is active (app name + duration only; no window titles).',
-      zh: '记录前台应用（只存应用名与时长，不记录窗口标题）。',
-    },
-  },
-  {
-    key: 'usage.autoPauseSeconds',
-    unit: 's',
-    note: {
-      en: 'Pause counting automatically after this much keyboard/mouse idle; 0 = off.',
-      zh: '键鼠空闲达到此时长后自动暂停计时；0 = 关闭。',
+      en: 'DingTalk group-robot access token. Stored only in the local plugin data directory; the browser only sees “set” and the last 4 characters.',
+      zh: '钉钉群机器人 access_token。只保存在本机插件数据目录；浏览器只看到“已设置”与末 4 位。',
     },
   },
 ]
 
-const UNIT_LABELS = {
-  min: { en: 'min', zh: '分钟' },
-  s: { en: 's', zh: '秒' },
-  ms: { en: 'ms', zh: '毫秒' },
-  days: { en: 'days', zh: '天' },
-  count: { en: 'count', zh: '次' },
-  ratio: { en: '0–1', zh: '0–1' },
-  clock: { en: 'HH:MM', zh: 'HH:MM' },
-  '': { en: '—', zh: '—' },
-}
-
 const COLUMNS = {
   en: ['Setting', 'Default', 'Unit', 'Notes'],
-  zh: ['配置项', '默认值', '单位', '说明'],
+  zh: ['设置项', '默认值', '单位', '说明'],
 }
 
-const FOOTER = {
-  en: '> Times are minutes unless the unit says otherwise. The defaults are the agreed product rules: a 3-hour daily cap, a forced 10-minute rest after 30 continuous minutes, unlimited 20-minute extensions by default (set a positive daily limit to cap them), and a completion notice (chime + notification) when all conversations finish while another app is in front. The assistant never blocks tools and only enforces inside DSH (see the capability boundary below).',
-  zh: '> 未特别注明时时间单位为分钟。默认值即已确认的产品规则：每日上限 3 小时、连续使用 30 分钟后强制休息 10 分钟、默认不限次数的 20 分钟续期（设置正数才会限制次数），以及全部对话完成且另一个应用在前台时的完成提示（提示音 + 系统通知）。助手绝不拦截工具，限制只在 DSH 内生效（见下方能力边界）。',
+function readText(relative) {
+  return readFileSync(join(ROOT, relative), 'utf8')
 }
 
-function loadDefaults() {
-  const modulePath = join(ROOT, 'src', 'shared', 'contract.js')
-  if (!existsSync(modulePath)) {
-    throw new Error('src/shared/contract.js is missing; cannot generate the settings table')
-  }
-  return import(pathToFileURL(modulePath).href).then((mod) => {
-    if (!mod.DEFAULT_SETTINGS) throw new Error('src/shared/contract.js does not export DEFAULT_SETTINGS')
-    return mod.DEFAULT_SETTINGS
-  })
+async function loadContract() {
+  return import(pathToFileURL(join(ROOT, 'src/shared/contract.js')).href)
 }
-
-const DEFAULTS = await loadDefaults()
 
 function getPath(object, dottedKey) {
-  return dottedKey.split('.').reduce((value, part) => (value === undefined || value === null ? undefined : value[part]), object)
+  return dottedKey
+    .split('.')
+    .reduce((value, part) => (value === undefined || value === null ? undefined : value[part]), object)
 }
 
-/** Every leaf key of an object, e.g. `limits.dailyMinutes`. */
-function leafKeys(object, prefix = '') {
-  const keys = []
-  for (const [key, value] of Object.entries(object)) {
-    const path = prefix ? `${prefix}.${key}` : key
-    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-      keys.push(...leafKeys(value, path))
-    } else {
-      keys.push(path)
-    }
-  }
-  return keys
-}
-
-/** Fails when contract.js gains/loses a setting that this table does not describe. */
-function assertCoverage() {
-  const documented = new Set(FIELDS.map((field) => field.key))
-  const actual = new Set(leafKeys(DEFAULTS).filter((key) => key !== 'version'))
-  const undocumented = [...actual].filter((key) => !documented.has(key))
-  const stale = [...documented].filter((key) => !actual.has(key))
-  if (undocumented.length || stale.length) {
-    const parts = []
-    if (undocumented.length) parts.push(`undocumented: ${undocumented.join(', ')}`)
-    if (stale.length) parts.push(`not in contract.js: ${stale.join(', ')}`)
-    throw new Error(`settings table is out of sync with contract.js (${parts.join('; ')})`)
-  }
-}
-
-function renderDefault(value, lang) {
-  if (typeof value === 'boolean') return value ? (lang === 'zh' ? '开' : 'On') : (lang === 'zh' ? '关' : 'Off')
-  if (value === null) return 'null'
+function formatDefault(value, lang) {
+  if (value === true) return lang === 'zh' ? '开' : 'On'
+  if (value === false) return lang === 'zh' ? '关' : 'Off'
+  if (value === '' || value === null || value === undefined) return lang === 'zh' ? '（未设置）' : '(unset)'
+  if (typeof value === 'number') return String(value)
   return String(value)
 }
 
-/** Markdown table plus the footnote, without the marker lines. */
-export function renderTable(lang) {
-  assertCoverage()
+function renderTable(lang, contract) {
   const columns = COLUMNS[lang]
-  const lines = [
-    `| ${columns.join(' | ')} |`,
-    `| ${columns.map((_, index) => (index === 1 || index === 2 ? '---:' : '---')).join(' | ')} |`,
-  ]
-  for (const field of FIELDS) {
-    const value = getPath(DEFAULTS, field.key)
-    if (value === undefined) throw new Error(`contract.js has no value for ${field.key}`)
-    const unit = UNIT_LABELS[field.unit][lang]
-    lines.push(`| \`${field.key}\` | ${renderDefault(value, lang)} | ${unit} | ${field.note[lang]} |`)
-  }
-  lines.push('')
-  lines.push(FOOTER[lang])
-  return lines.join('\n')
+  const header = `| ${columns.join(' | ')} |`
+  const divider = `| ${columns.map((_, index) => (index === 1 || index === 2 ? '---:' : '---')).join(' | ')} |`
+  const rows = FIELDS.map((field) => {
+    const value = getPath(contract.DEFAULT_SETTINGS, field.key)
+    const unit = field.unit ? field.unit : '—'
+    return `| \`${field.key}\` | ${formatDefault(value, lang)} | ${unit} | ${field.note[lang]} |`
+  })
+  return [header, divider, ...rows].join('\n')
 }
 
-export function renderBlock(lang) {
-  return `${START}\n${renderTable(lang)}\n${END}`
+function renderBlock(lang, contract) {
+  return `${START}\n${renderTable(lang, contract)}\n${END}`
 }
 
 function locateBlock(text, file) {
   const start = text.indexOf(START)
-  const end = text.indexOf(END)
-  if (start === -1 || end === -1 || end < start) {
-    throw new Error(`${file}: missing "${START}" / "${END}" markers around the settings table`)
-  }
+  if (start < 0) throw new Error(`${file}: missing ${START}`)
+  if (text.indexOf(START, start + START.length) >= 0) throw new Error(`${file}: duplicated ${START}`)
+  const end = text.indexOf(END, start)
+  if (end < 0) throw new Error(`${file}: missing ${END}`)
   return { start, end: end + END.length }
+}
+
+async function assertCoverage(contract) {
+  const notifications = contract.DEFAULT_SETTINGS?.notifications
+  if (!notifications || typeof notifications !== 'object') {
+    throw new Error('contract DEFAULT_SETTINGS.notifications is missing')
+  }
+  const contractKeys = Object.keys(notifications)
+  const fieldKeys = FIELDS.map((field) => field.key.split('.').slice(1).join('.'))
+  const missing = contractKeys.filter((key) => !fieldKeys.includes(key))
+  const extra = fieldKeys.filter((key) => !contractKeys.includes(key))
+  if (missing.length || extra.length) {
+    throw new Error(
+      `config-table coverage differs from contract.js (missing: ${missing.join(', ') || 'none'}; extra: ${extra.join(', ') || 'none'})`,
+    )
+  }
+  for (const field of FIELDS) {
+    for (const lang of Object.keys(README_FILES)) {
+      if (!field.note[lang] || typeof field.note[lang] !== 'string') {
+        throw new Error(`${field.key}: missing ${lang} note`)
+      }
+    }
+  }
 }
 
 function readReadme(lang) {
   const file = README_FILES[lang]
-  const path = join(ROOT, file)
-  if (!existsSync(path)) throw new Error(`${file} is missing`)
-  return { file, path, text: readFileSync(path, 'utf8') }
+  if (!existsSync(join(ROOT, file))) throw new Error(`missing ${file}`)
+  return { file, path: join(ROOT, file), text: readText(file) }
 }
 
 /** Returns the generated block for each language after comparing it to both READMEs. */
-export function checkConfigTables() {
+export async function checkConfigTables() {
+  const contract = await loadContract()
+  await assertCoverage(contract)
   const problems = []
   for (const lang of Object.keys(README_FILES)) {
     const { file, text } = readReadme(lang)
@@ -316,14 +137,10 @@ export function checkConfigTables() {
       problems.push(error.message)
       continue
     }
-    const expected = renderBlock(lang)
+    const expected = renderBlock(lang, contract)
     if (current.trimEnd() !== expected.trimEnd()) {
-      const actualLines = current.split('\n')
-      const expectedLines = expected.split('\n')
-      let line = 0
-      while (line < actualLines.length && line < expectedLines.length && actualLines[line] === expectedLines[line]) line += 1
       problems.push(
-        `${file}: settings table differs from contract.js (line ${line + 1}: expected "${expectedLines[line] ?? ''}", found "${actualLines[line] ?? ''}"); run node scripts/config-table.mjs --write`,
+        `${file}: settings table differs from contract.js; run node scripts/config-table.mjs --write`,
       )
     }
   }
@@ -331,12 +148,13 @@ export function checkConfigTables() {
   return 'README.md and README.zh.md match contract.js'
 }
 
-export function writeConfigTables() {
-  assertCoverage()
+export async function writeConfigTables() {
+  const contract = await loadContract()
+  await assertCoverage(contract)
   for (const lang of Object.keys(README_FILES)) {
-    const { file, path, text } = readReadme(lang)
-    const { start, end } = locateBlock(text, file)
-    const updated = text.slice(0, start) + renderBlock(lang) + text.slice(end)
+    const { path, text } = readReadme(lang)
+    const { start, end } = locateBlock(text, README_FILES[lang])
+    const updated = text.slice(0, start) + renderBlock(lang, contract) + text.slice(end)
     writeFileSync(path, updated)
   }
   return Object.values(README_FILES)
@@ -349,14 +167,16 @@ if (isMain) {
   const args = process.argv.slice(2)
   const lang = args.includes('--lang') ? args[args.indexOf('--lang') + 1] : 'en'
   try {
+    const contract = await loadContract()
     if (args.includes('--write')) {
-      const files = writeConfigTables()
+      const files = await writeConfigTables()
       console.log(`updated ${files.join(', ')} from src/shared/contract.js`)
     } else if (args.includes('--check')) {
-      console.log(checkConfigTables())
+      console.log(await checkConfigTables())
     } else {
       if (!COLUMNS[lang]) throw new Error(`unknown --lang "${lang}" (expected en or zh)`)
-      console.log(renderTable(lang))
+      await assertCoverage(contract)
+      console.log(renderTable(lang, contract))
     }
   } catch (error) {
     console.error(`config-table: ${error.message}`)

@@ -1,111 +1,129 @@
 /**
- * Shared wire contract (v4) between the Host half and the browser half.
+ * dsh-deep-focus — wire contract v5 (v1 product).
  *
- * v4 is a UX pass over v3:
- * - the floating top-right widget shows two rings (today total, continuous) and
- *   clicking it enters a paused "rest" mode (no counting, window grays) that
- *   resumes only on real keyboard/mouse activity
- * - a forced rest finishes only after its time elapsed AND the user is back
- *   (activity detected), never while away
- * - the completion chime repeats every second while the window is unfocused or
- *   the user is away, until input returns
- * - the solo (one conversation at a time) mode also hides workspace/folder rows
- *   and animates; the old banner is gone
+ * The product is now a single feature: a conversation task lock plus an optional
+ * DingTalk completion notification.
  *
- * Times are minutes unless the field name says otherwise.
+ * - When the user sends a message in a conversation, the plugin locks the UI
+ *   (full-screen overlay, other conversations unusable) for that conversation.
+ * - The lock is released automatically once that conversation *and all of its
+ *   subagent/child sessions* are completely finished. A `[+] ...` DingTalk text
+ *   message is sent on release (when configured).
+ * - The user may click "skip" on the lock overlay to release immediately.
+ *
+ * Everything from the old timing/focus product (usage sampling, daily and
+ * continuous limits, rest, pause, tracking-only mode, rings, chime, solo graying,
+ * dashboard statistics) is intentionally removed.
  */
 
+export const CONTRACT_VERSION = 5
+export const SETTINGS_VERSION = CONTRACT_VERSION
+
+export const DINGTALK_PREFIX = '[+] '
+export const DINGTALK_WEBHOOK = 'https://oapi.dingtalk.com/robot/send?access_token='
+export const DINGTALK_TIMEOUT_MS = 3000
+export const DINGTALK_RETRY = 2
+
+/** Lock is released only after the root turn closed and children stayed idle this long. */
+export const LOCK_SETTLE_MS = 1200
+/** Safety reconcile cadence while a lock is active (host side, event-driven otherwise). */
+export const LOCK_RECONCILE_MS = 1500
+
+/** Prefix the Host registers; browser clients call `API_BASE + ROUTES.*`. */
 export const API_BASE = '/plugins/dsh-deep-focus/api'
 
 export const ROUTES = {
-  state: `${API_BASE}/state`,
-  apps: `${API_BASE}/apps`,
-  settings: `${API_BASE}/settings`,
-  assistant: `${API_BASE}/assistant`,
-  pause: `${API_BASE}/pause`,
-  resume: `${API_BASE}/resume`,
-  restStart: `${API_BASE}/rest/start`,
-  restFinish: `${API_BASE}/rest/finish`,
-  extend: `${API_BASE}/extend`,
-}
-
-/** Toast / state-change events the Host pushes through the state ring buffer. */
-export const EVENT = {
-  taskCompleted: 'task-completed',
-  paused: 'paused',
-  resumed: 'resumed',
-  restDue: 'rest-due',
-  restStarted: 'rest-started',
-  restFinished: 'rest-finished',
-  dailyLocked: 'daily-locked',
-  extended: 'extended',
-  assistantOff: 'assistant-off',
-  assistantOn: 'assistant-on',
+  state: '/state',
+  settings: '/settings',
+  skip: '/lock/skip',
+  testNotify: '/notifications/test',
 }
 
 export const DEFAULT_SETTINGS = {
-  version: 4,  limits: {
-    dailyMinutes: 180,
-    continuousMinutes: 30,
-    restMinutes: 10,
-    extendMinutes: 20,
-    /** 0 = unlimited daily extensions; > 0 = maximum extensions per day. */
-    dailyExtendLimit: 0,
-  },
-  assistant: {
-    enabled: true,
-    soloSession: true,
-    hideOtherSessions: true,
-    showRings: true,
-    /** Record/display usage only: no limits, pause, rest, prompts or restrictions. */
-    trackingOnly: false,
-  },
-  alerts: {
-    sound: true,
-    volume: 0.6,
-    quietHoursStart: null,
-    quietHoursEnd: null,
-    /** Repeat the completion chime while the user is away (until input). */
-    repeatUntilActive: true,
-    repeatIntervalMs: 1000,
-    /** Consider the user away when the machine has been idle this long. */
-    awayIdleSeconds: 30,
-  },
-  usage: {
-    sampleSeconds: 5,
-    idleThresholdSeconds: 60,
-    retentionDays: 30,
-    trackApps: true,
-    /** Auto-enter the paused/rest state after this many idle seconds (0 = off). */
-    autoPauseSeconds: 60,
+  version: SETTINGS_VERSION,
+  notifications: {
+    dingtalkEnabled: false,
+    dingtalkToken: '',
   },
 }
 
-/** Clamp a number into [min, max], falling back to `fallback` for non-numbers. */
-export function clampNumber(value, min, max, fallback) {
-  const n = typeof value === 'number' ? value : Number(value)
-  if (!Number.isFinite(n)) return fallback
-  return Math.min(max, Math.max(min, Math.round(n)))
+function clampString(value, max) {
+  return typeof value === 'string' ? value.slice(0, max) : ''
 }
 
-export function isPlainObject(value) {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
+/** Merge arbitrary persisted/user input into a valid settings object. */
+export function mergeSettings(input) {
+  const raw = input && typeof input === 'object' ? input : {}
+  const notifications = raw.notifications && typeof raw.notifications === 'object' ? raw.notifications : {}
+  return {
+    version: SETTINGS_VERSION,
+    notifications: {
+      dingtalkEnabled: notifications.dingtalkEnabled === true,
+      dingtalkToken: clampString(notifications.dingtalkToken, 256).trim(),
+    },
+  }
 }
 
-export function mergeSettings(base, patch) {
-  const out = {}
-  for (const [section, sectionDefault] of Object.entries(base)) {
-    const incoming = isPlainObject(patch) ? patch[section] : undefined
-    if (isPlainObject(sectionDefault)) {
-      out[section] = { ...sectionDefault }
-      if (isPlainObject(incoming)) {
-        for (const key of Object.keys(sectionDefault)) {
-          if (key in incoming) out[section][key] = incoming[key]
-        }
-      }
-    } else {
-      out[section] = incoming === undefined ? sectionDefault : incoming
+/**
+ * Settings safe to send to the browser: the token is never echoed, only a
+ * "is it set" flag and a short hint are exposed.
+ */
+export function publicSettings(settings) {
+  const normalized = mergeSettings(settings)
+  const token = normalized.notifications.dingtalkToken
+  return {
+    version: normalized.version,
+    notifications: {
+      dingtalkEnabled: normalized.notifications.dingtalkEnabled,
+      dingtalkTokenSet: token.length > 0,
+      dingtalkTokenHint: token.length >= 4 ? token.slice(-4) : '',
+    },
+  }
+}
+
+/**
+ * Apply a browser settings patch.
+ * - `dingtalkToken` omitted or '' keeps the stored token;
+ * - `dingtalkToken: null` clears it.
+ */
+export function applySettingsPatch(current, patch) {
+  const base = mergeSettings(current)
+  const raw = patch && typeof patch === 'object' ? patch : {}
+  const notifications = raw.notifications && typeof raw.notifications === 'object' ? raw.notifications : {}
+  const next = {
+    version: SETTINGS_VERSION,
+    notifications: {
+      dingtalkEnabled:
+        typeof notifications.dingtalkEnabled === 'boolean'
+          ? notifications.dingtalkEnabled
+          : base.notifications.dingtalkEnabled,
+      dingtalkToken: base.notifications.dingtalkToken,
+    },
+  }
+  if (Object.prototype.hasOwnProperty.call(notifications, 'dingtalkToken')) {
+    if (notifications.dingtalkToken === null) {
+      next.notifications.dingtalkToken = ''
+    } else if (typeof notifications.dingtalkToken === 'string' && notifications.dingtalkToken.trim().length > 0) {
+      next.notifications.dingtalkToken = notifications.dingtalkToken.trim().slice(0, 256)
     }
   }
-  return out
+  return next
+}
+
+/** DingTalk text message for a released lock. Only `[+]` messages are ever sent. */
+export function buildCompletionMessage({ title, minutes, finishedAt }) {
+  const safeTitle = typeof title === 'string' && title.trim().length > 0 ? title.trim().slice(0, 80) : '对话'
+  const safeMinutes = Number.isFinite(minutes) && minutes > 0 ? Math.max(1, Math.round(minutes)) : 0
+  const time = finishedAt instanceof Date ? finishedAt : new Date()
+  const hh = String(time.getHours()).padStart(2, '0')
+  const mm = String(time.getMinutes()).padStart(2, '0')
+  const used = safeMinutes > 0 ? `，用时 ${safeMinutes} 分钟` : ''
+  return `${DINGTALK_PREFIX}会话已完成：${safeTitle}${used}，完成时间 ${hh}:${mm}`
+}
+
+export function buildTestMessage(finishedAt) {
+  const time = finishedAt instanceof Date ? finishedAt : new Date()
+  const hh = String(time.getHours()).padStart(2, '0')
+  const mm = String(time.getMinutes()).padStart(2, '0')
+  return `${DINGTALK_PREFIX}钉钉通知测试成功（${hh}:${mm}）`
 }

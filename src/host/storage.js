@@ -1,8 +1,10 @@
-/** Local persistence: plugin data directory, atomic JSON files, append-only JSONL and per-file write serialization. */
+/**
+ * Local persistence for the lock plugin: plugin data directory, atomic JSON
+ * files and a one-shot cleanup of the removed timing product's data files.
+ */
 import { promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { mergeAppMs } from './apps.js'
 
 /** Resolve the Harness home: explicit DSH_HOME wins, otherwise `<home>/.dsh`. */
 export function resolveDshHome(env = process.env, home = homedir()) {
@@ -15,35 +17,13 @@ export function pluginDataDir(options = {}) {
   return join(resolveDshHome(options.env, options.home), 'plugin-data', 'dsh-deep-focus')
 }
 
-/** `YYYY-MM-DD` for an instant in a fixed timezone offset (`Date#getTimezoneOffset` minutes). */
-export function dayKeyAt(ms, offsetMinutes = 0) {
-  if (!Number.isFinite(ms)) return ''
-  const date = new Date(ms - offsetMinutes * 60_000)
-  const year = date.getUTCFullYear()
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0')
-  const day = String(date.getUTCDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-/** Local calendar day key for an instant; used for every per-day bucket. */
-export function localDayKey(ms) {
-  return dayKeyAt(ms, new Date(ms).getTimezoneOffset())
-}
-
-/** Shift a `YYYY-MM-DD` key by whole days (calendar-safe, no DST math). */
-export function shiftDayKey(dayKey, deltaDays) {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayKey)
-  if (match === null) return dayKey
-  const base = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
-  return dayKeyAt(base + deltaDays * 86_400_000, 0)
-}
-
-const DAY_FILE = /^(\d{4}-\d{2}-\d{2})\.jsonl$/
+const LEGACY_DAY_FILE = /^20\d{2}-\d{2}-\d{2}\.jsonl$/
+const LEGACY_NAMES = new Set(['limits.json'])
 
 /**
- * Create the storage facade.
- * Writes to one file are chained so a read-modify-write is never interleaved;
- * JSON files are written to a temporary sibling and renamed into place.
+ * Create the storage facade. Writes to one file are chained so concurrent
+ * read-modify-write cycles never interleave; JSON files are written to a
+ * temporary sibling and renamed into place.
  */
 export function createStorage({ dir = pluginDataDir() } = {}) {
   const tails = new Map()
@@ -82,7 +62,23 @@ export function createStorage({ dir = pluginDataDir() } = {}) {
     }
   }
 
+  /** Directory entries as `{name, isDirectory}`; a missing directory is empty. */
+  async function listDir(relativePath = '') {
+    try {
+      const entries = await fs.readdir(absolute(relativePath), { withFileTypes: true })
+      return entries.map((entry) => ({ name: entry.name, isDirectory: entry.isDirectory() }))
+    } catch {
+      return []
+    }
+  }
+
+  async function removeFile(relativePath) {
+    await fs.rm(absolute(relativePath), { force: true })
+    return true
+  }
+
   return {
+    dir,
     async readJson(relativePath, fallback = null) {
       try {
         const text = await fs.readFile(absolute(relativePath), 'utf8')
@@ -100,88 +96,45 @@ export function createStorage({ dir = pluginDataDir() } = {}) {
       })
     },
 
-    appendJsonl(relativePath, record) {
-      const key = `jsonl:${relativePath}`
-      return enqueue(key, async () => {
-        await ensureRoot()
-        await ensureDir(dirname(absolute(relativePath)))
-        await fs.appendFile(absolute(relativePath), `${JSON.stringify(record)}\n`, 'utf8')
-      })
+    remove(relativePath) {
+      return enqueue(`remove:${relativePath}`, () => removeFile(relativePath))
     },
 
-    /** Read a JSONL file; invalid lines are skipped, `limit` keeps the newest records. */
-    async readJsonl(relativePath, { limit = 0 } = {}) {
-      let text
-      try {
-        text = await fs.readFile(absolute(relativePath), 'utf8')
-      } catch {
-        return []
-      }
-      const records = []
-      for (const line of text.split('\n')) {
-        const trimmed = line.trim()
-        if (trimmed.length === 0) continue
-        try {
-          records.push(JSON.parse(trimmed))
-        } catch {
-          // A truncated tail after a power loss only loses that line.
-        }
-      }
-      return limit > 0 && records.length > limit ? records.slice(-limit) : records
+    listDir,
+
+    /** Wait for every queued write to settle (best effort at unload). */
+    async flush() {
+      await Promise.all([...tails.values()].map((tail) => tail.catch(() => {})))
     },
 
     /**
-     * Sum one usage day: `{ activeMs, apps: Map<id, ms> }`.
-     * Current lines are `{t, activeMs, apps}`; legacy v1/v2 lines (`{t, ms}`) are
-     * still counted so an upgraded install keeps its history.
+     * Delete data files from the removed timing/focus product once at load:
+     * `20*.jsonl` day files (root and `usage/`) and `limits.json`. Missing files
+     * are fine; nothing here may throw.
      */
-    async readUsageDay(dayKey) {
-      const records = await this.readJsonl(`usage/${dayKey}.jsonl`)
-      let activeMs = 0
-      const apps = new Map()
-      for (const record of records) {
-        if (record === null || typeof record !== 'object') continue
-        if (Number.isFinite(record.activeMs) && record.activeMs > 0) activeMs += record.activeMs
-        else if (Number.isFinite(record.ms) && record.ms > 0) activeMs += record.ms
-        mergeAppMs(apps, record.apps)
-      }
-      return { activeMs, apps }
-    },
-
-    /** Day keys that have a JSONL file in `subdir` (`usage`, plus legacy `stats`). */
-    async listDayKeys(subdir) {
-      let names
+    async cleanupLegacyData() {
+      const removed = []
       try {
-        names = await fs.readdir(absolute(subdir))
-      } catch {
-        return []
-      }
-      return names
-        .map((name) => DAY_FILE.exec(name)?.[1])
-        .filter((key) => key !== undefined)
-        .sort()
-    },
-
-    /** Delete per-day files older than the retention window (today included); `stats` is legacy cleanup. */
-    async prune({ retentionDays = 30, dayKey }) {
-      const days = Math.max(1, Math.round(retentionDays))
-      const cutoff = shiftDayKey(dayKey, -(days - 1))
-      let removed = 0
-      for (const subdir of ['usage', 'stats']) {
-        for (const key of await this.listDayKeys(subdir)) {
-          if (key >= cutoff) continue
-          await fs.rm(absolute(`${subdir}/${key}.jsonl`), { force: true }).catch(() => {})
-          removed += 1
+        for (const entry of await listDir()) {
+          if (entry.isDirectory) {
+            if (entry.name !== 'usage') continue
+            for (const inner of await listDir('usage')) {
+              if (inner.isDirectory || !LEGACY_DAY_FILE.test(inner.name)) continue
+              await removeFile(`usage/${inner.name}`).catch(() => {})
+              removed.push(`usage/${inner.name}`)
+            }
+            // The empty legacy directory can go once its files are gone.
+            await fs.rmdir(absolute('usage')).catch(() => {})
+            continue
+          }
+          if (!LEGACY_DAY_FILE.test(entry.name) && !LEGACY_NAMES.has(entry.name)) continue
+          await removeFile(entry.name).catch(() => {})
+          removed.push(entry.name)
         }
+      } catch {
+        // Cleanup is best effort: a permission error must not block activation.
       }
       return removed
-    },
-
-    /** Wait for every queued write to settle. */
-    async flush() {
-      while (tails.size > 0) {
-        await Promise.all([...tails.values()])
-      }
     },
   }
 }

@@ -1,227 +1,228 @@
 #!/usr/bin/env node
 /**
- * Live end-to-end smoke test for the running dsh-deep-focus plugin.
+ * Live API smoke test for dsh-deep-focus v1 (conversation lock + DingTalk notice).
  *
- * Usage:
- *   node scripts/e2e.mjs [baseUrl]
- * Default: http://127.0.0.1:61556/plugins/dsh-deep-focus/api
+ * The Host must be running with the plugin enabled. Pass the plugin API base URL:
  *
- * It only talks to the plugin's own HTTP API (no DSH internals), so it works
- * against a live Host. It changes settings temporarily and always restores
- * them, and it never installs, enables or restarts anything.
+ *   node scripts/e2e.mjs http://127.0.0.1:61556/plugins/dsh-deep-focus/api
+ *
+ * What it checks (live Host only):
+ *   - GET  /state              -> contract 5, now, lock fields, public settings, notify
+ *   - GET  /settings           -> { ok, state } with the public settings shape only
+ *   - POST /settings           -> token set / keep (empty string) / clear (null)*
+ *   - POST /lock/skip          -> 409 `no-lock` when no lock is active
+ *   - POST /notifications/test -> 409 `not-configured` when DingTalk is unconfigured
+ *   - same-origin POST         -> rejected from a foreign Origin
+ *   - unknown route / method   -> 404 / 405
+ *
+ * (*) When a token is already configured, the destructive clear test is skipped so a
+ * real token is never removed; keep-semantics is still verified.
+ *
+ * Settings changed during the run are restored at the end (the enabled flag; the token
+ * is only touched when no token was configured). A live lock is released via /lock/skip.
  */
+import process from 'node:process'
 
-const BASE = (process.argv[2] || process.env.DSH_DEEP_FOCUS_API || 'http://127.0.0.1:61556/plugins/dsh-deep-focus/api').replace(/\/+$/, '')
+const DEFAULT_BASE = 'http://127.0.0.1:61556/plugins/dsh-deep-focus/api'
+const BASE = (process.argv[2] || process.env.DSH_DEEP_FOCUS_API || DEFAULT_BASE).replace(/\/+$/, '')
+const TIMEOUT_MS = 8000
 
 const results = []
-let failed = 0
-let skipped = 0
-
-function ok(name, detail = '') {
-  results.push({ ok: true, name, detail })
+function pass(name, detail) {
+  results.push({ ok: true, name })
   console.log(`PASS  ${name}${detail ? ` — ${detail}` : ''}`)
 }
-function fail(name, detail = '') {
-  failed += 1
-  results.push({ ok: false, name, detail })
-  console.log(`FAIL  ${name}${detail ? ` — ${detail}` : ''}`)
+function fail(name, message) {
+  results.push({ ok: false, name })
+  console.log(`FAIL  ${name}: ${message}`)
 }
-function assert(condition, name, detail = '') {
-  if (condition) ok(name, detail)
-  else fail(name, detail)
-}
-function skipCheck(name, detail = '') {
-  skipped += 1
-  results.push({ ok: true, name, detail, skipped: true })
-  console.log(`SKIP  ${name}${detail ? ` — ${detail}` : ''}`)
+function assert(condition, message) {
+  if (!condition) throw new Error(message)
 }
 
-async function req(method, path, body) {
-  const init = { method, headers: { accept: 'application/json' }, signal: AbortSignal.timeout(10000) }
-  if (body !== undefined) {
-    init.headers['content-type'] = 'application/json'
-    init.body = JSON.stringify(body)
-  }
-  const response = await fetch(`${BASE}${path}`, init)
-  let json = null
+async function request(path, options = {}) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
   try {
-    json = await response.json()
-  } catch {
-    // Non-JSON responses (405/404 with an empty body) are valid in some checks.
+    const headers = { accept: 'application/json', ...(options.headers || {}) }
+    if (options.body) headers['content-type'] = 'application/json'
+    const response = await fetch(`${BASE}${path}`, { ...options, signal: controller.signal, headers })
+    const text = await response.text()
+    let body = null
+    try {
+      body = text ? JSON.parse(text) : null
+    } catch {
+      body = text
+    }
+    return { status: response.status, body }
+  } finally {
+    clearTimeout(timer)
   }
-  return { status: response.status, json }
 }
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-
-async function state() {
-  const { status, json } = await req('GET', '/state')
-  if (status !== 200 || json === null || typeof json !== 'object') throw new Error(`GET /state -> ${status}`)
-  return json
+/** `/state` returns the state at the top level; settings responses may wrap it in `state`. */
+function stateOf(body) {
+  if (body && typeof body === 'object' && body.state && typeof body.state === 'object') return body.state
+  return body
 }
 
-async function patchSettings(patch) {
-  const { status, json } = await req('POST', '/settings', { settings: patch })
-  if (status !== 200 || json?.ok !== true) throw new Error(`POST /settings -> ${status} ${JSON.stringify(json)}`)
-  return json.settings
+/** Settings are either `body.settings` (settings routes) or `body.state.settings`. */
+function settingsOf(body) {
+  if (body && typeof body === 'object' && body.settings && typeof body.settings === 'object') return body.settings
+  return stateOf(body)?.settings
+}
+
+function isPublicSettings(settings) {
+  if (!settings || typeof settings !== 'object') return false
+  if (!settings.notifications || typeof settings.notifications !== 'object') return false
+  const notifications = settings.notifications
+  if ('dingtalkToken' in notifications) return false
+  return (
+    typeof notifications.dingtalkEnabled === 'boolean' &&
+    typeof notifications.dingtalkTokenSet === 'boolean' &&
+    typeof notifications.dingtalkTokenHint === 'string'
+  )
+}
+
+function assertStateShape(state) {
+  assert(state && typeof state === 'object', 'state body must be an object')
+  const version = state.version ?? state.contract
+  assert(version === 5, `state.version must be 5, found ${version}`)
+  assert(typeof state.now === 'number', 'state.now must be a number')
+  assert(state.lock && typeof state.lock === 'object', 'state.lock must be an object')
+  for (const key of ['active', 'sessionId', 'title', 'startedAt', 'elapsedMs']) {
+    assert(key in state.lock, `state.lock.${key} is missing`)
+  }
+  assert(typeof state.lock.active === 'boolean', 'state.lock.active must be a boolean')
+  assert(isPublicSettings(state.settings), 'state.settings must be the public shape (no token)')
 }
 
 async function main() {
-  // 1. Contract + health.
-  const s0 = await state()
-  const originalAssistant = s0.settings?.assistant || {}
-  // Enforcement tests need normal mode: temporarily leave tracking-only and make
-  // sure the assistant is enabled (both restored at the end of the run).
-  if (originalAssistant.trackingOnly === true) {
-    await patchSettings({ assistant: { trackingOnly: false } })
-  }
-  if (originalAssistant.enabled === false) {
-    await req('POST', '/assistant', { enabled: true })
-  }
-  // Enforcement tests must not collide with the user's current caps: raise the
-  // limits for the run (restored at the end) and clear any live pause/rest.
-  const originalLimits = s0.settings?.limits || {}
-  const originalUsageCfg = s0.settings?.usage || {}
-  await patchSettings({ limits: { dailyMinutes: 100000, continuousMinutes: 100000 } })
-  if (s0.limit?.paused === true) await req('POST', '/resume', {})
-  if (s0.limit?.resting === true) await req('POST', '/rest/finish', {})
-  assert(s0.settings?.version === 4, 'state reports settings version 4')
-  assert(typeof s0.usage?.sampling === 'string', 'usage.sampling present')
-  assert(Array.isArray(s0.sessions), 'sessions is an array')
-  assert(typeof s0.solo === 'object' && Array.isArray(s0.solo.sessions), 'solo shape present')
-  assert(typeof s0.limit?.paused === 'boolean', 'limit.paused present')
-  assert(s0.limit?.extendLimit === 0 || typeof s0.limit?.extendLimit === 'number', 'limit.extendLimit numeric')
-  assert(Array.isArray(s0.appsToday?.top), 'appsToday.top is an array')
-  assert(typeof s0.usage?.idleMs === 'number' || s0.usage?.idleMs === null, 'usage.idleMs present')
+  console.log(`dsh-deep-focus e2e → ${BASE}`)
 
-  // 2. /apps shape.
-  const apps = await req('GET', '/apps?days=7')
-  assert(apps.status === 200 && Array.isArray(apps.json?.days) && apps.json.days.length === 7, '/apps?days=7 returns 7 days')
-  assert(Array.isArray(apps.json?.today?.apps), '/apps today.apps is an array')
+  // 1. Read the current state and settings.
+  const stateResponse = await request('/state')
+  assert(stateResponse.status === 200, `GET /state expected 200, found ${stateResponse.status}`)
+  assertStateShape(stateResponse.body)
+  pass('GET /state', 'contract 5, lock + public settings shape')
 
-  // 3. Removed routes stay removed.
-  for (const path of ['/stats', '/focus/start']) {
-    const r = await req('POST', path, {})
-    assert(r.status === 404 || r.status === 405, `removed route ${path} is gone (${r.status})`)
-  }
+  const settingsResponse = await request('/settings')
+  assert(settingsResponse.status === 200, `GET /settings expected 200, found ${settingsResponse.status}`)
+  const currentSettings = settingsOf(settingsResponse.body)
+  assert(isPublicSettings(currentSettings), 'GET /settings must expose the public settings shape')
+  pass('GET /settings', 'public shape, token never returned')
 
-  // 4. Pause / resume stability: resume must hold while the machine is idle
-  //    (it must not immediately re-pause on a stale idle sample).
-  const originalUsage = (await state()).settings.usage
-  await patchSettings({ usage: { autoPauseSeconds: 1, idleThresholdSeconds: 1 } })
-  let sawAutoPause = false
-  for (let i = 0; i < 30; i += 1) {
-    await sleep(1000)
-    const s = await state()
-    if (s.limit.paused === true && s.limit.pausedReason === 'idle') {
-      sawAutoPause = true
-      break
+  const tokenSet = currentSettings.notifications.dingtalkTokenSet === true
+  const originalEnabled = currentSettings.notifications.dingtalkEnabled === true
+  let tokenTouched = false
+
+  try {
+    // 2. Token round-trip. Never destroy a real configured token.
+    if (!tokenSet) {
+      const setResponse = await request('/settings', {
+        method: 'POST',
+        body: JSON.stringify({ notifications: { dingtalkToken: 'e2e-test-token' } }),
+      })
+      assert(setResponse.status === 200, `token set expected 200, found ${setResponse.status}`)
+      const setSettings = settingsOf(setResponse.body)
+      assert(isPublicSettings(setSettings), 'POST /settings must return the public shape')
+      assert(setSettings.notifications.dingtalkTokenSet === true, 'token set must report tokenSet=true')
+      tokenTouched = true
+      pass('POST /settings token set', 'stored, flag true, value hidden')
+
+      const keepResponse = await request('/settings', {
+        method: 'POST',
+        body: JSON.stringify({ notifications: { dingtalkToken: '' } }),
+      })
+      assert(keepResponse.status === 200, `token keep expected 200, found ${keepResponse.status}`)
+      assert(settingsOf(keepResponse.body).notifications.dingtalkTokenSet === true, 'empty token must keep the stored token')
+      pass('POST /settings token keep', 'empty string keeps the token')
+
+      const clearResponse = await request('/settings', {
+        method: 'POST',
+        body: JSON.stringify({ notifications: { dingtalkToken: null } }),
+      })
+      assert(clearResponse.status === 200, `token clear expected 200, found ${clearResponse.status}`)
+      assert(settingsOf(clearResponse.body).notifications.dingtalkTokenSet === false, 'null must clear the token')
+      tokenTouched = false
+      pass('POST /settings token clear', 'null removes the token')
+    } else {
+      const keepResponse = await request('/settings', {
+        method: 'POST',
+        body: JSON.stringify({ notifications: { dingtalkToken: '' } }),
+      })
+      assert(keepResponse.status === 200, `token keep expected 200, found ${keepResponse.status}`)
+      assert(settingsOf(keepResponse.body).notifications.dingtalkTokenSet === true, 'a configured token must survive an empty patch')
+      pass('POST /settings token keep', 'existing token preserved (clear test skipped)')
     }
-  }
-  if (!sawAutoPause) {
-    const latest = await state()
-    const idle = typeof latest.usage?.idleMs === 'number' ? latest.usage.idleMs : null
-    // Since 0.4.32 the automatic pause only fires while DeepSeek Harness is the
-    // foreground application (and the machine is idle). A headless test cannot
-    // control the OS foreground window, so skip instead of failing falsely; the
-    // Host unit tests cover the state machine.
-    skipCheck('idle auto-pause fires after usage.autoPauseSeconds', `needs DSH foreground + idle (idleMs=${idle})`)
-    skipCheck('resume stability: stayed unpaused for 8s', 'depends on auto-pause')
-  } else {
-    assert(sawAutoPause, 'idle auto-pause fires after usage.autoPauseSeconds')
 
-    const resumedFromAuto = await req('POST', '/resume', {})
-    assert(resumedFromAuto.status === 200 && resumedFromAuto.json?.state?.limit?.paused === false, 'resume after auto-pause')
+    // 3. The test route rejects an unconfigured notification setup.
+    const disableResponse = await request('/settings', {
+      method: 'POST',
+      body: JSON.stringify({ notifications: { dingtalkEnabled: false } }),
+    })
+    assert(disableResponse.status === 200, `disable expected 200, found ${disableResponse.status}`)
+    const testResponse = await request('/notifications/test', { method: 'POST', body: '{}' })
+    assert(
+      testResponse.status === 409,
+      `POST /notifications/test must return 409 when unconfigured, found ${testResponse.status}`,
+    )
+    pass('POST /notifications/test unconfigured', '409 as expected')
 
-    let repaused = false
-    for (let i = 0; i < 8; i += 1) {
-      await sleep(1000)
-      const s = await state()
-      if (s.limit.paused === true) {
-        repaused = true
-        fail('resume stability: stayed unpaused for 8s', `re-paused after ${i + 1}s (idleMs=${s.usage.idleMs}, reason=${s.limit.pausedReason})`)
-        break
-      }
+    // 4. Skip with and without an active lock.
+    const beforeSkip = await request('/state')
+    if (stateOf(beforeSkip.body)?.lock?.active === true) {
+      const skipActive = await request('/lock/skip', { method: 'POST', body: '{}' })
+      assert(skipActive.status === 200, `skip on an active lock expected 200, found ${skipActive.status}`)
+      pass('POST /lock/skip (active)', 'lock released')
     }
-    if (!repaused) ok('resume stability: stayed unpaused for 8s')
+    const skipIdle = await request('/lock/skip', { method: 'POST', body: '{}' })
+    assert(skipIdle.status === 409, `skip without a lock must be 409, found ${skipIdle.status}`)
+    pass('POST /lock/skip (idle)', '409 as expected')
+
+    // 5. Same-origin, unknown route, wrong method.
+    const foreign = await request('/settings', {
+      method: 'POST',
+      headers: { origin: 'http://evil.example' },
+      body: JSON.stringify({ notifications: { dingtalkEnabled: false } }),
+    })
+    assert([400, 403, 404].includes(foreign.status), `cross-origin POST must be rejected, found ${foreign.status}`)
+    pass('same-origin POST', `rejected with ${foreign.status}`)
+
+    const missing = await request('/does-not-exist')
+    assert(missing.status === 404, `unknown route expected 404, found ${missing.status}`)
+    const wrongMethod = await request('/state', { method: 'DELETE' })
+    assert(wrongMethod.status === 405, `DELETE /state expected 405, found ${wrongMethod.status}`)
+    pass('unknown route / wrong method', '404 / 405 as expected')
+
+    // 6. Restore the settings this run changed.
+    const restorePatch = tokenTouched
+      ? { notifications: { dingtalkEnabled: originalEnabled, dingtalkToken: null } }
+      : { notifications: { dingtalkEnabled: originalEnabled } }
+    await request('/settings', { method: 'POST', body: JSON.stringify(restorePatch) })
+    const restored = await request('/state')
+    assertStateShape(restored.body)
+    assert(
+      stateOf(restored.body).settings.notifications.dingtalkEnabled === originalEnabled,
+      'settings were not restored',
+    )
+    pass('restore settings', 'enabled flag restored')
+  } catch (error) {
+    fail('e2e flow', error && error.message ? error.message : String(error))
   }
 
-  const prePause = await state()
-  if (prePause.limit.paused === true) await req('POST', '/resume', {})
-  const paused = await req('POST', '/pause', {})
-  assert(paused.status === 200 && paused.json?.state?.limit?.paused === true, 'POST /pause pauses')
-  const dupPause = await req('POST', '/pause', {})
-  assert(dupPause.status === 409, 'pause twice -> 409')
-  const resumed = await req('POST', '/resume', {})
-  assert(resumed.status === 200 && resumed.json?.state?.limit?.paused === false, 'POST /resume resumes')
-  await patchSettings({ usage: { autoPauseSeconds: originalUsage.autoPauseSeconds, idleThresholdSeconds: originalUsage.idleThresholdSeconds } })
-
-  // 5. Extend behaviour: not locked -> 409 not-locked.
-  const extend = await req('POST', '/extend', {})
-  assert(extend.status === 409 && extend.json?.error?.code === 'not-locked', 'extend without a lock -> 409 not-locked')
-
-  // 6. Rest skip: not resting -> 409; manually start a rest then skip it.
-  const skipIdle = await req('POST', '/rest/finish', {})
-  assert(skipIdle.status === 409, 'rest/finish without a rest -> 409')
-  const restStart = await req('POST', '/rest/start', {})
-  assert(restStart.status === 200 && restStart.json?.state?.limit?.resting === true, 'rest/start starts a rest')
-  const skip = await req('POST', '/rest/finish', {})
-  assert(skip.status === 200 && skip.json?.state?.limit?.resting === false, 'rest/finish skips the rest')
-
-  // 7. Settings round-trip + limits are accepted (restore afterwards).
-  const before = await state()
-  const wanted = { limits: originalLimits, usage: before.settings.usage }
-  await patchSettings({ limits: { dailyMinutes: 181, continuousMinutes: 31, restMinutes: 11 }, usage: { autoPauseSeconds: 120 } })
-  const after = await state()
-  assert(after.settings.limits.dailyMinutes === 181 && after.settings.limits.restMinutes === 11, 'settings round-trip applies values')
-  assert(after.settings.usage.autoPauseSeconds === 120, 'usage.autoPauseSeconds round-trip')
-  await patchSettings({
-    limits: {
-      dailyMinutes: wanted.limits.dailyMinutes,
-      continuousMinutes: wanted.limits.continuousMinutes,
-      restMinutes: wanted.limits.restMinutes,
-      extendMinutes: wanted.limits.extendMinutes,
-      dailyExtendLimit: wanted.limits.dailyExtendLimit,
-    },
-    usage: { autoPauseSeconds: wanted.usage.autoPauseSeconds },
-  })
-  const restored = await state()
-  assert(
-    restored.settings.limits.dailyMinutes === wanted.limits.dailyMinutes &&
-      restored.settings.usage.autoPauseSeconds === wanted.usage.autoPauseSeconds,
-    'settings restored',
-  )
-
-  // 8. Assistant toggle round-trip.
-  const off = await req('POST', '/assistant', { enabled: false })
-  assert(off.status === 200 && off.json?.state?.limit?.assistantEnabled === false, 'assistant off')
-  const on = await req('POST', '/assistant', { enabled: true })
-  assert(on.status === 200 && on.json?.state?.limit?.assistantEnabled === true, 'assistant on')
-
-  // 9. Bad requests.
-  const bad = await req('POST', '/settings', { settings: 'nope' })
-  assert(bad.status === 400, 'non-object settings -> 400')
-  const unknown = await req('GET', '/nope')
-  assert(unknown.status === 404, 'unknown path -> 404')
-
-  // 10. Restore the user's original assistant mode (tracking-only / disabled).
-  if (originalAssistant.trackingOnly === true) {
-    await patchSettings({ assistant: { trackingOnly: true } })
-    const restoredTracking = await state()
-    assert(restoredTracking.settings.assistant.trackingOnly === true, 'tracking-only restored')
-  }
-  if (originalAssistant.enabled === false) {
-    await req('POST', '/assistant', { enabled: false })
-  }
-
+  const failed = results.filter((result) => !result.ok)
   console.log('')
-  const passed = results.length - failed
-  const suffix = skipped > 0 ? ` (${skipped} skipped)` : ''
-  console.log(`e2e: ${passed}/${results.length} checks passed${suffix}`)
-  if (failed > 0) process.exitCode = 1
+  if (failed.length > 0) {
+    console.log(`e2e: ${failed.length} check(s) failed, ${results.length - failed.length}/${results.length} passed`)
+    process.exitCode = 1
+    return
+  }
+  console.log(`e2e: all ${results.length} checks passed (settings restored)`)
 }
 
 main().catch((error) => {
-  console.error(`e2e crashed: ${error?.message ?? error}`)
-  process.exitCode = 2
+  console.error(`e2e: ${error && error.message ? error.message : error}`)
+  console.error(`Is the Host running and the plugin enabled? Pass the API base URL, e.g. ${DEFAULT_BASE}`)
+  process.exitCode = 1
 })
